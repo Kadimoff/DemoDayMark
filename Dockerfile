@@ -3,7 +3,8 @@ FROM node:22-bookworm-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
-RUN npm ci
+# --include=dev: the build needs TypeScript/Vite/Vitest even if NODE_ENV=production is injected
+RUN npm ci --include=dev
 COPY . .
 # A commit that fails type checking or any test never produces an image, so the running
 # version stays up (Coolify only swaps containers after a successful build).
