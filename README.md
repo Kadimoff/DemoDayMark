@@ -82,6 +82,19 @@ docker compose --profile caddy up -d --build
 
 Docker daxilində: `docker compose exec app node dist-server/server/backup.js`.
 
+## Canlı server (Coolify) və avtomatik yenilənmə
+
+Tətbiq serverdə Coolify layihəsi **Ignite Demo Day** → tətbiq **demoday-mark** kimi işləyir (Dockerfile, port `2233 → 3000`).
+
+- **Avtomatik deploy:** serverdəki `demoday-autodeploy.timer` hər dəqiqə GitHub-dakı `main` budağını yoxlayır. Yeni commit görəndə əvvəlcə bazanın yedəyini alır, sonra Coolify-da deploy başladır. GitHub-da webhook qurmağa ehtiyac yoxdur. Push-dan saytda görünənə qədər təxminən 3–4 dəqiqə keçir (1 dəq yoxlama + build).
+- **Səhvə qarşı qoruma:** Docker build zamanı tip yoxlaması və bütün testlər işləyir. Biri uğursuz olsa, image yaranmır və köhnə versiya işləməyə davam edir.
+- **Qısa fasilə:** port birbaşa hosta bağlı olduğu üçün Coolify köhnə konteyneri dayandırıb yenisini başladır (bir neçə saniyə). Münsiflərin qaralamaları itmir və bağlantı özü bərpa olunur. Yenə də canlı qiymətləndirmə zamanı push etməyin.
+- **Baza:** Coolify-ın davamlı yaddaşında (`/app/data`) saxlanılır və deploy-lar onu silmir.
+- **Yedəklər:** hər deploy-dan əvvəl və hər gecə 03:30-da alınır. Həm volume içində (`/app/data/backups`), həm də serverdə `/root/demoday-backups/` qovluğunda saxlanılır (son 30).
+  - Əl ilə yedək: `demoday-backup`
+  - Deploy loqları: `journalctl -u demoday-autodeploy -n 50`
+- **Yedəkdən bərpa:** Coolify-da tətbiqi dayandırın. Sonra yedək faylını volume-dakı `ignite.db` faylının yerinə köçürün (`-wal` / `-shm` fayllarını silin) və tətbiqi yenidən başladın.
+
 ## Tədbir günü yoxlama siyahısı
 
 **Bir gün əvvəl**
