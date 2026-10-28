@@ -1,0 +1,6 @@
+# Replace the domain with yours; Caddy obtains the certificate automatically.
+# WebSocket upgrades (Socket.IO) are proxied by reverse_proxy without extra config.
+jury.example.az {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

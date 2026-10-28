@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-server/
+data/
+.env
+*.log
+backups/
+# local launcher and the original prototype (copies live in docs/reference/)
+Pitch Deck Taymeri.desktop
+Ignite Demo Day Jürisi.html

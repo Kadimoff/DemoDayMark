@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="az">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Pitch taymeri · Ignite Demo Day</title>
+<link rel="icon" href="/timer-icon.svg">
+<script type="module" src="/src/timer.ts"></script>
+</head>
+<body class="tp phase-pitch paused">
+<canvas class="tp-canvas" id="warp" aria-hidden="true"></canvas>
+
+<header class="tp-head">
+  <span class="tp-dot" aria-hidden="true"></span>
+  <div class="tp-event" id="event">Ignite Demo Day</div>
+  <div class="tp-pills" aria-hidden="true"><span id="pillPitch" class="on">3 dəq çıxış</span><i>→</i><span id="pillQa">+2 dəq sual</span></div>
+</header>
+
+<main class="tp-stage">
+  <div class="tp-dial" id="dial">
+    <div class="tp-core" id="core">
+      <div class="tp-ring r1"></div><div class="tp-ring r2"></div><div class="tp-ring r3"></div><div class="tp-ring r4"></div>
+      <svg class="tp-hud" viewBox="0 0 500 500" role="img" aria-label="Pitch taymer dairəsi">
+        <defs>
+          <path id="arcTop" d="M 52,250 A 198,198 0 1,1 448,250" />
+          <path id="rim" d="M 250,26 A 224,224 0 1,1 249.9,26" />
+          <radialGradient id="disc" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" class="disc-fill-1" />
+            <stop offset="75%" class="disc-fill-2" />
+            <stop offset="100%" class="disc-fill-3" />
+          </radialGradient>
+        </defs>
+        <circle class="disc" cx="250" cy="250" r="176" fill="url(#disc)" stroke-width="1.5" />
+        <circle class="ticks" cx="250" cy="250" r="190" fill="none" stroke-width="4" stroke-dasharray="2 10.43" />
+        <circle class="track" cx="250" cy="250" r="176" fill="none" stroke-width="14" />
+        <circle class="progress" id="ring" cx="250" cy="250" r="176" fill="none" stroke-width="14" stroke-linecap="round" stroke-dasharray="1105.84" stroke-dashoffset="0" />
+        <text class="tp-banner" font-size="14.5"><textPath id="banner" href="#arcTop" startOffset="50%" text-anchor="middle">TƏQDİMAT • 3 DƏQİQƏ</textPath></text>
+        <g class="tp-orbit"><text class="tp-rim"><textPath id="rimText" href="#rim" startOffset="0%"></textPath></text></g>
+      </svg>
+    </div>
+    <!-- Outside the 3D core: the digits stay flat and readable while the dial tilts or spins. -->
+    <div class="tp-readout">
+      <span class="tp-badge" id="badge">Mərhələ 1 • Təqdimat</span>
+      <div class="tp-digits" id="digits">03:00</div>
+      <p class="tp-subtext" id="subtext">Sonra: +2 dəq sual-cavab</p>
+      <div class="tp-bars" aria-hidden="true"><div><i class="bp" id="barPitch" style="width:100%"></i></div><div><i class="bq" id="barQa" style="width:100%"></i></div></div>
+    </div>
+  </div>
+  <section class="tp-name" id="name" aria-live="polite">
+    <b id="nameTeam">Komanda seçilməyib</b>
+    <small id="nameProj"></small>
+  </section>
+</main>
+
+<footer class="tp-dock" id="dock">
+  <span class="tp-toast" id="tpToast" hidden></span>
+  <div class="tp-btns" id="btns"></div>
+  <span class="tp-keys" id="keys" hidden>Space başlat/fasilə · S sual-cavab · R sıfırla · N növbəti · F tam ekran</span>
+</footer>
+</body>
+</html>

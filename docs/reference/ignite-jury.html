@@ -1,0 +1,901 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Ignite Demo Day Jürisi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: sticky stage bar (team on stage + shared timer) over three working views — juror scoring, live ranking, coordinator console. */
+:root{
+  --bg:#EDEFF4; --surface:#FFFFFF; --surface-2:#F4F5F9; --line:#DADEE8; --fg:#141722; --muted:#5D6376;
+  --accent:#DD4F18; --accent-ink:#FFFFFF; --accent-soft:#FBE4D9; --gold:#B07F06; --silver:#7C8597; --bronze:#A35B2A;
+  --ok:#1C8A57; --warn:#B26F12; --danger:#C2362A; --stage-bg:#141722; --stage-fg:#F3F4F8; --stage-alert:#FF7A5C;
+  --f-display:"Unbounded","Manrope",system-ui,sans-serif;
+  --f-body:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D0F15; --surface:#151821; --surface-2:#1B1F2B; --line:#2A2F3E; --fg:#ECEDF2; --muted:#9298AC;
+  --accent:#FF6F36; --accent-ink:#170A04; --accent-soft:#3A1D11; --gold:#F1C24D; --silver:#B8C0D0; --bronze:#D68A55;
+  --ok:#3CC489; --warn:#E9B04B; --danger:#FF6B5C; --stage-bg:#1E2332; --stage-fg:#ECEDF2; --stage-alert:#FF7A5C; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#0D0F15; --surface:#151821; --surface-2:#1B1F2B; --line:#2A2F3E; --fg:#ECEDF2; --muted:#9298AC;
+  --accent:#FF6F36; --accent-ink:#170A04; --accent-soft:#3A1D11; --gold:#F1C24D; --silver:#B8C0D0; --bronze:#D68A55;
+  --ok:#3CC489; --warn:#E9B04B; --danger:#FF6B5C; --stage-bg:#1E2332; --stage-fg:#ECEDF2; --stage-alert:#FF7A5C; color-scheme:dark;}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button{font:inherit;color:inherit;cursor:pointer}
+button:disabled{cursor:not-allowed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* Top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--surface);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:14px;padding-block:10px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:8px;min-width:0}
+.brand b{font-family:var(--f-display);font-weight:700;font-size:17px;letter-spacing:.02em}
+.brand b i{font-style:normal;color:var(--accent)}
+.brand span{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tabs{display:flex;gap:4px;margin-left:auto;background:var(--surface-2);padding:4px;border-radius:999px;border:1px solid var(--line)}
+.tabs button{border:0;background:transparent;padding:6px 14px;border-radius:999px;font-weight:600;font-size:13px;color:var(--muted)}
+.tabs button[aria-current="true"]{background:var(--fg);color:var(--bg)}
+.mode{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px}
+.mode::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.mode.live::before{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.mode.local::before{background:var(--warn)}
+
+/* Stage strip */
+.stage{background:var(--stage-bg);color:var(--stage-fg)}
+.stage .wrap{display:flex;align-items:center;gap:16px;padding-block:12px;flex-wrap:wrap}
+.stage .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.65}
+.stage .who{font-family:var(--f-display);font-weight:500;font-size:18px;min-width:0;text-wrap:balance}
+.stage .who small{font-family:var(--f-body);font-size:13px;opacity:.7;margin-left:8px;font-weight:500}
+.timer{margin-left:auto;display:flex;align-items:center;gap:10px}
+.timer .t{font-family:var(--f-mono);font-weight:700;font-size:26px;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+.timer .k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:color-mix(in srgb,var(--stage-fg) 14%,transparent)}
+.timer.warn .t{color:#F1B54A} .timer.over .t{color:var(--stage-alert);animation:blink 1s steps(2) infinite}
+.timer .bar{width:90px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--stage-fg) 18%,transparent);overflow:hidden}
+.timer .bar i{display:block;height:100%;background:var(--accent);transition:width .25s linear}
+@keyframes blink{50%{opacity:.35}}
+
+main{padding-block:22px 120px}
+.view[hidden]{display:none}
+h1,h2,h3{margin:0;text-wrap:balance}
+h2{font-family:var(--f-display);font-weight:500;font-size:22px;letter-spacing:-.005em}
+h3{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.sub{color:var(--muted);font-size:14px;margin:4px 0 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.pad{padding:18px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface);padding:9px 16px;border-radius:10px;font-weight:600;font-size:14px}
+.btn:hover:not(:disabled){border-color:var(--fg)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.06)}
+.btn.primary:disabled{opacity:.45}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--line))}
+.btn.sm{padding:6px 11px;font-size:13px;border-radius:8px}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line));background:color-mix(in srgb,var(--ok) 10%,var(--surface))}
+.pill.hot{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:var(--accent-soft)}
+.pill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+.empty{color:var(--muted);text-align:center;padding:40px 16px}
+
+/* Juror picker */
+.pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:16px}
+.pick button{text-align:left;padding:16px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:16px;display:flex;flex-direction:column;gap:4px}
+.pick button small{color:var(--muted);font-weight:500;font-size:12px}
+.pick button:hover{border-color:var(--accent)}
+
+/* Team chips */
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}
+.chip{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:13px;position:relative}
+.chip .n{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.chip[aria-pressed="true"]{border-color:var(--fg);box-shadow:inset 0 0 0 1px var(--fg)}
+.chip .done{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:var(--ok);color:var(--surface);font-size:11px}
+.chip .live{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 6px transparent}}
+
+/* Score form */
+.teamhead{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.teamhead h2{font-size:26px}
+.crit{padding:16px 18px;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.crit:first-child{border-top:0}
+.crit .ch{display:flex;gap:10px;align-items:baseline;justify-content:space-between}
+.crit .ch b{font-size:16px}
+.crit .w{font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.crit p{margin:0;color:var(--muted);font-size:13.5px;max-width:70ch}
+.scale{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:6px}
+.scale button{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:10px 0;font-family:var(--f-mono);font-weight:700;font-size:15px;transition:transform .12s ease,background .12s ease}
+.scale button:hover:not(:disabled){border-color:var(--accent)}
+.scale button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);transform:translateY(-1px)}
+.scale button.lo[aria-pressed="false"]{opacity:.85}
+.bands{display:grid;grid-template-columns:3fr 3fr 2fr 2fr;gap:6px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.bands span{border-top:2px solid var(--line);padding-top:3px}
+.bands span:nth-child(3){border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.bands span:nth-child(4){border-color:var(--accent)}
+textarea,input[type=text],input[type=number],select{width:100%;font:inherit;color:var(--fg);background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+textarea{min-height:84px;resize:vertical}
+textarea:focus,input:focus,select:focus{border-color:var(--accent);outline:none}
+
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.dock .wrap{display:flex;align-items:center;gap:16px;padding-block:12px}
+.dock .tot{display:flex;align-items:baseline;gap:6px}
+.dock .tot b{font-family:var(--f-mono);font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}
+.dock .tot span{color:var(--muted);font-size:13px}
+.dock .st{color:var(--muted);font-size:13px;min-width:0}
+.dock .btn{margin-left:auto;padding:12px 22px;font-size:15px}
+
+/* Results */
+.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;align-items:start}
+.lb{list-style:none;margin:0;padding:0}
+.lb li{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 18px;border-top:1px solid var(--line);background:var(--surface)}
+.lb li:first-child{border-top:0}
+.lb .rk{font-family:var(--f-display);font-weight:700;font-size:22px;color:var(--muted);text-align:center}
+.lb li.r1 .rk{color:var(--gold)} .lb li.r2 .rk{color:var(--silver)} .lb li.r3 .rk{color:var(--bronze)}
+.lb .nm{min-width:0}
+.lb .nm b{display:block;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb .nm small{color:var(--muted);font-size:12.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb .track{height:6px;border-radius:3px;background:var(--surface-2);margin-top:8px;overflow:hidden}
+.lb .track i{display:block;height:100%;border-radius:3px;background:var(--accent);transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.lb li.r1 .track i{background:var(--gold)}
+.lb .sc{text-align:right}
+.lb .sc b{font-family:var(--f-mono);font-size:24px;font-weight:700;display:block;font-variant-numeric:tabular-nums}
+.lb .sc small{color:var(--muted);font-size:12px;white-space:nowrap}
+.lb li.none .sc b{color:var(--muted)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--surface-2)}
+td.num,th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+td.miss{color:var(--muted)}
+td.heat{background:color-mix(in srgb,var(--accent) calc(var(--h) * 1%),transparent)}
+.kpis{display:flex;gap:10px;flex-wrap:wrap}
+.kpi{padding:12px 16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);min-width:130px}
+.kpi b{font-family:var(--f-mono);font-size:22px;display:block}
+.kpi span{font-size:12px;color:var(--muted)}
+.progress{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden;border:1px solid var(--line)}
+.progress i{display:block;height:100%;background:var(--ok);transition:width .4s ease}
+.lock{display:grid;place-items:center;text-align:center;gap:10px;padding:60px 16px}
+.lock .ic{font-family:var(--f-display);font-size:40px;color:var(--accent)}
+
+/* Coordinator */
+.cgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+.tgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.tgrid button{padding:12px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);text-align:left;font-weight:600;font-size:13.5px;min-width:0}
+.tgrid button small{display:block;font-family:var(--f-mono);color:var(--muted);font-size:11px}
+.tgrid button span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tgrid button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.tgrid button[aria-pressed="true"] small{color:inherit;opacity:.8}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.toggle:first-of-type{border-top:0}
+.toggle b{display:block;font-size:14.5px}
+.toggle small{color:var(--muted);font-size:12.5px}
+.sw{width:46px;height:26px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);position:relative;flex:0 0 auto}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--muted);transition:transform .18s ease}
+.sw[aria-checked="true"]{background:var(--accent);border-color:var(--accent)}
+.sw[aria-checked="true"]::after{transform:translateX(20px);background:var(--accent-ink)}
+.ed{display:grid;gap:8px}
+.ed .er{display:grid;gap:8px;align-items:center}
+.ed.teams .er{grid-template-columns:28px minmax(0,1fr) minmax(0,1.2fr) 34px}
+.ed.jur .er{grid-template-columns:28px minmax(0,1fr) 34px}
+.ed.cr .er{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) 70px 34px}
+.ed .ix{font-family:var(--f-mono);color:var(--muted);font-size:12px;text-align:center}
+.x{border:1px solid var(--line);background:transparent;border-radius:8px;height:36px;color:var(--muted)}
+.x:hover{color:var(--danger);border-color:var(--danger)}
+.sum{font-family:var(--f-mono);font-size:13px}
+.sum.bad{color:var(--danger)}
+.note{font-size:13px;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.note b{color:var(--fg)}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--danger) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--danger) 40%,var(--line))}
+
+.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:14px;transition:all .25s ease;z-index:20;max-width:calc(100% - 32px)}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.fade{animation:fadeup .45s cubic-bezier(.2,.8,.2,1) both}
+@keyframes fadeup{from{opacity:.001;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+@media (max-width:860px){.grid2,.cgrid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){
+  .scale{grid-template-columns:repeat(5,minmax(0,1fr))}
+  .bands{display:none}
+  .tgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tabs{margin-left:0;width:100%}
+  .tabs button{flex:1;padding:6px 8px}
+  .timer .bar{display:none}
+  .stage .who{font-size:16px}
+  .ed.teams .er{grid-template-columns:22px minmax(0,1fr) 34px}
+  .ed.teams .er input.pj{grid-column:2/3}
+  .ed.cr .er{grid-template-columns:minmax(0,1fr) 64px 34px}
+  .ed.cr .er input.cd{grid-column:1/-1;order:5}
+  .dock .tot b{font-size:24px}
+  .teamhead h2{font-size:22px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><b>IGN<i>I</i>TE</b><span id="evName">Demo Day</span></div>
+    <span class="mode" id="mode">Qoşulur…</span>
+    <nav class="tabs" id="tabs" aria-label="Bölmələr">
+      <button data-v="panel">Münsif paneli</button>
+      <button data-v="results">Nəticələr</button>
+      <button data-v="control" id="tabControl" hidden>Koordinator</button>
+    </nav>
+  </div>
+</header>
+<section class="stage" aria-live="polite">
+  <div class="wrap">
+    <div style="min-width:0">
+      <div class="lbl">Səhnədə</div>
+      <div class="who" id="stageWho">Komanda seçilməyib</div>
+    </div>
+    <div class="timer" id="timer" hidden>
+      <span class="k" id="timerKind">Pitch</span>
+      <span class="bar"><i id="timerBar" style="width:100%"></i></span>
+      <span class="t" id="timerT">3:00</span>
+    </div>
+  </div>
+</section>
+
+<main class="wrap">
+  <section class="view" id="v-panel"></section>
+  <section class="view" id="v-results" hidden></section>
+  <section class="view" id="v-control" hidden></section>
+</main>
+<div class="dock" id="dock" hidden></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+"use strict";
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const round = (n, d=2) => Math.round(n * 10**d) / 10**d;
+const fmt1 = n => (n == null || isNaN(n)) ? "—" : n.toFixed(1);
+
+const DEF_CRIT = [
+  {id:"problem",  name:"Problem",                 desc:"Problem real və aktualdırmı? Kimin problemidir və nə qədər ağrılıdır?", w:15},
+  {id:"solution", name:"Həll və dəyər təklifi",   desc:"Həll problemi birbaşa aradan qaldırırmı? Mövcud alternativlərdən nə ilə fərqlənir?", w:15},
+  {id:"mvp",      name:"MVP / Demo",              desc:"Məhsul işləyirmi? Demo inandırıcıdırmı, texniki icra hansı səviyyədədir?", w:20},
+  {id:"market",   name:"Bazar və rəqabət",        desc:"Hədəf seqment və bazar həcmi aydındırmı? Rəqiblər və onlardan fərq bilinirmi?", w:10},
+  {id:"biz",      name:"Biznes model",            desc:"Necə gəlir əldə edəcək? Qiymət, satış kanalları və gəlir modeli məntiqlidirmi?", w:10},
+  {id:"traction", name:"Validasiya və traction",  desc:"İstifadəçi, pilot, müştəri müsahibəsi, niyyət məktubu — real sübut varmı?", w:10},
+  {id:"team",     name:"Komanda",                 desc:"Komanda bu işi həyata keçirə bilərmi? Bacarıqlar bir-birini tamamlayırmı?", w:10},
+  {id:"pitch",    name:"Təqdimat və sual-cavab",  desc:"3 dəqiqəyə sığdımı, aydın və strukturlu idimi? Suallara dəqiq və inamlı cavab verdimi?", w:10},
+];
+const defaultCfg = () => ({
+  event: "Ignite Demo Day", date: "29.10.2026",
+  teams: Array.from({length:8}, (_, i) => ({id:"t"+(i+1), name:"Komanda "+(i+1), project:""})),
+  jurors: Array.from({length:5}, (_, i) => ({id:"j"+(i+1), name:"Münsif "+(i+1)})),
+  criteria: DEF_CRIT.map(c => ({...c})),
+  current: null, phase: null, locked: false, revealed: false, updatedAt: 0
+});
+const normalize = d => {
+  const c = Object.assign(defaultCfg(), JSON.parse(JSON.stringify(d || {})));
+  if (!Array.isArray(c.teams)) c.teams = defaultCfg().teams;
+  if (!Array.isArray(c.jurors)) c.jurors = defaultCfg().jurors;
+  if (!Array.isArray(c.criteria) || !c.criteria.length) c.criteria = DEF_CRIT.map(x => ({...x}));
+  return c;
+};
+
+/* ---------- state ---------- */
+let cfg = defaultCfg();
+let scores = {};               // docId -> {juror, team, s, total, note, at}
+let mode = "connecting";       // connecting | db | local
+let db = null, dl = null, isOwner = false, readOnly = false;
+let view = "panel";
+let jurorId = lsGet("ignite.juror");
+let selTeam = null, lastCurrent = null;
+const drafts = {};             // teamId -> {s:{}, note:"", dirty:false, base:at}
+let formKey = "";
+let setupDirty = false, setupDraft = null, confirmWipe = false;
+
+function lsGet(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+
+const canControl = () => mode === "local" || isOwner;
+const canSeeResults = () => canControl() || !!cfg.revealed;
+const sid = (j, t) => j + "__" + t;
+
+/* ---------- scoring math ---------- */
+function calcTotal(s, crit = cfg.criteria){
+  const sw = crit.reduce((a, c) => a + (+c.w || 0), 0) || 1;
+  return round(crit.reduce((a, c) => a + (+s?.[c.id] || 0) * (+c.w || 0), 0) / sw * 10, 2);
+}
+const isComplete = (s, crit = cfg.criteria) => crit.every(c => +s?.[c.id] >= 1 && +s?.[c.id] <= 10);
+
+function stats(){
+  const crit = cfg.criteria;
+  const tie = [...crit].sort((a, b) => b.w - a.w).map(c => c.id);
+  const list = cfg.teams.map((t, i) => {
+    const rows = cfg.jurors.map(j => ({j, r: scores[sid(j.id, t.id)]})).filter(x => x.r && isComplete(x.r.s));
+    const totals = rows.map(x => calcTotal(x.r.s));
+    const n = totals.length;
+    const avg = n ? round(totals.reduce((a, b) => a + b, 0) / n, 2) : null;
+    const per = {};
+    crit.forEach(c => { per[c.id] = n ? round(rows.reduce((a, x) => a + (+x.r.s[c.id]), 0) / n, 2) : null; });
+    return {t, i, n, avg, per, min: n ? Math.min(...totals) : null, max: n ? Math.max(...totals) : null, rows, totals};
+  });
+  const ranked = [...list].sort((a, b) => {
+    if (a.avg == null && b.avg == null) return a.i - b.i;
+    if (a.avg == null) return 1; if (b.avg == null) return -1;
+    if (b.avg !== a.avg) return b.avg - a.avg;
+    for (const id of tie) { if ((b.per[id] ?? 0) !== (a.per[id] ?? 0)) return (b.per[id] ?? 0) - (a.per[id] ?? 0); }
+    return a.i - b.i;
+  });
+  let rank = 0, prev = null;
+  ranked.forEach((x, k) => { if (x.avg == null) { x.rank = null; return; } rank = k + 1; x.rank = rank; prev = x; });
+  const done = list.reduce((a, x) => a + x.n, 0);
+  return {list, ranked, done, need: cfg.teams.length * cfg.jurors.length};
+}
+
+/* ---------- storage ---------- */
+let cfgQ = Promise.resolve();
+function saveCfg(patch){
+  cfg = normalize({...cfg, ...patch, updatedAt: Date.now()});
+  renderAll();
+  const snap = JSON.parse(JSON.stringify(cfg));
+  if (mode === "local") { lsSet("ignite.cfg", snap); broadcast(); return Promise.resolve(); }
+  cfgQ = cfgQ.then(() => db.doc("config/main").set(snap)).catch(e => toast(errText(e)));
+  return cfgQ;
+}
+const scoreQ = {};
+function saveScore(id, data){
+  if (mode === "local") { scores[id] = data; lsSet("ignite.scores", scores); broadcast(); renderAll(); return Promise.resolve(); }
+  scoreQ[id] = (scoreQ[id] || Promise.resolve()).then(() => db.doc("scores/" + id).set(data));
+  return scoreQ[id];
+}
+async function wipeScores(){
+  const ids = Object.keys(scores);
+  if (mode === "local") { scores = {}; lsSet("ignite.scores", {}); broadcast(); renderAll(); return; }
+  for (const id of ids) { try { await db.doc("scores/" + id).delete(); } catch(e) { toast(errText(e)); return; } }
+}
+function errText(e){
+  const c = e && e.code;
+  if (c === "invalid_argument") { return "Yazmaq icazəniz yoxdur. Koordinatordan sizi Editor kimi dəvət etməsini istəyin."; }
+  if (c === "quota_exceeded") return "Baza dolub. Köhnə qeydləri silin.";
+  if (c === "resource_exhausted") return "Çox sürətli əməliyyat. Bir neçə saniyə gözləyib yenidən cəhd edin.";
+  return "Yadda saxlanmadı. İnterneti yoxlayıb yenidən cəhd edin.";
+}
+let bc = null; try { bc = new BroadcastChannel("ignite-jury"); } catch(e){}
+function broadcast(){ try { bc && bc.postMessage(1); } catch(e){} }
+function startLocal(){
+  mode = "local";
+  cfg = normalize(lsGet("ignite.cfg") || defaultCfg());
+  scores = lsGet("ignite.scores") || {};
+  const reload = () => { cfg = normalize(lsGet("ignite.cfg") || defaultCfg()); scores = lsGet("ignite.scores") || {}; renderAll(); };
+  window.addEventListener("storage", reload);
+  if (bc) bc.onmessage = reload;
+  renderAll();
+}
+async function connect(){
+  let c = window.claude;
+  for (let k = 0; !c && k < 15; k++) { await new Promise(r => setTimeout(r, 100)); c = window.claude; }
+  if (!c || typeof c.use !== "function") { startLocal(); return; }
+  const safe = p => Promise.resolve(p).catch(() => null);
+  const [d, u, w] = await Promise.all([safe(c.use("db")), safe(c.use("user")), safe(c.use("downloads"))]);
+  dl = w;
+  if (u) { try { isOwner = !!(await u.isOwner()); } catch(e){} try { const cw = await u.can("data.write"); if (cw === false) readOnly = true; } catch(e){} }
+  if (!d) { startLocal(); return; }
+  db = d; mode = "db";
+  db.doc("config/main").onSnapshot(s => {
+    cfg = s.exists ? normalize(s.data()) : defaultCfg();
+    renderAll();
+  }, () => toast("Canlı bağlantı kəsildi. Səhifəni yeniləyin."));
+  db.collection("scores").onSnapshot(qs => {
+    const next = {}; qs.docs.forEach(d => { next[d.id] = d.data(); });
+    scores = next; renderAll();
+  }, () => toast("Canlı bağlantı kəsildi. Səhifəni yeniləyin."));
+  renderAll();
+}
+
+/* ---------- toast ---------- */
+let tt = 0;
+function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => t.classList.remove("on"), 3200); }
+
+/* ---------- routing ---------- */
+function setView(v){
+  if (v === "control" && !canControl()) v = "panel";
+  view = v;
+  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.v === v ? "true" : "false"));
+  ["panel","results","control"].forEach(n => { $("#v-" + n).hidden = n !== v; });
+  if (v === "control") { setupDirty = false; setupDraft = null; }
+  formKey = "";
+  renderAll();
+}
+$("#tabs").addEventListener("click", e => { const b = e.target.closest("button[data-v]"); if (b) { try { history.replaceState(null, "", "#" + b.dataset.v); } catch(_){} setView(b.dataset.v); } });
+window.addEventListener("hashchange", () => setView((location.hash || "#panel").slice(1)));
+
+/* ---------- top / stage ---------- */
+function renderTop(){
+  $("#evName").textContent = cfg.event || "Demo Day";
+  const m = $("#mode");
+  m.className = "mode " + (mode === "db" ? "live" : mode === "local" ? "local" : "");
+  m.textContent = mode === "db" ? "Canlı · ortaq baza" : mode === "local" ? "Lokal · yalnız bu cihaz" : "Qoşulur…";
+  $("#tabControl").hidden = !canControl();
+  const t = cfg.teams.find(x => x.id === cfg.current);
+  const idx = t ? cfg.teams.indexOf(t) + 1 : 0;
+  $("#stageWho").innerHTML = t ? `<span class="mono" style="opacity:.6">#${idx}</span> ${esc(t.name)}${t.project ? `<small>${esc(t.project)}</small>` : ""}` : "Komanda seçilməyib";
+  tickTimer();
+}
+function tickTimer(){
+  const box = $("#timer"), p = cfg.phase;
+  if (!p || !p.startedAt) { box.hidden = true; return; }
+  box.hidden = false;
+  const left = p.dur - (Date.now() - p.startedAt) / 1000;
+  const L = Math.max(0, Math.ceil(left));
+  $("#timerT").textContent = left <= 0 ? "0:00" : `${Math.floor(L/60)}:${String(L%60).padStart(2,"0")}`;
+  $("#timerKind").textContent = p.kind === "qa" ? "Sual-cavab" : "Pitch";
+  $("#timerBar").style.width = Math.max(0, Math.min(100, left / p.dur * 100)) + "%";
+  box.classList.toggle("warn", left > 0 && left <= 30);
+  box.classList.toggle("over", left <= 0);
+  const cv = $("#ctlTimer"); if (cv) cv.textContent = $("#timerT").textContent;
+}
+setInterval(tickTimer, 250);
+
+/* ---------- juror panel ---------- */
+function renderPanel(){
+  const root = $("#v-panel"), dock = $("#dock");
+  if (jurorId && !cfg.jurors.some(j => j.id === jurorId)) { jurorId = null; lsSet("ignite.juror", null); }
+  if (!jurorId) {
+    dock.hidden = true;
+    if (formKey === "pick:" + cfg.jurors.map(j => j.name).join("|")) return;
+    formKey = "pick:" + cfg.jurors.map(j => j.name).join("|");
+    root.innerHTML = `<div class="fade">
+      <h2>Siz kimsiniz?</h2>
+      <p class="sub">Adınızı seçin. Bu cihaz sizi yadda saxlayacaq; qiymətləriniz yalnız sizin adınızla yazılacaq.</p>
+      <div class="pick">${cfg.jurors.map((j, i) => `<button data-j="${esc(j.id)}"><small class="mono">Münsif ${i+1}</small>${esc(j.name)}</button>`).join("")}</div>
+      ${readOnly ? `<p class="note" style="margin-top:16px">Bu səhifəyə yalnız baxış icazəniz var. Qiymət vermək üçün koordinator sizi <b>Editor</b> kimi əlavə etməlidir.</p>` : ""}
+    </div>`;
+    return;
+  }
+  // auto-follow the team on stage
+  if (cfg.current !== lastCurrent) {
+    lastCurrent = cfg.current;
+    if (cfg.current && !(selTeam && drafts[selTeam]?.dirty)) selTeam = cfg.current;
+  }
+  if (!selTeam || !cfg.teams.some(t => t.id === selTeam)) selTeam = cfg.current || cfg.teams[0]?.id;
+  const me = cfg.jurors.find(j => j.id === jurorId);
+  const team = cfg.teams.find(t => t.id === selTeam);
+  if (!team) { root.innerHTML = `<p class="empty">Komanda siyahısı boşdur.</p>`; dock.hidden = true; return; }
+  const saved = scores[sid(jurorId, team.id)];
+  let d = drafts[team.id];
+  if (!d || (!d.dirty && (saved?.at || 0) !== d.base)) {
+    d = drafts[team.id] = {s: {...(saved?.s || {})}, note: saved?.note || "", dirty: false, base: saved?.at || 0};
+  }
+  const critSig = cfg.criteria.map(c => c.id + c.w + c.name).join("|");
+  const key = ["form", jurorId, team.id, critSig, d.base, cfg.locked, me?.name, team.name, team.project].join("§");
+
+  // chips are cheap: always refresh
+  const chipsHtml = cfg.teams.map((t, i) => {
+    const sc = scores[sid(jurorId, t.id)]; const done = sc && isComplete(sc.s);
+    return `<button class="chip" data-t="${esc(t.id)}" aria-pressed="${t.id === team.id}">
+      <span class="n">${i+1}</span>${esc(t.name)}${t.id === cfg.current ? `<span class="live" title="Səhnədə"></span>` : ""}${done ? `<span class="done" aria-label="qiymətləndirilib">✓</span>` : ""}</button>`;
+  }).join("");
+
+  if (key !== formKey) {
+    formKey = key;
+    root.innerHTML = `
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <div class="row" style="gap:8px"><h3>Münsif</h3><b>${esc(me?.name)}</b><button class="btn ghost sm" id="chgJ">Dəyiş</button></div>
+        <span class="sub" style="margin:0">Şkala: 1–3 zəif · 4–6 orta · 7–8 güclü · 9–10 əla</span>
+      </div>
+      <div class="chips" id="chips">${chipsHtml}</div>
+      <div class="card fade" style="margin-top:12px">
+        <div class="pad teamhead" style="border-bottom:1px solid var(--line)">
+          <div style="min-width:0">
+            <h3>Komanda ${cfg.teams.indexOf(team)+1} / ${cfg.teams.length}</h3>
+            <h2 style="margin-top:4px">${esc(team.name)}</h2>
+            ${team.project ? `<p class="sub">${esc(team.project)}</p>` : ""}
+          </div>
+          <div id="fstat"></div>
+        </div>
+        <div>${cfg.criteria.map(c => `
+          <div class="crit" data-c="${esc(c.id)}">
+            <div class="ch"><b>${esc(c.name)}</b><span class="w">çəki ${c.w}%</span></div>
+            ${c.desc ? `<p>${esc(c.desc)}</p>` : ""}
+            <div class="scale" role="group" aria-label="${esc(c.name)}">${Array.from({length:10}, (_, k) => `<button data-c="${esc(c.id)}" data-v="${k+1}" aria-pressed="${+d.s[c.id] === k+1}" ${cfg.locked ? "disabled" : ""}>${k+1}</button>`).join("")}</div>
+            <div class="bands"><span>zəif</span><span>orta</span><span>güclü</span><span>əla</span></div>
+          </div>`).join("")}
+          <div class="crit">
+            <div class="ch"><b>Şərh</b><span class="w">istəyə bağlı</span></div>
+            <textarea id="note" placeholder="Komandaya rəy, güclü tərəflər, risklər…" ${cfg.locked ? "disabled" : ""}>${esc(d.note)}</textarea>
+          </div>
+        </div>
+      </div>`;
+  } else {
+    const ch = $("#chips"); if (ch) ch.innerHTML = chipsHtml;
+  }
+  renderDock();
+}
+function renderDock(){
+  const dock = $("#dock");
+  if (view !== "panel" || !jurorId) { dock.hidden = true; return; }
+  const d = drafts[selTeam]; if (!d) { dock.hidden = true; return; }
+  const filled = cfg.criteria.filter(c => +d.s[c.id] >= 1).length, all = cfg.criteria.length;
+  const saved = scores[sid(jurorId, selTeam)];
+  const total = calcTotal(d.s);
+  let st, pill;
+  if (cfg.locked) { st = "Qiymətləndirmə koordinator tərəfindən bağlanıb."; pill = `<span class="pill warn">Bağlıdır</span>`; }
+  else if (d.dirty) { st = `${filled}/${all} kriteriya doldurulub · yadda saxlanmayıb`; pill = `<span class="pill hot">Dəyişiklik var</span>`; }
+  else if (saved) { const t = new Date(saved.at); st = `Göndərilib · ${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}. Dəyişmək üçün yenidən seçin.`; pill = `<span class="pill ok">Göndərilib</span>`; }
+  else { st = `${filled}/${all} kriteriya doldurulub`; pill = `<span class="pill">Qiymətləndirilməyib</span>`; }
+  const fs = $("#fstat"); if (fs) fs.innerHTML = pill;
+  const can = !cfg.locked && d.dirty && filled === all && mode !== "connecting";
+  dock.hidden = false;
+  dock.innerHTML = `<div class="wrap">
+    <div class="tot"><b>${filled ? total.toFixed(1) : "—"}</b><span>/ 100</span></div>
+    <div class="st">${st}</div>
+    <button class="btn primary" id="submit" ${can ? "" : "disabled"}>${saved ? "Yenilə" : "Göndər"}</button></div>`;
+}
+$("#v-panel").addEventListener("click", e => {
+  const j = e.target.closest("[data-j]");
+  if (j) { jurorId = j.dataset.j; lsSet("ignite.juror", jurorId); formKey = ""; selTeam = cfg.current || null; lastCurrent = cfg.current; renderAll(); return; }
+  if (e.target.closest("#chgJ")) { jurorId = null; lsSet("ignite.juror", null); formKey = ""; renderAll(); return; }
+  const chip = e.target.closest(".chip");
+  if (chip) { selTeam = chip.dataset.t; formKey = ""; renderPanel(); window.scrollTo({top: 0, behavior: "smooth"}); return; }
+  const b = e.target.closest(".scale button");
+  if (b && !b.disabled) {
+    const d = drafts[selTeam]; d.s[b.dataset.c] = +b.dataset.v; d.dirty = true;
+    b.parentElement.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    renderDock();
+  }
+});
+$("#v-panel").addEventListener("input", e => {
+  if (e.target.id === "note") { const d = drafts[selTeam]; d.note = e.target.value; d.dirty = true; renderDock(); }
+});
+$("#dock").addEventListener("click", async e => {
+  if (!e.target.closest("#submit")) return;
+  const d = drafts[selTeam]; if (!d || cfg.locked) return;
+  if (!isComplete(d.s)) { toast("Bütün kriteriyalara bal verin."); return; }
+  const btn = $("#submit"); btn.disabled = true; btn.textContent = "Göndərilir…";
+  const s = {}; cfg.criteria.forEach(c => { s[c.id] = +d.s[c.id]; });
+  const at = Date.now();
+  const data = {juror: jurorId, team: selTeam, s, total: calcTotal(s), note: (d.note || "").slice(0, 2000), at};
+  try {
+    await saveScore(sid(jurorId, selTeam), data);
+    d.dirty = false; d.base = at;
+    if (mode === "db") scores[sid(jurorId, selTeam)] = data;
+    toast("Qiymət göndərildi ✓");
+    formKey = ""; renderAll();
+  } catch(err) { toast(errText(err)); if (err?.code === "invalid_argument") readOnly = true; renderDock(); }
+});
+
+/* ---------- results ---------- */
+let lastPos = {};
+function renderResults(){
+  const root = $("#v-results");
+  if (!canSeeResults()) {
+    root.innerHTML = `<div class="card lock fade"><div class="ic">◆</div><h2>Nəticələr hələ açıqlanmayıb</h2><p class="sub" style="max-width:46ch">Bütün komandalar qiymətləndirildikdən sonra koordinator reytinqi açacaq. Qiymətləriniz anonim olaraq ortalamaya daxil edilir.</p></div>`;
+    return;
+  }
+  // FLIP: remember positions
+  root.querySelectorAll(".lb li[data-id]").forEach(li => { lastPos[li.dataset.id] = li.getBoundingClientRect().top; });
+  const S = stats(), crit = cfg.criteria;
+  const top = S.ranked.find(x => x.rank === 1);
+  const pct = S.need ? Math.round(S.done / S.need * 100) : 0;
+  root.innerHTML = `
+    <div class="row" style="justify-content:space-between;align-items:flex-end;margin-bottom:16px">
+      <div><h2>Reytinq</h2><p class="sub">Hər komandanın balı = münsiflərin çəkili ballarının orta qiyməti (100 üzərindən). Bərabərlikdə MVP/Demo balı həlledicidir.</p></div>
+      <div class="row">
+        <button class="btn" id="xls">Excel yüklə</button>
+        <button class="btn" id="pdf">PDF yüklə</button>
+      </div>
+    </div>
+    <div class="kpis" style="margin-bottom:18px">
+      <div class="kpi"><b>${S.done}<span class="mono" style="font-size:14px;color:var(--muted)"> / ${S.need}</span></b><span>qiymət daxil olub</span></div>
+      <div class="kpi" style="flex:1;min-width:200px"><span>Ümumi irəliləyiş · ${pct}%</span><div class="progress" style="margin-top:10px"><i style="width:${pct}%"></i></div></div>
+      <div class="kpi"><b>${top ? fmt1(top.avg) : "—"}</b><span>${top ? "Lider: " + esc(top.t.name) : "Lider yoxdur"}</span></div>
+    </div>
+    <div class="grid2">
+      <div class="card" style="overflow:hidden">
+        <ol class="lb">${S.ranked.map(x => `
+          <li data-id="${esc(x.t.id)}" class="${x.rank ? "r" + x.rank : "none"}">
+            <span class="rk">${x.rank ?? "–"}</span>
+            <div class="nm"><b>${esc(x.t.name)}</b><small>${esc(x.t.project || "—")}</small>
+              <div class="track"><i style="width:${x.avg ?? 0}%"></i></div></div>
+            <div class="sc"><b>${fmt1(x.avg)}</b><small>${x.n}/${cfg.jurors.length} münsif${x.n > 1 ? ` · ${fmt1(x.min)}–${fmt1(x.max)}` : ""}</small></div>
+          </li>`).join("")}</ol>
+      </div>
+      <div class="card">
+        <div class="pad" style="padding-bottom:8px"><h3>Münsif matrisi</h3><p class="sub">Hər xana münsifin həmin komandaya verdiyi yekun bal.</p></div>
+        <div class="tbl"><table>
+          <thead><tr><th>Komanda</th>${cfg.jurors.map((j, i) => `<th class="num" title="${esc(j.name)}">M${i+1}</th>`).join("")}<th class="num">Orta</th></tr></thead>
+          <tbody>${S.list.map(x => `<tr><td>${esc(x.t.name)}</td>${cfg.jurors.map(j => { const r = scores[sid(j.id, x.t.id)]; return r && isComplete(r.s) ? `<td class="num">${calcTotal(r.s).toFixed(1)}</td>` : `<td class="num miss">—</td>`; }).join("")}<td class="num"><b>${fmt1(x.avg)}</b></td></tr>`).join("")}</tbody>
+        </table></div>
+        <div class="pad" style="padding-top:10px"><p class="sub" style="margin:0">${cfg.jurors.map((j, i) => `M${i+1} — ${esc(j.name)}`).join(" · ")}</p></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <div class="pad" style="padding-bottom:8px"><h3>Kriteriyalar üzrə orta bal (1–10)</h3></div>
+      <div class="tbl"><table>
+        <thead><tr><th>Yer</th><th>Komanda</th>${crit.map(c => `<th class="num" title="${esc(c.desc)}">${esc(c.name)}<br><span style="font-weight:500">${c.w}%</span></th>`).join("")}<th class="num">Yekun</th></tr></thead>
+        <tbody>${S.ranked.map(x => `<tr><td class="mono">${x.rank ?? "–"}</td><td>${esc(x.t.name)}</td>${crit.map(c => { const v = x.per[c.id]; return v == null ? `<td class="num miss">—</td>` : `<td class="num heat" style="--h:${Math.round(Math.max(0, v - 4) * 5)}">${v.toFixed(1)}</td>`; }).join("")}<td class="num"><b>${fmt1(x.avg)}</b></td></tr>`).join("")}</tbody>
+      </table></div>
+    </div>`;
+  // FLIP animate
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    root.querySelectorAll(".lb li[data-id]").forEach(li => {
+      const old = lastPos[li.dataset.id]; if (old == null) return;
+      const dy = old - li.getBoundingClientRect().top; if (!dy) return;
+      li.animate([{transform: `translateY(${dy}px)`}, {transform: "none"}], {duration: 520, easing: "cubic-bezier(.2,.8,.2,1)"});
+    });
+  }
+}
+$("#v-results").addEventListener("click", e => {
+  if (e.target.closest("#xls")) exportXlsx();
+  if (e.target.closest("#pdf")) exportPdf();
+});
+
+/* ---------- coordinator ---------- */
+function renderControl(){
+  const root = $("#v-control");
+  if (!canControl()) { root.innerHTML = ""; return; }
+  const S = stats();
+  const ph = cfg.phase;
+  const keepFocus = document.activeElement && root.contains(document.activeElement) && document.activeElement.matches("input,textarea,select") ? document.activeElement.id : null;
+  if (!setupDirty || !setupDraft) setupDraft = JSON.parse(JSON.stringify({event: cfg.event, date: cfg.date, teams: cfg.teams, jurors: cfg.jurors, criteria: cfg.criteria}));
+  const sd = setupDraft;
+  const wsum = sd.criteria.reduce((a, c) => a + (+c.w || 0), 0);
+  root.innerHTML = `
+    <div class="cgrid">
+      <div class="stack">
+        <div class="card pad stack">
+          <div class="row" style="justify-content:space-between"><h3>Səhnə idarəsi</h3><span class="pill ${cfg.current ? "hot" : ""}">${cfg.current ? "Canlı" : "Gözləmədə"}</span></div>
+          <div class="tgrid">${cfg.teams.map((t, i) => { const x = S.list[i]; return `<button data-cur="${esc(t.id)}" aria-pressed="${t.id === cfg.current}"><small>#${i+1} · ${x.n}/${cfg.jurors.length}</small><span>${esc(t.name)}</span></button>`; }).join("")}</div>
+          <div class="row">
+            <button class="btn" id="nextTeam">Növbəti komanda →</button>
+            <button class="btn ghost" id="clearCur" ${cfg.current ? "" : "disabled"}>Səhnəni boşalt</button>
+          </div>
+          <div class="row" style="border-top:1px solid var(--line);padding-top:14px">
+            <span class="mono" id="ctlTimer" style="font-size:24px;font-weight:700;min-width:70px">${ph ? "" : "—"}</span>
+            <button class="btn ${ph?.kind === "pitch" ? "primary" : ""}" data-ph="pitch">Pitch · 3:00</button>
+            <button class="btn ${ph?.kind === "qa" ? "primary" : ""}" data-ph="qa">Sual-cavab · 2:00</button>
+            <button class="btn ghost" data-ph="stop" ${ph ? "" : "disabled"}>Dayandır</button>
+          </div>
+        </div>
+        <div class="card pad">
+          <h3 style="margin-bottom:6px">Status</h3>
+          <div class="toggle"><div><b>Qiymətləndirməni bağla</b><small>Bağlı olanda münsiflər bal göndərə və dəyişə bilməz.</small></div><button class="sw" role="switch" aria-checked="${!!cfg.locked}" data-tg="locked" aria-label="Qiymətləndirməni bağla"></button></div>
+          <div class="toggle"><div><b>Nəticələri hamıya aç</b><small>Bağlı olanda reytinqi yalnız siz görürsünüz.</small></div><button class="sw" role="switch" aria-checked="${!!cfg.revealed}" data-tg="revealed" aria-label="Nəticələri aç"></button></div>
+          <div style="margin-top:8px"><span class="sub">Daxil olan qiymətlər: <b class="mono">${S.done}/${S.need}</b></span><div class="progress" style="margin-top:6px"><i style="width:${S.need ? S.done / S.need * 100 : 0}%"></i></div></div>
+        </div>
+        <div class="note">
+          ${mode === "db"
+            ? `<b>Münsifləri necə qoşmaq olar:</b> səhifənin yuxarısındakı <b>Paylaş</b> menyusundan hər münsifin e-poçtunu <b>Editor</b> səviyyəsində əlavə edin (ictimai link açmayın). Onlar claude.ai hesabı ilə linki öz telefonlarında açıb adlarını seçirlər. Hesabı olmayan münsifin ballarını öz cihazınızdan, onun adını seçərək daxil edə bilərsiniz.`
+            : `<b>Lokal rejim:</b> məlumat yalnız bu brauzerdə saxlanır. Hamı eyni cihazdan (məs. planşetdən) növbə ilə qiymət verə bilər — “Dəyiş” düyməsi ilə münsif seçilir.`}
+        </div>
+        <div class="card pad stack">
+          <h3>Təhlükəli zona</h3>
+          ${confirmWipe
+            ? `<div class="confirm"><span>Bütün ${Object.keys(scores).length} qiymət silinəcək. Əminsiniz?</span><button class="btn danger sm" id="wipeYes">Bəli, sil</button><button class="btn sm" id="wipeNo">Ləğv et</button></div>`
+            : `<div class="row"><button class="btn danger" id="wipe" ${Object.keys(scores).length ? "" : "disabled"}>Bütün qiymətləri sil</button><span class="sub" style="margin:0">Sınaq qiymətlərini təmizləmək üçün.</span></div>`}
+        </div>
+      </div>
+
+      <div class="card pad stack" id="setup">
+        <div class="row" style="justify-content:space-between"><h3>Quraşdırma</h3>${setupDirty ? `<span class="pill hot">Saxlanmayıb</span>` : `<span class="pill ok">Saxlanılıb</span>`}</div>
+        <div class="row" style="flex-wrap:nowrap">
+          <div style="flex:2;min-width:0"><label class="sub" for="s-ev">Tədbir</label><input type="text" id="s-ev" data-f="event" value="${esc(sd.event)}"></div>
+          <div style="flex:1;min-width:0"><label class="sub" for="s-dt">Tarix</label><input type="text" id="s-dt" data-f="date" value="${esc(sd.date)}"></div>
+        </div>
+        <div>
+          <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Komandalar (${sd.teams.length})</b><button class="btn sm" data-add="teams">+ Komanda</button></div>
+          <div class="ed teams">${sd.teams.map((t, i) => `<div class="er"><span class="ix">${i+1}</span><input type="text" id="tn-${esc(t.id)}" data-l="teams" data-i="${i}" data-k="name" value="${esc(t.name)}" placeholder="Komanda adı" aria-label="Komanda ${i+1} adı"><input class="pj" type="text" id="tp-${esc(t.id)}" data-l="teams" data-i="${i}" data-k="project" value="${esc(t.project)}" placeholder="Layihə / məhsul" aria-label="Komanda ${i+1} layihəsi"><button class="x" data-del="teams" data-i="${i}" aria-label="Sil">×</button></div>`).join("")}</div>
+        </div>
+        <div>
+          <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Münsiflər (${sd.jurors.length})</b><button class="btn sm" data-add="jurors">+ Münsif</button></div>
+          <div class="ed jur">${sd.jurors.map((j, i) => `<div class="er"><span class="ix">M${i+1}</span><input type="text" id="jn-${esc(j.id)}" data-l="jurors" data-i="${i}" data-k="name" value="${esc(j.name)}" placeholder="Ad Soyad" aria-label="Münsif ${i+1}"><button class="x" data-del="jurors" data-i="${i}" aria-label="Sil">×</button></div>`).join("")}</div>
+        </div>
+        <div>
+          <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Kriteriyalar</b><span class="sum ${wsum === 100 ? "" : "bad"}">Çəki cəmi: ${wsum}%</span></div>
+          <div class="ed cr">${sd.criteria.map((c, i) => `<div class="er"><input type="text" id="cn-${esc(c.id)}" data-l="criteria" data-i="${i}" data-k="name" value="${esc(c.name)}" aria-label="Kriteriya adı"><input class="cd" type="text" id="cd-${esc(c.id)}" data-l="criteria" data-i="${i}" data-k="desc" value="${esc(c.desc)}" placeholder="Münsif üçün izah" aria-label="İzah"><input type="number" min="0" max="100" id="cw-${esc(c.id)}" data-l="criteria" data-i="${i}" data-k="w" value="${c.w}" aria-label="Çəki %"><button class="x" data-del="criteria" data-i="${i}" aria-label="Sil">×</button></div>`).join("")}</div>
+          <div class="row" style="margin-top:8px"><button class="btn sm" data-add="criteria">+ Kriteriya</button><button class="btn sm ghost" id="resetCrit">Standart kriteriyalar</button></div>
+        </div>
+        ${S.done ? `<p class="note" style="margin:0">Artıq ${S.done} qiymət var. Komanda və ya münsif silsəniz, onların qiymətləri reytinqə daxil olmayacaq. Kriteriya dəyişsə, köhnə qiymətlər natamam sayıla bilər.</p>` : ""}
+        <div class="row"><button class="btn primary" id="saveSetup" ${setupDirty && wsum > 0 ? "" : "disabled"}>Yadda saxla</button><button class="btn ghost" id="discard" ${setupDirty ? "" : "disabled"}>Ləğv et</button></div>
+      </div>
+    </div>`;
+  if (keepFocus) { const el = document.getElementById(keepFocus); if (el) { el.focus(); try { const n = el.value.length; el.setSelectionRange && el.type !== "number" && el.setSelectionRange(n, n); } catch(e){} } }
+  tickTimer();
+}
+const ctl = $("#v-control");
+ctl.addEventListener("input", e => {
+  const el = e.target; if (!setupDraft) return;
+  if (el.dataset.f) setupDraft[el.dataset.f] = el.value;
+  else if (el.dataset.l) { const v = el.dataset.k === "w" ? Math.max(0, Math.min(100, parseInt(el.value || "0", 10) || 0)) : el.value; setupDraft[el.dataset.l][+el.dataset.i][el.dataset.k] = v; }
+  else return;
+  if (!setupDirty) { setupDirty = true; renderControl(); }
+  else { const pill = $("#setup .pill"); const sum = $("#setup .sum"); const w = setupDraft.criteria.reduce((a, c) => a + (+c.w || 0), 0); if (sum) { sum.textContent = `Çəki cəmi: ${w}%`; sum.classList.toggle("bad", w !== 100); } $("#saveSetup").disabled = !(w > 0); }
+});
+ctl.addEventListener("click", async e => {
+  const t = e.target;
+  const cur = t.closest("[data-cur]");
+  if (cur) { const id = cur.dataset.cur; saveCfg({current: id === cfg.current ? cfg.current : id, phase: id === cfg.current ? cfg.phase : null}); return; }
+  if (t.closest("#nextTeam")) { const i = cfg.teams.findIndex(x => x.id === cfg.current); const nx = cfg.teams[(i + 1) % cfg.teams.length]; if (nx) saveCfg({current: nx.id, phase: null}); return; }
+  if (t.closest("#clearCur")) { saveCfg({current: null, phase: null}); return; }
+  const ph = t.closest("[data-ph]");
+  if (ph) { const k = ph.dataset.ph; saveCfg({phase: k === "stop" ? null : {kind: k, startedAt: Date.now(), dur: k === "qa" ? 120 : 180}}); return; }
+  const tg = t.closest("[data-tg]");
+  if (tg) { saveCfg({[tg.dataset.tg]: !cfg[tg.dataset.tg]}); return; }
+  if (t.closest("#wipe")) { confirmWipe = true; renderControl(); return; }
+  if (t.closest("#wipeNo")) { confirmWipe = false; renderControl(); return; }
+  if (t.closest("#wipeYes")) { confirmWipe = false; await wipeScores(); toast("Bütün qiymətlər silindi"); renderControl(); return; }
+  const add = t.closest("[data-add]");
+  if (add) {
+    const L = add.dataset.add, arr = setupDraft[L], uid = Math.random().toString(36).slice(2, 7);
+    if (L === "teams") arr.push({id: "t" + uid, name: "Komanda " + (arr.length + 1), project: ""});
+    if (L === "jurors") arr.push({id: "j" + uid, name: "Münsif " + (arr.length + 1)});
+    if (L === "criteria") arr.push({id: "c" + uid, name: "Yeni kriteriya", desc: "", w: 0});
+    setupDirty = true; renderControl(); return;
+  }
+  const del = t.closest("[data-del]");
+  if (del) { const L = del.dataset.del; if (setupDraft[L].length <= 1) { toast("Ən azı bir sətir qalmalıdır."); return; } setupDraft[L].splice(+del.dataset.i, 1); setupDirty = true; renderControl(); return; }
+  if (t.closest("#resetCrit")) { setupDraft.criteria = DEF_CRIT.map(c => ({...c})); setupDirty = true; renderControl(); return; }
+  if (t.closest("#discard")) { setupDirty = false; setupDraft = null; renderControl(); return; }
+  if (t.closest("#saveSetup")) {
+    const sd = setupDraft;
+    sd.teams.forEach((x, i) => { x.name = (x.name || "").trim() || "Komanda " + (i + 1); x.project = (x.project || "").trim(); });
+    sd.jurors.forEach((x, i) => { x.name = (x.name || "").trim() || "Münsif " + (i + 1); });
+    sd.criteria.forEach(x => { x.name = (x.name || "").trim() || "Kriteriya"; x.w = +x.w || 0; });
+    setupDirty = false;
+    await saveCfg({event: sd.event.trim() || "Ignite Demo Day", date: sd.date.trim(), teams: sd.teams, jurors: sd.jurors, criteria: sd.criteria});
+    setupDraft = null; toast("Quraşdırma yadda saxlanıldı"); renderControl();
+  }
+});
+
+/* ---------- exports ---------- */
+const libs = {};
+function loadScript(src){
+  return libs[src] || (libs[src] = new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => { delete libs[src]; rej(new Error("load")); }; document.head.appendChild(s); }));
+}
+const fileBase = () => (cfg.event || "Demo Day").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "") || "Demo_Day";
+async function offer(filename, data){
+  if (!dl) { toast("Bu görünüşdə fayl yükləmək mümkün deyil. Səhifəni claude.ai-da açın."); return; }
+  try { await dl.save({filename, data}); toast("Fayl hazırdır"); }
+  catch(e) { if (e?.code === "declined") return; if (e?.code === "rate_limited") toast("Bir az gözləyib yenidən cəhd edin."); else toast("Fayl yüklənmədi."); }
+}
+async function exportXlsx(){
+  const b = $("#xls"); if (b) { b.disabled = true; b.textContent = "Hazırlanır…"; }
+  try {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+    const X = window.XLSX, S = stats(), crit = cfg.criteria, wb = X.utils.book_new();
+    const r2 = v => v == null ? "" : round(v, 2);
+    const s1 = [[cfg.event + " — Yekun reytinq", "", cfg.date], [],
+      ["Yer", "Komanda", "Layihə", "Orta bal (100)", "Münsif sayı", "Min", "Max", ...crit.map(c => `${c.name} (${c.w}%)`)],
+      ...S.ranked.map(x => [x.rank ?? "", x.t.name, x.t.project, r2(x.avg), x.n, r2(x.min), r2(x.max), ...crit.map(c => r2(x.per[c.id]))])];
+    const w1 = X.utils.aoa_to_sheet(s1); w1["!cols"] = [{wch:6},{wch:24},{wch:28},{wch:14},{wch:12},{wch:8},{wch:8},...crit.map(() => ({wch:16}))];
+    X.utils.book_append_sheet(wb, w1, "Reytinq");
+    const s2 = [["Komanda", ...cfg.jurors.map(j => j.name), "Orta"],
+      ...S.list.map(x => [x.t.name, ...cfg.jurors.map(j => { const r = scores[sid(j.id, x.t.id)]; return r && isComplete(r.s) ? calcTotal(r.s) : ""; }), r2(x.avg)])];
+    const w2 = X.utils.aoa_to_sheet(s2); w2["!cols"] = [{wch:24}, ...cfg.jurors.map(() => ({wch:16})), {wch:10}];
+    X.utils.book_append_sheet(wb, w2, "Münsif matrisi");
+    const s3 = [["Münsif", "Komanda", ...crit.map(c => c.name), "Yekun (100)", "Şərh", "Vaxt"]];
+    cfg.teams.forEach(t => cfg.jurors.forEach(j => { const r = scores[sid(j.id, t.id)]; if (r) s3.push([j.name, t.name, ...crit.map(c => r.s?.[c.id] ?? ""), calcTotal(r.s), r.note || "", new Date(r.at).toLocaleString("az-AZ")]); }));
+    const w3 = X.utils.aoa_to_sheet(s3); w3["!cols"] = [{wch:20},{wch:22},...crit.map(() => ({wch:12})),{wch:11},{wch:50},{wch:18}];
+    X.utils.book_append_sheet(wb, w3, "Bütün qiymətlər");
+    const w4 = X.utils.aoa_to_sheet([["Kriteriya", "İzah", "Çəki %"], ...crit.map(c => [c.name, c.desc, c.w]), [], ["Şkala: 1–10. Yekun bal = Σ(bal × çəki) / Σ çəki × 10. Komandanın balı = münsiflərin yekun ballarının ortası."]]);
+    w4["!cols"] = [{wch:26},{wch:80},{wch:8}];
+    X.utils.book_append_sheet(wb, w4, "Kriteriyalar");
+    const out = X.write(wb, {bookType: "xlsx", type: "array"});
+    await offer(fileBase() + "_netice.xlsx", out);
+  } catch(e) { toast("Excel hazırlanmadı. İnterneti yoxlayın."); }
+  finally { if (b) { b.disabled = false; b.textContent = "Excel yüklə"; } }
+}
+
+async function exportPdf(){
+  const b = $("#pdf"); if (b) { b.disabled = true; b.textContent = "Hazırlanır…"; }
+  try {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+    try { await Promise.all(["700 40px Unbounded", "500 40px Unbounded", "400 20px Manrope", "600 20px Manrope", "700 20px Manrope", "700 20px 'JetBrains Mono'"].map(f => document.fonts.load(f, "Əə"))); } catch(e){}
+    const S = stats(), crit = cfg.criteria;
+    const W = 1240, H = 1754, M = 96, CW = W - 2 * M;
+    const C = {ink:"#141722", mute:"#5D6376", line:"#DADEE8", head:"#F2F3F7", acc:"#DD4F18", gold:"#B07F06", soft:"#FBE4D9"};
+    const pages = []; let ctx, y;
+    const F = (w, s, fam) => `${w} ${s}px ${fam === "d" ? "Unbounded, Manrope, sans-serif" : fam === "m" ? "'JetBrains Mono', monospace" : "Manrope, sans-serif"}`;
+    function page(){
+      const cv = document.createElement("canvas"); cv.width = W; cv.height = H; ctx = cv.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H); ctx.textBaseline = "alphabetic"; pages.push(cv); y = M;
+      ctx.fillStyle = C.acc; ctx.fillRect(0, 0, W, 10);
+    }
+    function fit(txt, w){ txt = String(txt ?? ""); if (ctx.measureText(txt).width <= w) return txt; while (txt.length && ctx.measureText(txt + "…").width > w) txt = txt.slice(0, -1); return txt + "…"; }
+    function wrap(txt, w){ const out = []; String(txt || "").split(/\s+/).forEach(word => { const l = out.length ? out[out.length - 1] + " " + word : word; if (out.length && ctx.measureText(l).width <= w) out[out.length - 1] = l; else out.push(word); }); return out; }
+    function need(h){ if (y + h > H - M - 20) page(); }
+    function title(t, sub){
+      need(110); ctx.fillStyle = C.ink; ctx.font = F(500, 30, "d"); ctx.fillText(t, M, y + 30);
+      if (sub) { ctx.fillStyle = C.mute; ctx.font = F(400, 19); ctx.fillText(sub, M, y + 62); y += 86; } else y += 52;
+    }
+    function table(cols, rows, o = {}){
+      const rh = o.rh || 46, pad = 12;
+      ctx.font = F(700, 15);
+      const hl = cols.map(c => wrap(c.t, c.w - 2 * pad)); const hh = Math.max(...hl.map(l => l.length)) * 20 + 22;
+      const head = () => { ctx.fillStyle = C.head; ctx.fillRect(M, y, CW, hh); ctx.fillStyle = C.mute; ctx.font = F(700, 15); let x = M;
+        cols.forEach((c, i) => { hl[i].forEach((ln, k) => { const tw = ctx.measureText(ln).width; ctx.fillText(ln, c.a === "r" ? x + c.w - pad - tw : x + pad, y + 28 + k * 20); }); x += c.w; }); y += hh; };
+      need(hh + rh * 2); head();
+      rows.forEach((r, ri) => {
+        if (y + rh > H - M - 20) { page(); head(); }
+        if (o.hl && o.hl(ri)) { ctx.fillStyle = C.soft; ctx.fillRect(M, y, CW, rh); }
+        let x = M;
+        cols.forEach((c, i) => { const v = r[i] ?? ""; ctx.fillStyle = (c.color && c.color(v, ri)) || C.ink; ctx.font = c.f || F(500, 18); const s = fit(v, c.w - 2 * pad); const tw = ctx.measureText(s).width; ctx.fillText(s, c.a === "r" ? x + c.w - pad - tw : x + pad, y + rh / 2 + 7); x += c.w; });
+        ctx.fillStyle = C.line; ctx.fillRect(M, y + rh - 1, CW, 1); y += rh;
+      });
+      y += 34;
+    }
+    page();
+    ctx.fillStyle = C.mute; ctx.font = F(700, 16); ctx.fillText("IGNITE · DEMO DAY PROTOKOLU", M, y + 14);
+    ctx.fillStyle = C.ink; ctx.font = F(700, 44, "d"); ctx.fillText(fit(cfg.event, CW), M, y + 80);
+    ctx.fillStyle = C.mute; ctx.font = F(400, 20);
+    ctx.fillText(`${cfg.date || ""}  ·  ${cfg.teams.length} komanda  ·  ${cfg.jurors.length} münsif  ·  ${S.done}/${S.need} qiymət`, M, y + 118);
+    y += 170;
+    const winner = S.ranked.find(x => x.rank === 1);
+    if (winner) {
+      ctx.fillStyle = C.soft; ctx.fillRect(M, y, CW, 120); ctx.fillStyle = C.acc; ctx.fillRect(M, y, 8, 120);
+      ctx.fillStyle = C.mute; ctx.font = F(700, 15); ctx.fillText("1-Cİ YER", M + 34, y + 38);
+      ctx.fillStyle = C.ink; ctx.font = F(700, 32, "d"); ctx.fillText(fit(winner.t.name, CW - 300), M + 34, y + 84);
+      ctx.font = F(700, 52, "m"); const s = winner.avg.toFixed(1); ctx.fillText(s, M + CW - 34 - ctx.measureText(s).width, y + 82);
+      y += 160;
+    }
+    title("Yekun reytinq", "Bal = münsiflərin çəkili yekun ballarının orta qiyməti (100 üzərindən)");
+    table([{t:"Yer", w:80, f:F(700, 20, "d"), color:(v) => v === 1 ? C.gold : C.ink}, {t:"Komanda", w:300, f:F(700, 18)}, {t:"Layihə", w:320, color:() => C.mute}, {t:"Orta bal", w:140, a:"r", f:F(700, 20, "m")}, {t:"Münsif", w:100, a:"r", f:F(500, 17, "m")}, {t:"Min–Max", w:CW - 940, a:"r", f:F(500, 16, "m"), color:() => C.mute}],
+      S.ranked.map(x => [x.rank ?? "–", x.t.name, x.t.project || "—", fmt1(x.avg), `${x.n}/${cfg.jurors.length}`, x.n ? `${fmt1(x.min)}–${fmt1(x.max)}` : "—"]), {rh: 54, hl: i => i === 0 && S.ranked[0].rank === 1});
+    const jw = Math.floor((CW - 300 - 130) / Math.max(1, cfg.jurors.length));
+    title("Münsif matrisi", "Hər xana münsifin komandaya verdiyi yekun bal");
+    table([{t:"Komanda", w:300, f:F(600, 18)}, ...cfg.jurors.map(j => ({t:j.name, w:jw, a:"r", f:F(500, 17, "m")})), {t:"Orta", w:CW - 300 - jw * cfg.jurors.length, a:"r", f:F(700, 18, "m")}],
+      S.list.map(x => [x.t.name, ...cfg.jurors.map(j => { const r = scores[sid(j.id, x.t.id)]; return r && isComplete(r.s) ? calcTotal(r.s).toFixed(1) : "—"; }), fmt1(x.avg)]));
+    const cw = Math.floor((CW - 260 - 110) / Math.max(1, crit.length));
+    title("Kriteriyalar üzrə orta bal", "1–10 şkalası; sütun başlığında kriteriyanın çəkisi");
+    table([{t:"Komanda", w:260, f:F(600, 17)}, ...crit.map(c => ({t:`${c.name} ${c.w}%`, w:cw, a:"r", f:F(500, 16, "m")})), {t:"Yekun", w:CW - 260 - cw * crit.length, a:"r", f:F(700, 17, "m")}],
+      S.ranked.map(x => [x.t.name, ...crit.map(c => x.per[c.id] == null ? "—" : x.per[c.id].toFixed(1)), fmt1(x.avg)]), {rh: 44});
+    // comments
+    const notes = []; cfg.teams.forEach(t => cfg.jurors.forEach(j => { const r = scores[sid(j.id, t.id)]; if (r && r.note && r.note.trim()) notes.push({t, j, n: r.note.trim()}); }));
+    if (notes.length) {
+      title("Münsiflərin şərhləri");
+      let lastT = null;
+      notes.forEach(o => {
+        ctx.font = F(400, 17); const lines = wrap(o.n, CW - 40);
+        need(lines.length * 26 + (o.t !== lastT ? 70 : 40));
+        if (o.t !== lastT) { ctx.fillStyle = C.ink; ctx.font = F(700, 20); ctx.fillText(o.t.name, M, y + 22); y += 38; lastT = o.t; }
+        ctx.fillStyle = C.acc; ctx.font = F(700, 14); ctx.fillText(o.j.name.toUpperCase(), M + 20, y + 14); y += 24;
+        ctx.fillStyle = C.ink; ctx.font = F(400, 17); lines.forEach(l => { need(26); ctx.fillText(l, M + 20, y + 18); y += 26; }); y += 14;
+      });
+      y += 20;
+    }
+    // signatures
+    need(80 + Math.ceil(cfg.jurors.length / 2) * 90);
+    title("Münsiflərin imzası");
+    cfg.jurors.forEach((j, i) => {
+      const col = i % 2, x = M + col * (CW / 2 + 20), yy = y + Math.floor(i / 2) * 90;
+      ctx.fillStyle = C.line; ctx.fillRect(x, yy + 44, CW / 2 - 40, 2);
+      ctx.fillStyle = C.ink; ctx.font = F(600, 17); ctx.fillText(j.name, x, yy + 72);
+    });
+    pages.forEach((cv, i) => { const c2 = cv.getContext("2d"); c2.fillStyle = C.mute; c2.font = F(500, 14); c2.fillText(`${cfg.event} · ${cfg.date || ""}`, M, H - 50); const s = `${i + 1} / ${pages.length}`; c2.fillText(s, W - M - c2.measureText(s).width, H - 50); });
+    const pdf = new window.jspdf.jsPDF({unit: "pt", format: "a4", compress: true});
+    pages.forEach((cv, i) => { if (i) pdf.addPage(); pdf.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 595.28, 841.89); });
+    await offer(fileBase() + "_protokol.pdf", pdf.output("arraybuffer"));
+  } catch(e) { toast("PDF hazırlanmadı. İnterneti yoxlayın."); }
+  finally { if (b) { b.disabled = false; b.textContent = "PDF yüklə"; } }
+}
+
+/* ---------- boot ---------- */
+function renderAll(){
+  renderTop();
+  if (view === "panel") renderPanel(); else $("#dock").hidden = true;
+  if (view === "results") renderResults();
+  if (view === "control") renderControl();
+}
+const h = (location.hash || "").slice(1);
+view = ["panel","results","control"].includes(h) ? h : "panel";
+document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.v === view ? "true" : "false"));
+["panel","results","control"].forEach(n => { $("#v-" + n).hidden = n !== view; });
+renderAll();
+connect().then(() => { if (view === "control" && !canControl()) setView("panel"); });
+})();
+</script>
+
+</body></html>

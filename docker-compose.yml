@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    # Only the reverse proxy talks to the app. For a quick LAN test without a proxy,
+    # change to "3000:3000" and set TRUST_PROXY=false in .env.
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  # Automatic HTTPS. Start with: docker compose --profile caddy up -d
+  caddy:
+    image: caddy:2.8
+    profiles: ["caddy"]
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

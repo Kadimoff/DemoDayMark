@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="az">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Daxil ol · Ignite Demo Day</title>
+<link rel="icon" href="/favicon.svg">
+<script>try{var t=localStorage.getItem("ij.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<script type="module" src="/src/login.ts"></script>
+</head>
+<body>
+<main class="login-wrap">
+  <div class="login fade">
+    <div class="mark">
+      <svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="var(--stage-bg)"/><path d="M33 9c7 9 13 15 13 26a14 14 0 0 1-28 0c0-6 3-11 7-14 0 5 2 9 6 10-1-8 0-15 2-22z" fill="var(--accent)"/></svg>
+      <div><b>IGN<i>I</i>TE</b><span>Demo Day · münsif sistemi</span></div>
+    </div>
+    <div class="note" id="already" hidden style="margin-bottom:12px"></div>
+    <div class="card pad">
+      <form id="form" novalidate>
+        <div><label class="f" for="u">İstifadəçi adı</label><input type="text" id="u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></div>
+        <div><label class="f" for="p">Şifrə</label><input type="password" id="p" name="password" autocomplete="current-password" required></div>
+        <p class="err" id="err" role="alert"></p>
+        <button class="btn primary" id="go" type="submit">Daxil ol</button>
+      </form>
+    </div>
+    <div class="foot"><span>Giriş məlumatlarını koordinator verir.</span><div id="themeSw"></div></div>
+  </div>
+</main>
+</body>
+</html>

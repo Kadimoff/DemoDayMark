@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>4D Pitch Deck Taymeri — 3 Dəq Təqdimat + 2 Dəq Sual-Cavab</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  
+  <!-- Tailwind CSS CDN (İnternet olduqda) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts (İnternet olduqda) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* ====================================================
+       OFFLINE / STANDALONE CSS FALLBACK & UTILITIES
+       ==================================================== */
+    :root {
+      --primary-glow: #22d3ee;
+      --secondary-glow: #10b981;
+      --ring-color: #06b6d4;
+      --text-glow: rgba(34, 211, 238, 0.55);
+      --bg-core: #030b1c;
+    }
+
+    /* Fallback utility classes */
+    .fixed { position: fixed; }
+    .inset-0 { top: 0; right: 0; bottom: 0; left: 0; }
+    .w-full { width: 100%; }
+    .h-full { height: 100%; }
+    .top-3 { top: 0.75rem; }
+    .bottom-3 { bottom: 0.75rem; }
+    .left-1\/2 { left: 50%; }
+    .-translate-x-1\/2 { transform: translateX(-50%); }
+    .z-0 { z-index: 0; }
+    .z-10 { z-index: 10; }
+    .z-30 { z-index: 30; }
+    .flex { display: flex; }
+    .hidden { display: none !important; }
+    .items-center { align-items: center; }
+    .justify-center { justify-content: center; }
+    .flex-col { flex-direction: column; }
+    .gap-0\.5 { gap: 0.125rem; }
+    .gap-1\.5 { gap: 0.375rem; }
+    .gap-3 { gap: 0.75rem; }
+    .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+    .px-2\.5 { padding-left: 0.625rem; padding-right: 0.625rem; }
+    .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+    .px-3\.5 { padding-left: 0.875rem; padding-right: 0.875rem; }
+    .py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+    .py-1\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
+    .p-0\.5 { padding: 0.125rem; }
+    .mt-2 { margin-top: 0.5rem; }
+    .mt-3 { margin-top: 0.75rem; }
+    .mb-2 { margin-bottom: 0.5rem; }
+    .pl-2\.5 { padding-left: 0.625rem; }
+    .rounded-full { border-radius: 9999px; }
+    .rounded-l-full { border-top-left-radius: 9999px; border-bottom-left-radius: 9999px; }
+    .rounded-r-full { border-top-right-radius: 9999px; border-bottom-right-radius: 9999px; }
+    .overflow-hidden { overflow: hidden; }
+    .pointer-events-none { pointer-events: none; }
+    .text-center { text-align: center; }
+    .uppercase { text-transform: uppercase; }
+    .line-through { text-decoration: line-through; }
+    .w-36 { width: 9rem; }
+    .w-40 { width: 10rem; }
+    .w-3\.5 { width: 0.875rem; }
+    .h-3\.5 { height: 0.875rem; }
+    .w-3 { width: 0.75rem; }
+    .h-3 { height: 0.75rem; }
+    .w-3\/5 { width: 60%; }
+    .w-2\/5 { width: 40%; }
+    .h-1\.5 { height: 0.375rem; }
+    .text-xs { font-size: 0.75rem; line-height: 1rem; }
+    .font-bold { font-weight: 700; }
+    .font-extrabold { font-weight: 800; }
+    .font-black { font-weight: 900; }
+    .font-semibold { font-weight: 600; }
+    .font-mono { font-family: 'JetBrains Mono', monospace, ui-monospace; }
+    .bg-transparent { background-color: transparent; }
+    .bg-white { background-color: #ffffff; }
+    .bg-cyan-400 { background-color: #22d3ee; }
+    .bg-red-500 { background-color: #ef4444; }
+    .bg-slate-950\/65 { background-color: rgba(2, 6, 23, 0.65); }
+    .bg-slate-950\/75 { background-color: rgba(2, 6, 23, 0.75); }
+    .bg-slate-950\/80 { background-color: rgba(2, 6, 23, 0.8); }
+    .bg-slate-900\/70 { background-color: rgba(15, 23, 42, 0.7); }
+    .bg-white\/5 { background-color: rgba(255, 255, 255, 0.05); }
+    .bg-white\/10 { background-color: rgba(255, 255, 255, 0.1); }
+    .bg-cyan-500\/20 { background-color: rgba(6, 182, 212, 0.2); }
+    .border { border-width: 1px; border-style: solid; }
+    .border-b { border-bottom-width: 1px; border-bottom-style: solid; }
+    .border-l { border-left-width: 1px; border-left-style: solid; }
+    .border-transparent { border-color: transparent; }
+    .border-white\/10 { border-color: rgba(255, 255, 255, 0.1); }
+    .border-white\/15 { border-color: rgba(255, 255, 255, 0.15); }
+    .border-white\/5 { border-color: rgba(255, 255, 255, 0.05); }
+    .border-cyan-400\/30 { border-color: rgba(34, 211, 238, 0.3); }
+    .border-cyan-400\/40 { border-color: rgba(34, 211, 238, 0.4); }
+    .backdrop-blur-md { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    .backdrop-blur-xl { backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+    .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3); }
+    .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+    .text-slate-100 { color: #f1f5f9; }
+    .text-slate-300 { color: #cbd5e1; }
+    .text-slate-400 { color: #94a3b8; }
+    .text-slate-500 { color: #64748b; }
+    .text-cyan-300 { color: #67e8f9; }
+    .text-cyan-400 { color: #22d3ee; }
+    .text-rose-200 { color: #fecdd3; }
+    .text-amber-200 { color: #fde68a; }
+    .text-red-900 { color: #7f1d1d; }
+
+    /* ====================================================
+       PHASE THEMES & ANIMATIONS
+       ==================================================== */
+    body.phase-pitch {
+      --primary-glow: #22d3ee;
+      --secondary-glow: #10b981;
+      --ring-color: #22d3ee;
+      --text-glow: rgba(34, 211, 238, 0.6);
+      background: radial-gradient(circle at 50% 50%, #08203e 0%, #030914 65%, #010308 100%);
+    }
+
+    body.phase-qa {
+      --primary-glow: #ef4444;
+      --secondary-glow: #f97316;
+      --ring-color: #ff2a2a;
+      --text-glow: rgba(239, 68, 68, 0.8);
+      background: radial-gradient(circle at 50% 50%, #690b0b 0%, #2a0404 60%, #0d0101 100%);
+      animation: magmaPulse 2.2s ease-in-out infinite alternate;
+    }
+
+    body.phase-done {
+      --primary-glow: #ffffff;
+      --secondary-glow: #ef4444;
+      --ring-color: #ffffff;
+      --text-glow: rgba(255, 255, 255, 0.95);
+      background: radial-gradient(circle at 50% 50%, #b91c1c 0%, #450a0a 70%, #090101 100%);
+      animation: alarmStrobe 0.55s ease-in-out infinite alternate;
+    }
+
+    @keyframes magmaPulse {
+      0% {
+        box-shadow: inset 0 0 90px rgba(220, 38, 38, 0.35);
+        filter: saturate(1);
+      }
+      100% {
+        box-shadow: inset 0 0 210px rgba(239, 68, 68, 0.75);
+        filter: saturate(1.3);
+      }
+    }
+
+    @keyframes alarmStrobe {
+      0% {
+        background: radial-gradient(circle at 50% 50%, #dc2626 0%, #7f1d1d 65%, #1f0303 100%);
+        box-shadow: inset 0 0 240px rgba(255, 255, 255, 0.45);
+      }
+      100% {
+        background: radial-gradient(circle at 50% 50%, #111827 0%, #030712 80%);
+        box-shadow: inset 0 0 120px rgba(239, 68, 68, 0.65);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #f8fafc;
+      transition: background 1s ease;
+    }
+
+    /* 4D Perspective Stage */
+    .stage-4d {
+      perspective: 1200px;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 10;
+    }
+
+    /* Holographic Core that tilts in 3D with mouse + continuous 4D float */
+    .holo-core {
+      position: relative;
+      width: min(78vmin, 700px);
+      height: min(78vmin, 700px);
+      transform-style: preserve-3d;
+      transition: transform 0.15s ease-out;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 4D Gyroscopic / Tesseract Orbiting Rings */
+    .gyro-ring {
+      position: absolute;
+      inset: -4%;
+      border-radius: 50%;
+      pointer-events: none;
+      transform-style: preserve-3d;
+      transition: border-color 0.8s ease, box-shadow 0.8s ease;
+    }
+
+    .gyro-ring-1 {
+      border: 2px dashed var(--primary-glow);
+      opacity: 0.38;
+      box-shadow: 0 0 35px var(--text-glow), inset 0 0 25px var(--text-glow);
+      animation: orbit4D_1 18s linear infinite;
+    }
+
+    .gyro-ring-2 {
+      inset: -8%;
+      border: 1.5px solid var(--secondary-glow);
+      border-left-color: transparent;
+      border-right-color: transparent;
+      opacity: 0.45;
+      box-shadow: 0 0 40px var(--text-glow);
+      animation: orbit4D_2 14s linear infinite reverse;
+    }
+
+    .gyro-ring-3 {
+      inset: 3%;
+      border: 2px dotted var(--primary-glow);
+      border-top-color: transparent;
+      opacity: 0.35;
+      animation: orbit4D_3 22s ease-in-out infinite alternate;
+    }
+
+    .gyro-ring-4 {
+      inset: -12%;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-top: 2px solid var(--primary-glow);
+      border-bottom: 2px solid var(--secondary-glow);
+      opacity: 0.3;
+      animation: orbit4D_4 26s linear infinite;
+    }
+
+    /* Speed up 4D rings in Q&A & Done phases */
+    body.phase-qa .gyro-ring-1 { animation-duration: 8s; opacity: 0.65; }
+    body.phase-qa .gyro-ring-2 { animation-duration: 6s; opacity: 0.7; }
+    body.phase-qa .gyro-ring-3 { animation-duration: 9s; opacity: 0.55; }
+    body.phase-qa .gyro-ring-4 { animation-duration: 11s; opacity: 0.5; }
+
+    body.phase-done .gyro-ring-1 { animation-duration: 3s; opacity: 0.9; }
+    body.phase-done .gyro-ring-2 { animation-duration: 2.5s; opacity: 0.9; }
+
+    @keyframes orbit4D_1 {
+      0%   { transform: rotateX(62deg) rotateY(15deg) rotateZ(0deg) translateZ(15px); }
+      50%  { transform: rotateX(-55deg) rotateY(45deg) rotateZ(180deg) translateZ(-15px); }
+      100% { transform: rotateX(62deg) rotateY(15deg) rotateZ(360deg) translateZ(15px); }
+    }
+
+    @keyframes orbit4D_2 {
+      0%   { transform: rotateY(68deg) rotateX(20deg) rotateZ(0deg) scale3d(1, 1, 1); }
+      50%  { transform: rotateY(-60deg) rotateX(-35deg) rotateZ(180deg) scale3d(1.04, 1.04, 1); }
+      100% { transform: rotateY(68deg) rotateX(20deg) rotateZ(360deg) scale3d(1, 1, 1); }
+    }
+
+    @keyframes orbit4D_3 {
+      0%   { transform: rotateX(40deg) rotateY(-50deg) rotateZ(0deg) translateZ(35px); }
+      100% { transform: rotateX(-45deg) rotateY(55deg) rotateZ(240deg) translateZ(-35px); }
+    }
+
+    @keyframes orbit4D_4 {
+      0%   { transform: rotateZ(0deg) rotateX(28deg) rotateY(-28deg); }
+      50%  { transform: rotateZ(180deg) rotateX(-28deg) rotateY(28deg); }
+      100% { transform: rotateZ(360deg) rotateX(28deg) rotateY(-28deg); }
+    }
+
+    /* Main SVG HUD Container */
+    .hud-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      transform: translateZ(40px);
+      filter: drop-shadow(0 0 28px var(--text-glow));
+    }
+
+    /* Rotating Orbital Edge Text */
+    .orbital-text-spinner {
+      transform-origin: 250px 250px;
+      animation: spinRimText 34s linear infinite;
+    }
+
+    body.phase-qa .orbital-text-spinner {
+      animation-duration: 18s;
+    }
+
+    body.phase-done .orbital-text-spinner {
+      animation-duration: 9s;
+    }
+
+    @keyframes spinRimText {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    /* Top Rim Curved Banner Text */
+    .edge-banner-text {
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      fill: #ffffff;
+      filter: drop-shadow(0 0 10px var(--primary-glow));
+      transition: fill 0.5s ease;
+    }
+
+    body.phase-qa .edge-banner-text {
+      fill: #fef08a;
+      filter: drop-shadow(0 0 14px #ef4444);
+    }
+
+    .orbital-rim-text {
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-weight: 800;
+      font-size: 11.2px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      fill: var(--primary-glow);
+      opacity: 0.88;
+      transition: fill 0.5s ease;
+    }
+
+    body.phase-qa .orbital-rim-text {
+      fill: #fca5a5;
+      opacity: 1;
+    }
+
+    /* Progress Circle */
+    .progress-ring-circle {
+      transform: rotate(-90deg);
+      transform-origin: 250px 250px;
+      transition: stroke-dashoffset 0.25s linear, stroke 0.6s ease;
+    }
+
+    /* Giant Central Timer Digits with 3D Extrusion */
+    .center-readout {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transform: translateZ(75px);
+      pointer-events: none;
+      text-align: center;
+    }
+
+    .timer-digits {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+      font-size: clamp(4.8rem, 16.5vmin, 11.2rem);
+      font-weight: 800;
+      line-height: 0.95;
+      letter-spacing: -0.05em;
+      color: #ffffff;
+      text-shadow:
+        0 2px 0 rgba(255,255,255,0.25),
+        0 6px 18px rgba(0, 0, 0, 0.75),
+        0 0 42px var(--primary-glow),
+        0 0 85px var(--text-glow);
+      transition: text-shadow 0.6s ease, transform 0.3s ease;
+    }
+
+    body.phase-qa .timer-digits {
+      animation: digitBeat 1s ease-in-out infinite alternate;
+    }
+
+    @keyframes digitBeat {
+      from { transform: scale(1); }
+      to   { transform: scale(1.035); }
+    }
+
+    /* Ultra-Compact Micro Buttons Dock */
+    .micro-btn {
+      font-size: 11.5px;
+      line-height: 1;
+      padding: 6px 11px;
+      border-radius: 9999px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      white-space: nowrap;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #e2e8f0;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .micro-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    .micro-btn:active {
+      transform: scale(0.94);
+    }
+
+    /* Subtle pulse dot */
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--primary-glow);
+      box-shadow: 0 0 10px var(--primary-glow);
+      animation: dotBlink 1.4s infinite ease-in-out;
+    }
+
+    @keyframes dotBlink {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.4); opacity: 0.55; }
+    }
+  </style>
+</head>
+<body class="phase-pitch">
+
+  <!-- 4D Hyper-Particle Warp Canvas Background -->
+  <canvas id="warp-canvas" class="fixed inset-0 w-full h-full pointer-events-none z-0"></canvas>
+
+  <!-- Minimal Top Micro-Bar (Team Name & Mini Timeline) -->
+  <header class="fixed top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-3.5 py-1.5 rounded-full bg-slate-950/65 backdrop-blur-md border border-white/10 shadow-lg">
+    <span class="status-dot"></span>
+    <input
+      id="team-input"
+      type="text"
+      value="Komanda #1 — Pitch"
+      aria-label="Komanda adı"
+      class="bg-transparent text-xs font-bold text-slate-100 focus:outline-none focus:text-cyan-300 w-36 sm:w-44 text-center border-b border-transparent hover:border-white/20 transition"
+      title="Komanda adını dəyişmək üçün klikləyin"
+    />
+    <div class="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider border-l border-white/15 pl-2.5">
+      <span id="mini-pill-pitch" class="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 font-bold">3Dəq Çıxış</span>
+      <span class="text-slate-500">→</span>
+      <span id="mini-pill-qa" class="px-2 py-0.5 rounded-full bg-white/5 text-slate-400 border border-white/5">+2Dəq Sual</span>
+    </div>
+  </header>
+
+  <!-- Main 4D Perspective Stage with Giant Circle & Curved Edge Text -->
+  <main class="stage-4d" id="stage-4d">
+    <div class="holo-core" id="holo-core">
+
+      <!-- 4D Multi-Axis Gyroscopic Rings -->
+      <div class="gyro-ring gyro-ring-1"></div>
+      <div class="gyro-ring gyro-ring-2"></div>
+      <div class="gyro-ring gyro-ring-3"></div>
+      <div class="gyro-ring gyro-ring-4"></div>
+
+      <!-- Giant Central SVG HUD & Curved Perimeter Text -->
+      <svg class="hud-svg" viewBox="0 0 500 500" aria-label="Pitch Taymer Dairəsi">
+        <defs>
+          <!-- Top Arc Path right inside/along the upper rim for immediate stationary reading -->
+          <path id="top-edge-arc" d="M 52,250 A 198,198 0 1,1 448,250" />
+
+          <!-- Bottom Arc Path for secondary phase info along the lower rim -->
+          <path id="bottom-edge-arc" d="M 448,250 A 198,198 0 1,1 52,250" />
+
+          <!-- Full 360° Outer Perimeter Path for Continuous Rotating Status Text -->
+          <path id="full-outer-rim" d="M 250,26 A 224,224 0 1,1 249.9,26" />
+
+          <!-- Radial Holographic Glow Filter -->
+          <radialGradient id="core-backdrop" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="rgba(15, 23, 42, 0.72)" />
+            <stop offset="75%" stop-color="rgba(2, 6, 23, 0.82)" />
+            <stop offset="100%" stop-color="rgba(2, 6, 23, 0.15)" />
+          </radialGradient>
+        </defs>
+
+        <!-- Inner Holographic Core Disc -->
+        <circle cx="250" cy="250" r="176" fill="url(#core-backdrop)" stroke="rgba(255,255,255,0.08)" stroke-width="1.5" />
+
+        <!-- Decorative HUD Tick Marks Ring -->
+        <circle
+          cx="250"
+          cy="250"
+          r="190"
+          fill="none"
+          stroke="rgba(255, 255, 255, 0.14)"
+          stroke-width="4"
+          stroke-dasharray="2 10.43"
+        />
+
+        <!-- Main Countdown Track Circle -->
+        <circle
+          cx="250"
+          cy="250"
+          r="176"
+          fill="none"
+          stroke="rgba(255, 255, 255, 0.08)"
+          stroke-width="14"
+        />
+
+        <!-- Active Glowing Progress Ring (r=176 => circumference = 1105.84) -->
+        <circle
+          id="progress-ring"
+          class="progress-ring-circle"
+          cx="250"
+          cy="250"
+          r="176"
+          fill="none"
+          stroke="#22d3ee"
+          stroke-width="14"
+          stroke-linecap="round"
+          stroke-dasharray="1105.84"
+          stroke-dashoffset="0"
+        />
+
+        <!-- CURVED STATUS TEXT #1: Stationary Top Edge Arc Banner -->
+        <text class="edge-banner-text" font-size="14.5">
+          <textPath id="top-arc-textpath" href="#top-edge-arc" startOffset="50%" text-anchor="middle">
+            TƏQDİMAT DAVAM EDİR • 3 DƏQİQƏ
+          </textPath>
+        </text>
+
+        <!-- CURVED STATUS TEXT #2: Continuous 360° Rotating Outer Circle Edge Text -->
+        <g class="orbital-text-spinner">
+          <text class="orbital-rim-text">
+            <textPath id="orbital-rim-textpath" href="#full-outer-rim" startOffset="0%">
+              • TƏQDİMAT VAXTI (3 DƏQİQƏ) • UĞURLAR! • TƏQDİMAT VAXTI (3 DƏQİQƏ) • ÇIXIŞ DAVAM EDİR •
+            </textPath>
+          </text>
+        </g>
+      </svg>
+
+      <!-- Giant 3D Center Digital Countdown Readout -->
+      <div class="center-readout">
+        <span
+          id="center-badge"
+          class="px-3 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-[0.22em] bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 mb-2 shadow-md transition-all duration-500"
+        >
+          MƏRHƏLƏ 1 • ÇIXIŞ
+        </span>
+
+        <div id="timer-display" class="timer-digits">03:00</div>
+
+        <p
+          id="center-subtext"
+          class="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300"
+        >
+          Sonra: +2 dəq Sual-Cavab
+        </p>
+
+        <!-- Compact Dual-Segment Bar inside the bottom of the circle -->
+        <div class="w-40 sm:w-52 h-1.5 bg-white/10 rounded-full overflow-hidden flex gap-0.5 p-0.5 mt-3">
+          <div class="w-3/5 h-full bg-slate-900/70 rounded-l-full overflow-hidden">
+            <div id="bar-pitch" class="h-full bg-cyan-400 transition-all duration-300" style="width: 100%;"></div>
+          </div>
+          <div class="w-2/5 h-full bg-slate-900/70 rounded-r-full overflow-hidden">
+            <div id="bar-qa" class="h-full bg-red-500 transition-all duration-300" style="width: 100%;"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Ultra-Compact Micro Control Dock at Bottom -->
+  <footer class="fixed bottom-3 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5">
+    <span id="toast-msg" class="text-[11px] font-semibold text-cyan-300 bg-slate-950/80 px-2.5 py-0.5 rounded-full border border-cyan-400/30 hidden"></span>
+
+    <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-950/75 backdrop-blur-xl border border-white/15 shadow-2xl">
+      <!-- Start / Pause Micro Button -->
+      <button
+        id="btn-start"
+        onclick="toggleStartPause()"
+        class="micro-btn"
+        style="background: #10b981; color: #020617; border-color: #34d399; font-weight: 700;"
+        title="Başlat və ya Dayandır (Space)"
+      >
+        <svg id="icon-play" class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+        <span id="btn-start-label">Başlat</span>
+      </button>
+
+      <!-- Skip to Q&A Micro Button -->
+      <button
+        id="btn-skip"
+        onclick="skipToQA()"
+        class="micro-btn"
+        style="background: rgba(244, 63, 94, 0.2); color: #fecdd3; border-color: rgba(251, 113, 133, 0.4);"
+        title="Dərhal 2 dəqiqəlik Sual-Cavab mərhələsinə keç (S)"
+      >
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+        </svg>
+        <span>Sual-Cavab (+2d)</span>
+      </button>
+
+      <!-- Reset Micro Button -->
+      <button
+        onclick="resetTimer()"
+        class="micro-btn"
+        title="Taymeri Sıfırla (R)"
+      >
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span>Sıfırla</span>
+      </button>
+
+      <!-- Next Team Auto-Increment Micro Button -->
+      <button
+        onclick="nextTeam()"
+        class="micro-btn"
+        title="Növbəti Komanda və Sıfırla (N)"
+      >
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+        <span>Növbəti</span>
+      </button>
+
+      <!-- Sound Test Micro Button -->
+      <button
+        onclick="testSound()"
+        class="micro-btn"
+        title="Səs siqnalını yoxla"
+      >
+        <svg class="w-3 h-3" style="color: #22d3ee;" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+        </svg>
+        <span>Səs</span>
+      </button>
+
+      <!-- Fullscreen Micro Button -->
+      <button
+        onclick="toggleFullScreen()"
+        class="micro-btn"
+        title="Tam Ekran (F və ya F11)"
+      >
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+        </svg>
+      </button>
+    </div>
+  </footer>
+
+  <script>
+    // ====================================================
+    // 1. TAYMER MƏNTİQİ (3 DƏQ TƏQDİMAT + 2 DƏQ SUAL-CAVAB)
+    // ====================================================
+    const PITCH_SECONDS = 180; // 3 dəqiqə
+    const QA_SECONDS = 120;    // 2 dəqiqə
+    const CIRCUMFERENCE = 2 * Math.PI * 176; // 1105.84
+
+    let phase = 'PITCH'; // 'PITCH' | 'QA' | 'DONE'
+    let remaining = PITCH_SECONDS;
+    let phaseTotal = PITCH_SECONDS;
+    let timerId = null;
+    let alarmRepeatId = null;
+    let audioCtx = null;
+
+    // Yüksək dəqiqlikli vaxt dreyfi idarəetməsi
+    let phaseStartTimestamp = 0;
+    let phaseStartRemaining = PITCH_SECONDS;
+
+    // DOM Referansları
+    const bodyEl = document.body;
+    const timerDisplayEl = document.getElementById('timer-display');
+    const progressRingEl = document.getElementById('progress-ring');
+    const topArcTextEl = document.getElementById('top-arc-textpath');
+    const orbitalRimTextEl = document.getElementById('orbital-rim-textpath');
+    const centerBadgeEl = document.getElementById('center-badge');
+    const centerSubtextEl = document.getElementById('center-subtext');
+    const barPitchEl = document.getElementById('bar-pitch');
+    const barQaEl = document.getElementById('bar-qa');
+    const btnStartEl = document.getElementById('btn-start');
+    const btnStartLabelEl = document.getElementById('btn-start-label');
+    const iconPlayEl = document.getElementById('icon-play');
+    const miniPillPitchEl = document.getElementById('mini-pill-pitch');
+    const miniPillQaEl = document.getElementById('mini-pill-qa');
+    const toastMsgEl = document.getElementById('toast-msg');
+    const teamInputEl = document.getElementById('team-input');
+
+    // ====================================================
+    // 2. WEB AUDIO API VƏ AVTO-UNLOCK
+    // ====================================================
+    function ensureAudio() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContextClass();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    // İlk istifadəçi toxunuşunda audionu dərhal açırıq
+    ['click', 'touchstart', 'keydown', 'mousedown'].forEach(event => {
+      document.addEventListener(event, () => {
+        try { ensureAudio(); } catch (e) {}
+      }, { once: true });
+    });
+
+    function playNotes(notes) {
+      try {
+        const ctx = ensureAudio();
+        const now = ctx.currentTime;
+        notes.forEach(({ freq, dur, delay, type = 'sine', vol = 0.35 }) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, now + delay);
+
+          gain.gain.setValueAtTime(0.001, now + delay);
+          gain.gain.exponentialRampToValueAtTime(vol, now + delay + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + dur);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + delay);
+          osc.stop(now + delay + dur + 0.02);
+        });
+      } catch (e) {
+        console.warn('Səs xətası:', e);
+      }
+    }
+
+    // 3 dəqiqə bitdikdə: Qızaran Sual-Cavab mərhələsinə keçid siqnalı
+    function soundTransitionToQA() {
+      playNotes([
+        { freq: 587.33, dur: 0.25, delay: 0.00, type: 'triangle', vol: 0.45 },
+        { freq: 880.00, dur: 0.35, delay: 0.28, type: 'triangle', vol: 0.50 },
+        { freq: 1174.66, dur: 0.55, delay: 0.66, type: 'sine', vol: 0.50 }
+      ]);
+    }
+
+    // Son 5 saniyə xəbərdarlıq tiki
+    function soundCountdownTick() {
+      playNotes([{ freq: 1046.5, dur: 0.06, delay: 0, type: 'sine', vol: 0.2 }]);
+    }
+
+    // Yekun Vaxt Bitdi həyəcan siqnalı
+    function soundFinalAlarm() {
+      playNotes([
+        { freq: 987.77, dur: 0.2, delay: 0.00, type: 'sawtooth', vol: 0.38 },
+        { freq: 783.99, dur: 0.2, delay: 0.23, type: 'sawtooth', vol: 0.38 },
+        { freq: 987.77, dur: 0.2, delay: 0.46, type: 'sawtooth', vol: 0.38 },
+        { freq: 1318.51, dur: 0.55, delay: 0.70, type: 'sawtooth', vol: 0.48 }
+      ]);
+    }
+
+    function stopAlarmLoop() {
+      if (alarmRepeatId) {
+        clearInterval(alarmRepeatId);
+        alarmRepeatId = null;
+      }
+    }
+
+    function testSound() {
+      playNotes([
+        { freq: 523.25, dur: 0.14, delay: 0.00, type: 'sine', vol: 0.3 },
+        { freq: 659.25, dur: 0.14, delay: 0.16, type: 'sine', vol: 0.3 },
+        { freq: 783.99, dur: 0.25, delay: 0.32, type: 'sine', vol: 0.35 }
+      ]);
+      showToast('Səs siqnalı aktivdir ✓');
+    }
+
+    function showToast(text) {
+      toastMsgEl.textContent = text;
+      toastMsgEl.classList.remove('hidden');
+      setTimeout(() => toastMsgEl.classList.add('hidden'), 2400);
+    }
+
+    // ====================================================
+    // 3. VİZUAL VƏ DAİRƏ KƏNARI MƏTNLƏRİNİN YENİLƏNMƏSİ
+    // ====================================================
+    function formatMMSS(sec) {
+      const m = String(Math.floor(sec / 60)).padStart(2, '0');
+      const s = String(sec % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function updateTimerUI() {
+      timerDisplayEl.textContent = formatMMSS(remaining);
+
+      const fraction = phaseTotal > 0 ? remaining / phaseTotal : 0;
+      const offset = CIRCUMFERENCE * (1 - fraction);
+      progressRingEl.style.strokeDashoffset = offset;
+
+      if (phase === 'PITCH') {
+        barPitchEl.style.width = `${(remaining / PITCH_SECONDS) * 100}%`;
+        barQaEl.style.width = '100%';
+      } else if (phase === 'QA') {
+        barPitchEl.style.width = '0%';
+        barQaEl.style.width = `${(remaining / QA_SECONDS) * 100}%`;
+      } else {
+        barPitchEl.style.width = '0%';
+        barQaEl.style.width = '0%';
+      }
+    }
+
+    function setPhaseVisuals(newPhase) {
+      bodyEl.classList.remove('phase-pitch', 'phase-qa', 'phase-done');
+
+      if (newPhase === 'PITCH') {
+        bodyEl.classList.add('phase-pitch');
+        progressRingEl.style.stroke = '#22d3ee';
+
+        topArcTextEl.textContent = 'TƏQDİMAT DAVAM EDİR • 3 DƏQİQƏ';
+        orbitalRimTextEl.textContent =
+          '• TƏQDİMAT VAXTI (3 DƏQİQƏ) • UĞURLAR! • TƏQDİMAT VAXTI (3 DƏQİQƏ) • ÇIXIŞ DAVAM EDİR ';
+
+        centerBadgeEl.textContent = 'MƏRHƏLƏ 1 • TƏQDİMAT';
+        centerBadgeEl.className =
+          'px-3 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-[0.22em] bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 mb-2 shadow-md transition-all duration-500';
+        centerSubtextEl.textContent = 'Sonra: +2 dəq Sual-Cavab';
+
+        miniPillPitchEl.className = 'px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 font-bold';
+        miniPillQaEl.className = 'px-2 py-0.5 rounded-full bg-white/5 text-slate-400 border border-white/5';
+      } else if (newPhase === 'QA') {
+        bodyEl.classList.add('phase-qa');
+        progressRingEl.style.stroke = '#ff3b3b';
+
+        topArcTextEl.textContent = 'TƏQDİMAT BİTDİ! • SUAL-CAVAB (2 DƏQ)';
+        orbitalRimTextEl.textContent =
+          '• TƏQDİMAT BİTDİ! • SUAL-CAVAB MƏRHƏLƏSİ (+2 DƏQİQƏ) • TƏQDİMAT BİTDİ! • SUAL-CAVAB ';
+
+        centerBadgeEl.textContent = 'TƏQDİMAT BİTDİ • SUAL-CAVAB';
+        centerBadgeEl.className =
+          'px-3 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-[0.2em] bg-red-500/30 text-amber-200 border border-red-400/60 mb-2 shadow-lg transition-all duration-500';
+        centerSubtextEl.textContent = 'Münsiflərin sual-cavab vaxtı (2 dəqiqə)';
+
+        miniPillPitchEl.className = 'px-2 py-0.5 rounded-full bg-white/5 text-slate-500 line-through border border-white/5';
+        miniPillQaEl.className = 'px-2 py-0.5 rounded-full bg-red-500/30 text-red-200 border border-red-400/50 font-bold';
+      } else if (newPhase === 'DONE') {
+        bodyEl.classList.add('phase-done');
+        progressRingEl.style.stroke = '#ffffff';
+
+        topArcTextEl.textContent = 'VAXT BİTDİ! • ÇIXIŞ YEKUNLAŞDI';
+        orbitalRimTextEl.textContent =
+          '• VAXT BİTDİ! • TƏQDİMAT VƏ SUAL-CAVAB TAMAMLANDI • VAXT BİTDİ! • TƏŞƏKKÜRLƏR! ';
+
+        centerBadgeEl.textContent = 'VAXT TAMAMLANDI!';
+        centerBadgeEl.className =
+          'px-3.5 py-0.5 rounded-full text-xs font-black uppercase tracking-[0.24em] bg-white text-red-900 mb-2 shadow-xl';
+        centerSubtextEl.textContent = 'Təşəkkür edirik! Növbəti komandaya keçid edin.';
+
+        miniPillPitchEl.className = 'px-2 py-0.5 rounded-full bg-white/5 text-slate-500 line-through border border-white/5';
+        miniPillQaEl.className = 'px-2 py-0.5 rounded-full bg-white/5 text-slate-500 line-through border border-white/5';
+      }
+    }
+
+    function updateStartButtonVisual(isRunning) {
+      if (isRunning) {
+        btnStartLabelEl.textContent = 'Fasilə';
+        btnStartEl.style.background = '#f59e0b';
+        btnStartEl.style.borderColor = '#fbbf24';
+        btnStartEl.style.color = '#020617';
+        iconPlayEl.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />';
+      } else {
+        btnStartLabelEl.textContent = remaining < phaseTotal && phase !== 'DONE' ? 'Davam' : 'Başlat';
+        btnStartEl.style.background = '#10b981';
+        btnStartEl.style.borderColor = '#34d399';
+        btnStartEl.style.color = '#020617';
+        iconPlayEl.innerHTML = '<path d="M8 5v14l11-7z" />';
+      }
+    }
+
+    // ====================================================
+    // 4. TAYMER İDARƏETMƏ VƏ DƏQİQ COUNTDOWN
+    // ====================================================
+    function enterQAPhase() {
+      phase = 'QA';
+      remaining = QA_SECONDS;
+      phaseTotal = QA_SECONDS;
+      phaseStartTimestamp = Date.now();
+      phaseStartRemaining = QA_SECONDS;
+      setPhaseVisuals('QA');
+      updateTimerUI();
+      soundTransitionToQA();
+    }
+
+    function enterDonePhase() {
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+      phase = 'DONE';
+      remaining = 0;
+      setPhaseVisuals('DONE');
+      updateTimerUI();
+      updateStartButtonVisual(false);
+
+      soundFinalAlarm();
+      let count = 0;
+      stopAlarmLoop();
+      alarmRepeatId = setInterval(() => {
+        count++;
+        if (count >= 3) {
+          stopAlarmLoop();
+          return;
+        }
+        soundFinalAlarm();
+      }, 1500);
+    }
+
+    function startTimerLoop() {
+      if (timerId) clearInterval(timerId);
+      phaseStartTimestamp = Date.now();
+      phaseStartRemaining = remaining;
+
+      timerId = setInterval(() => {
+        const elapsedSec = Math.floor((Date.now() - phaseStartTimestamp) / 1000);
+        const nextRemaining = Math.max(0, phaseStartRemaining - elapsedSec);
+
+        if (nextRemaining !== remaining) {
+          remaining = nextRemaining;
+          if (remaining > 0 && remaining <= 5) {
+            soundCountdownTick();
+          }
+          updateTimerUI();
+        }
+
+        if (remaining <= 0) {
+          if (phase === 'PITCH') {
+            enterQAPhase();
+          } else if (phase === 'QA') {
+            enterDonePhase();
+          }
+        }
+      }, 200);
+    }
+
+    function toggleStartPause() {
+      ensureAudio();
+
+      if (phase === 'DONE') {
+        resetTimer();
+      }
+
+      if (timerId) {
+        // Fasilə (Pause)
+        clearInterval(timerId);
+        timerId = null;
+        stopAlarmLoop();
+        updateStartButtonVisual(false);
+        return;
+      }
+
+      // Başlat (Start)
+      updateStartButtonVisual(true);
+      startTimerLoop();
+    }
+
+    function resetTimer() {
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+      stopAlarmLoop();
+      phase = 'PITCH';
+      remaining = PITCH_SECONDS;
+      phaseTotal = PITCH_SECONDS;
+      phaseStartRemaining = PITCH_SECONDS;
+      setPhaseVisuals('PITCH');
+      updateTimerUI();
+      updateStartButtonVisual(false);
+    }
+
+    function skipToQA() {
+      ensureAudio();
+      stopAlarmLoop();
+      const wasRunning = Boolean(timerId);
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+      enterQAPhase();
+      if (wasRunning) {
+        updateStartButtonVisual(true);
+        startTimerLoop();
+      } else {
+        updateStartButtonVisual(false);
+      }
+    }
+
+    function nextTeam() {
+      // Komanda nömrəsini avtomatik artırırıq: "Komanda #1" -> "Komanda #2"
+      const current = teamInputEl.value;
+      const match = current.match(/#(\d+)/);
+      if (match) {
+        const nextNum = parseInt(match[1], 10) + 1;
+        teamInputEl.value = current.replace(/#\d+/, `#${nextNum}`);
+      } else {
+        teamInputEl.value = "Komanda #2 — Pitch";
+      }
+      localStorage.setItem('pitch_deck_team_name', teamInputEl.value);
+      showToast(`Yeni: ${teamInputEl.value}`);
+      resetTimer();
+    }
+
+    function toggleFullScreen() {
+      try {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {
+            showToast('Tam ekran rejimi məhdudlaşdırılıb');
+          });
+        } else {
+          document.exitFullscreen();
+        }
+      } catch (err) {
+        showToast('Tam ekran dəstəklənmir');
+      }
+    }
+
+    // Komanda adını yadda saxlama
+    teamInputEl.addEventListener('input', () => {
+      localStorage.setItem('pitch_deck_team_name', teamInputEl.value);
+    });
+
+    // Klaviatura Qısa Yolları
+    document.addEventListener('keydown', (e) => {
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        toggleStartPause();
+      } else if (e.key === 'r' || e.key === 'R') {
+        resetTimer();
+      } else if (e.key === 'n' || e.key === 'N') {
+        nextTeam();
+      } else if (e.key === 's' || e.key === 'S' || e.key === 'q' || e.key === 'Q') {
+        skipToQA();
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullScreen();
+      }
+    });
+
+    // ====================================================
+    // 5. 4D PARALLAKS VƏ HYPER-WARP PARTICLE CANVAS
+    // ====================================================
+    const holoCoreEl = document.getElementById('holo-core');
+    window.addEventListener('mousemove', (e) => {
+      const xAxis = (window.innerWidth / 2 - e.clientX) / 28;
+      const yAxis = (e.clientY - window.innerHeight / 2) / 28;
+      holoCoreEl.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
+    });
+
+    window.addEventListener('mouseleave', () => {
+      holoCoreEl.style.transform = 'rotateY(0deg) rotateX(0deg)';
+    });
+
+    // 4D Depth Star/Particle Warp Field
+    const canvas = document.getElementById('warp-canvas');
+    const ctx = canvas.getContext('2d');
+    let width = 0;
+    let height = 0;
+    const PARTICLE_COUNT = 130;
+    const particles = [];
+
+    function resizeCanvas() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      particles.push({
+        x: (Math.random() - 0.5) * 1600,
+        y: (Math.random() - 0.5) * 1600,
+        z: Math.random() * 1000 + 1,
+        size: Math.random() * 2 + 0.8
+      });
+    }
+
+    function animate4DField() {
+      ctx.clearRect(0, 0, width, height);
+      const cx = width / 2;
+      const cy = height / 2;
+
+      // Mərhələyə görə 4D sürət və rəng
+      const speed = phase === 'DONE' ? 14 : phase === 'QA' ? 7.5 : 2.4;
+      const baseColor = phase === 'PITCH' ? '34, 211, 238' : '248, 113, 113';
+
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const p = particles[i];
+        p.z -= speed;
+        if (p.z <= 2) {
+          p.x = (Math.random() - 0.5) * 1600;
+          p.y = (Math.random() - 0.5) * 1600;
+          p.z = 1000;
+        }
+
+        const scale = 520 / p.z;
+        const sx = cx + p.x * scale;
+        const sy = cy + p.y * scale;
+
+        const prevScale = 520 / (p.z + speed * 3.5);
+        const px = cx + p.x * prevScale;
+        const py = cy + p.y * prevScale;
+
+        const alpha = Math.min(1, (1000 - p.z) / 600) * 0.65;
+
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(sx, sy);
+        ctx.strokeStyle = `rgba(${baseColor}, ${alpha})`;
+        ctx.lineWidth = p.size * scale * 0.45;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+
+      requestAnimationFrame(animate4DField);
+    }
+
+    window.onload = function () {
+      if (localStorage.getItem('pitch_deck_team_name')) {
+        teamInputEl.value = localStorage.getItem('pitch_deck_team_name');
+      }
+      setPhaseVisuals('PITCH');
+      updateTimerUI();
+      animate4DField();
+    };
+  </script>
+</body>
+</html>
