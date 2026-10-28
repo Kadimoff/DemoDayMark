@@ -60,7 +60,8 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     reply.header("X-Frame-Options", "DENY");
   });
 
-  app.get("/api/health", async () => ({ ok: true, time: Date.now() }));
+  // Touches the database so the container healthcheck fails if SQLite is unreadable.
+  app.get("/api/health", async () => ({ ok: !!repo.db.prepare("SELECT 1 AS ok").get(), time: Date.now() }));
   // Public: only what the projector timer shows.
   app.get("/api/stage", async () => repo.stage());
 

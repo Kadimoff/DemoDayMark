@@ -5,7 +5,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 make g+
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build && npm prune --omit=dev
+# A commit that fails type checking or any test never produces an image, so the running
+# version stays up (Coolify only swaps containers after a successful build).
+RUN npm run typecheck && npm test && npm run build && npm prune --omit=dev
 
 # ---- runtime ----
 FROM node:22-bookworm-slim
