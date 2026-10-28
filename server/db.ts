@@ -75,6 +75,12 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX audit_created ON audit_log(created_at);
   `,
+  // v2: results reveal (admin-paced, survives restarts and deploys)
+  `
+  ALTER TABLE event ADD COLUMN reveal_enabled INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE event ADD COLUMN reveal_step INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE event ADD COLUMN reveal_snapshot TEXT;
+  `,
 ];
 
 export function openDb(file: string): DB {

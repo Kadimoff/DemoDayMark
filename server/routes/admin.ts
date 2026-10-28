@@ -7,7 +7,8 @@ import { hashPassword } from "../baseline.js";
 import { idParam, parseBody, type Ctx } from "../context.js";
 import { buildPdf } from "../export/pdf.js";
 import { buildXlsx, exportFileName } from "../export/xlsx.js";
-import { adminResults } from "../views.js";
+import { adminResults, revealAdminView, revealSnapshot } from "../views.js";
+import { revealSteps } from "../../shared/reveal.js";
 
 const name = (max = 120) => z.string().trim().min(1, "Ad boş ola bilməz.").max(max);
 const password = z.string().min(6, "Şifrə ən azı 6 simvol olmalıdır.").max(200);
@@ -32,6 +33,7 @@ const critBody = z.object({ name: name(), description: z.string().trim().max(400
 const critPatch = z.object({ name: name().optional(), description: z.string().trim().max(400).optional(), weight: z.number().int().min(0).max(100).optional() });
 const reorderBody = z.object({ ids: z.array(z.number().int().positive()).min(1) });
 const wipeBody = z.object({ token: z.string().min(1) });
+const revealBody = z.object({ action: z.enum(["enable", "disable", "next", "back", "reset"]) });
 
 export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
   const { repo, cfg, rt } = ctx;
@@ -259,10 +261,60 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       }
       wipe = null;
       const n = repo.wipeScores();
+      repo.setReveal({ enabled: false, step: 0, snapshot: null });
       repo.audit(req.user!.id, "scores.wipe", { deleted: n });
+      rt.emitReveal();
       rt.emitConfig();
       rt.emitResults();
       return { deleted: n };
+    });
+
+    // ---------- results reveal ----------
+    r.get("/api/admin/reveal", async () => revealAdminView(repo, cfg));
+    r.post("/api/admin/reveal", async (req, reply) => {
+      const b = parseBody(revealBody, req.body, reply); if (!b) return;
+      const actor = req.user!.id;
+      const cur = repo.getReveal();
+      // Enabling or re-snapshotting freezes the ranking and locks scoring so nothing can move mid-ceremony.
+      const freeze = () => {
+        const snap = revealSnapshot(repo, cfg);
+        if (!snap.entries.length) return null;
+        if (!repo.getEvent().locked) {
+          repo.updateEvent({ locked: true });
+          repo.audit(actor, "event.lock", { reason: "reveal" });
+          rt.emitLocked(true);
+        }
+        return snap;
+      };
+      switch (b.action) {
+        case "enable": {
+          const snapshot = cur.snapshot ?? freeze();
+          if (!snapshot) return reply.code(409).send({ error: "Hələ heç bir komanda tam qiymətləndirilməyib." });
+          repo.setReveal({ enabled: true, snapshot });
+          break;
+        }
+        case "disable":
+          repo.setReveal({ enabled: false });
+          break;
+        case "reset": {
+          const snapshot = freeze();
+          if (!snapshot) return reply.code(409).send({ error: "Hələ heç bir komanda tam qiymətləndirilməyib." });
+          repo.setReveal({ step: 0, snapshot });
+          break;
+        }
+        case "next": {
+          if (!cur.enabled || !cur.snapshot) return reply.code(409).send({ error: "Əvvəlcə açıqlamaya icazə verin." });
+          if (cur.step >= revealSteps(cur.snapshot.entries).length) return reply.code(409).send({ error: "Bütün yerlər artıq açıqlanıb." });
+          repo.setReveal({ step: cur.step + 1 });
+          break;
+        }
+        case "back":
+          if (cur.step > 0) repo.setReveal({ step: cur.step - 1 });
+          break;
+      }
+      repo.audit(actor, `reveal.${b.action}`, { step: repo.getReveal().step });
+      rt.emitReveal();
+      return revealAdminView(repo, cfg);
     });
 
     // ---------- exports / audit ----------

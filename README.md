@@ -9,6 +9,7 @@ Real vaxtda münsif qiymətləndirməsi və səhnə taymeri. 8 komanda, 4–5 m�
 | Canlı panel | `/admin` | koordinator (noutbuk) |
 | Quraşdırma | `/admin/setup` | koordinator |
 | **Proyektor taymeri** | `/timer` | səhnə ekranı (girişsiz baxış; admin girişi ilə idarə) |
+| **Nəticə açıqlaması** | `/reveal` | proyektor; yalnız admin icazə verdikdən sonra, addım-addım |
 
 ## Taymer necə inteqrasiya olunub
 
@@ -30,6 +31,21 @@ Köhnə "Pitch Deck Taymeri" (`docs/reference/pitch-deck-timer.html`) yalnız ö
 | F | Tam ekran |
 
 Səs siqnalları orijinaldakı kimidir: son 5 saniyədə tik, pitch bitəndə keçid melodiyası, vaxt bitəndə 3 dəfə həyəcan siqnalı. Brauzer səsi yalnız ilk toxunuşdan sonra açır. Proyektorda bir dəfə "Səs" düyməsinə basın.
+
+## Nəticə açıqlaması (`/reveal`)
+
+1. Proyektorda `/reveal` səhifəsini açın və **F** ilə tam ekran edin. Səs üçün ekrana bir dəfə toxunun. İcazə verilənə qədər ekranda yalnız "Nəticələr tezliklə açıqlanacaq" yazısı görünür.
+2. Canlı paneldəki **Nəticə açıqlaması** kartında **"Açıqlamaya icazə ver"** düyməsini basıb təsdiqləyin. Düymə yaşıl ✓ olur, qiymətləndirmə avtomatik bağlanır və həmin anın reytinqi qeydə alınır. Açıqlama bu siyahı ilə gedir, sonradan heç nə dəyişə bilməz.
+3. **"Sıradakını açıqla →"** düyməsi hər basılanda ekranda bir yer açılır: sonuncu yerdən başlayaraq yuxarıya. Kartda növbəti komanda yalnız sizə görünür.
+4. **İlk üçlük iki addımla açılır:**
+   - birinci basış intizarı başladır: qaranlıq ekran, böyük "3-cü yer", ürək döyüntüsü və səsi, döyüntü getdikcə sürətlənir;
+   - ikinci basış adı açır.
+   1-ci yer üçün qısa təbrik animasiyası (konfetti) oynayır.
+5. Səhv basılsa, **"← Geri"** düyməsindən istifadə edin. **"Sıfırla"** açıqlamanı əvvələ qaytarır və reytinqi yenidən qeydə alır. İcazəni söndürmək ekranı gözləmə rejiminə keçirir, irəliləyiş saxlanılır.
+
+Admin kimi daxil olmuş proyektorda klaviatura da işləyir: **→ / Space** növbəti, **←** geri, **F** tam ekran, **M** səs.
+
+Gizlilik serverdə təmin olunur: ekrana yalnız artıq açıqlanmış yerlər göndərilir. İntizar addımında belə komandanın adı və balı göndərilmir, yalnız yer nömrəsi gedir (`test/reveal.test.ts`, `test/privacy.test.ts`).
 
 ## Tez başlanğıc (lokal)
 
@@ -118,6 +134,7 @@ Tətbiq serverdə Coolify layihəsi **Ignite Demo Day** → tətbiq **demoday-ma
 
 **Sonda**
 - [ ] İrəliləyiş 40/40 → **Qiymətləndirməni bağla**.
+- [ ] **Nəticə açıqlaması** kartı → icazə verin → addım-addım açıqlayın.
 - [ ] Excel və PDF yükləyin, PDF-i münsiflərə imzalatın.
 - [ ] `npm run backup`.
 
@@ -163,7 +180,7 @@ test/        scoring.test.ts · privacy.test.ts
 |---|---|
 | Aktiv sessiyaları bağlamaq | Hazırdır (Quraşdırma → münsif → "Sessiyaları bağla") |
 | Audit log | API hazırdır (`GET /api/admin/audit`), ekranı yoxdur |
-| Nəticə açıqlama ekranı `/admin/reveal` | Edilməyib |
+| Nəticə açıqlama ekranı | Hazırdır: `/reveal` + canlı paneldəki idarə kartı |
 | Komandaya xüsusi anonim rəy PDF-i | Edilməyib |
 
 ## Problemlərin həlli

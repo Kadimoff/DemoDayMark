@@ -1,5 +1,6 @@
 // Data access. Every function returns plain shared/types objects; no route touches SQL directly.
 import type { DB } from "./db.js";
+import type { RevealSnapshot } from "../shared/reveal.js";
 import type { Criterion, Juror, ScoreRow, StagePayload, Team, TimerState } from "../shared/types.js";
 
 interface EventRow {
@@ -66,6 +67,19 @@ export class Repo {
       .run(n.name, n.date, n.currentTeamId, +n.timer.visible, +n.timer.running, n.timer.offsetSec,
         n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal);
     return this.getEvent();
+  }
+
+  getReveal(): { enabled: boolean; step: number; snapshot: RevealSnapshot | null } {
+    const r = this.db.prepare("SELECT reveal_enabled, reveal_step, reveal_snapshot FROM event WHERE id = 1").get() as
+      { reveal_enabled: number; reveal_step: number; reveal_snapshot: string | null };
+    return { enabled: !!r.reveal_enabled, step: r.reveal_step, snapshot: r.reveal_snapshot ? JSON.parse(r.reveal_snapshot) : null };
+  }
+  setReveal(p: { enabled?: boolean; step?: number; snapshot?: RevealSnapshot | null }) {
+    const cur = this.getReveal();
+    const n = { ...cur, ...p };
+    this.db.prepare("UPDATE event SET reveal_enabled=?, reveal_step=?, reveal_snapshot=? WHERE id = 1")
+      .run(+n.enabled, n.step, n.snapshot ? JSON.stringify(n.snapshot) : null);
+    return this.getReveal();
   }
 
   stage(now = Date.now()): StagePayload {

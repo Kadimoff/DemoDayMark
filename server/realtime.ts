@@ -10,7 +10,7 @@ import type { PresenceEntry, ScoreRow } from "../shared/types.js";
 import { originAllowed, resolveUser, type AuthUser } from "./auth.js";
 import type { Config } from "./config.js";
 import type { Repo } from "./repo.js";
-import { adminResults } from "./views.js";
+import { adminResults, revealPublicView } from "./views.js";
 
 export class Realtime {
   readonly io: Server;
@@ -96,6 +96,9 @@ export class Realtime {
       ...(showJurorTotal && total != null ? { total } : {}),
     });
   }
+
+  /** Public: only revealed places (see shared/reveal.ts). Admin screens refetch their full view. */
+  emitReveal() { this.io.to("public").emit("reveal:changed", revealPublicView(this.repo)); }
 
   emitResults() { this.io.to("admin").emit("results:changed", adminResults(this.repo, this.cfg)); }
 

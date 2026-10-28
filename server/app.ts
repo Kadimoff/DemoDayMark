@@ -10,6 +10,7 @@ import type { Ctx } from "./context.js";
 import { openDb } from "./db.js";
 import { Realtime } from "./realtime.js";
 import { Repo } from "./repo.js";
+import { revealPublicView } from "./views.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { jurorRoutes } from "./routes/juror.js";
@@ -23,6 +24,7 @@ const PAGES: Record<string, { file: string; role?: "admin" | "juror" }> = {
   "/admin": { file: "admin.html", role: "admin" },
   "/admin/setup": { file: "setup.html", role: "admin" },
   "/timer": { file: "timer.html" },
+  "/reveal": { file: "reveal.html" },
 };
 
 export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Promise<App> {
@@ -64,6 +66,8 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   app.get("/api/health", async () => ({ ok: !!repo.db.prepare("SELECT 1 AS ok").get(), time: Date.now() }));
   // Public: only what the projector timer shows.
   app.get("/api/stage", async () => repo.stage());
+  // Public: only places the admin has already revealed.
+  app.get("/api/reveal", async () => revealPublicView(repo));
 
   authRoutes(app, ctx);
   jurorRoutes(app, ctx);

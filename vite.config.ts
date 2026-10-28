@@ -8,6 +8,7 @@ const PAGES: Record<string, string> = {
   "/admin": "/admin.html",
   "/admin/setup": "/setup.html",
   "/timer": "/timer.html",
+  "/reveal": "/reveal.html",
 };
 const cleanUrls = (): Plugin => ({
   name: "clean-urls",
@@ -44,6 +45,7 @@ export default defineConfig({
         admin: "web/admin.html",
         setup: "web/setup.html",
         timer: "web/timer.html",
+        reveal: "web/reveal.html",
       },
     },
   },

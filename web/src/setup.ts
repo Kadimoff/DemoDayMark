@@ -15,6 +15,7 @@ const bar = topbar({
     { href: "/admin", label: "Canlı panel" },
     { href: "/admin/setup", label: "Quraşdırma", current: true },
     { href: "/timer", label: "Taymer", external: true },
+    { href: "/reveal", label: "Açıqlama", external: true },
   ],
 });
 const main = $("#main");

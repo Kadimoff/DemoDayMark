@@ -1,4 +1,5 @@
 import "./styles.css";
+import { ordinal, type RevealEntry } from "../../shared/reveal";
 import type { Results } from "../../shared/scoring";
 import { fmtClock, type TimerView } from "../../shared/timer";
 import type { Criterion, Juror, PresenceEntry, ScoreRow, StagePayload, Team, TimerAction, TimerState } from "../../shared/types";
@@ -18,6 +19,11 @@ interface AdminData {
   minJurorsForRank: number;
 }
 interface AdminState extends AdminData { event: EventState; stage: StagePayload; presence: PresenceEntry[] }
+interface AdminReveal {
+  enabled: boolean; step: number; stepsTotal: number; snapshotAt: number | null; entries: RevealEntry[];
+  next: { kind: "suspense" | "reveal"; index: number; entry: RevealEntry } | null;
+  stale: boolean; unscored: number; progress: { done: number; need: number }; locked: boolean;
+}
 
 const bar = topbar({
   role: "admin",
@@ -25,6 +31,7 @@ const bar = topbar({
     { href: "/admin", label: "Canlı panel", current: true },
     { href: "/admin/setup", label: "Quraşdırma" },
     { href: "/timer", label: "Taymer", external: true },
+    { href: "/reveal", label: "Açıqlama", external: true },
   ],
   wide: true,
 });
@@ -36,6 +43,8 @@ let S: AdminState | null = null;
 let editing: number | null = null; // id of the team being renamed inline
 let wipeToken: { token: string; count: number } | null = null;
 let flashKey = "";
+let rv: AdminReveal | null = null;
+let rvConfirm: "enable" | "reset" | null = null;
 let built = false;
 
 const activeTeams = () => (S ? S.teams.filter(t => t.active) : []);
@@ -72,6 +81,7 @@ function build() {
       <div class="stack">
         <div class="card pad stack" id="juryCard"></div>
         <div class="card pad" id="statusCard"></div>
+        <div class="card pad stack" id="revealCard"></div>
       </div>
     </div>
     <div class="grid2 section-gap">
@@ -98,6 +108,7 @@ function renderAll() {
   renderMatrix();
   renderHeat();
   renderDanger();
+  loadReveal();
 }
 
 // ---------- stage + timer control ----------
@@ -206,6 +217,52 @@ function renderStatus() {
     </div>
     <div class="toggle"><div><b>Nəticələri yüklə</b><small>Excel cədvəli və imza üçün PDF protokol.</small></div>
       <div class="row"><a class="btn sm" href="/api/admin/export.xlsx" download>${icon("download")}Excel</a><a class="btn sm" href="/api/admin/export.pdf" download>${icon("download")}PDF</a></div></div>`;
+}
+
+// ---------- results reveal ----------
+async function loadReveal() {
+  try { rv = await api<AdminReveal>("/api/admin/reveal"); } catch { return; }
+  renderReveal();
+}
+async function revealAction(action: string) {
+  try { rv = await api<AdminReveal>("/api/admin/reveal", { method: "POST", body: { action } }); }
+  catch (ex) { toast((ex as ApiError).message, "err"); }
+  rvConfirm = null;
+  renderReveal();
+}
+function renderReveal() {
+  const card = document.getElementById("revealCard");
+  if (!card || !rv) return;
+  const n = rv.next;
+  const done = rv.enabled && !n && rv.stepsTotal > 0;
+  const label = !rv.enabled ? "Sıradakını açıqla"
+    : done ? "Bütün yerlər açıqlandı"
+    : n!.kind === "suspense" ? `${ordinal(n!.entry.rank)} yer — intizarı başlat`
+    : n!.entry.rank <= 3 ? `${ordinal(n!.entry.rank)} yeri açıqla`
+    : `Sıradakını açıqla (${ordinal(n!.entry.rank)} yer)`;
+  const pill = !rv.enabled ? `<span class="pill">Gözləmədə</span>`
+    : done ? `<span class="pill ok">Bitdi</span>`
+    : `<span class="pill hot mono">${rv.step}/${rv.stepsTotal}</span>`;
+  const { done: d, need } = rv.progress;
+  card.innerHTML = `
+    <div class="row between"><h3>Nəticə açıqlaması</h3>${pill}</div>
+    <button class="rv-allow${rv.enabled ? " on" : ""}" id="rvAllow" aria-pressed="${rv.enabled}">
+      <span class="box">${rv.enabled ? icon("check") : ""}</span>
+      <span><b>${rv.enabled ? "Açıqlamaya icazə verilib" : "Açıqlamaya icazə ver"}</b>
+      <small>${rv.enabled ? "Ekran aktivdir. Söndürsəniz ekran gözləmə rejiminə keçir, irəliləyiş saxlanılır." : "Qiymətləndirmə bağlanacaq və cari reytinq qeydə alınacaq."}</small></span>
+    </button>
+    ${rvConfirm === "enable" ? `<div class="confirm"><span>Qiymətləndirmə bağlanacaq. Daxil olan qiymətlər: <b class="mono">${d}/${need}</b>${d < need ? " — hamısı daxil olmayıb!" : ""}${rv.unscored ? ` · ${rv.unscored} komanda qiymətləndirilməyib və açıqlamaya düşməyəcək.` : ""}</span>
+      <button class="btn sm primary" id="rvYes">Bəli, icazə ver</button><button class="btn sm" id="rvNo">Ləğv et</button></div>` : ""}
+    ${rvConfirm === "reset" ? `<div class="confirm"><span>Açıqlama əvvələ qayıdacaq və reytinq yenidən qeydə alınacaq.</span>
+      <button class="btn sm danger solid" id="rvResetYes">Bəli, sıfırla</button><button class="btn sm" id="rvNo">Ləğv et</button></div>` : ""}
+    ${rv.stale ? `<p class="banner lock" style="margin:0">${icon("lock")}<span>Reytinq qeydə alınandan sonra ballar dəyişib. Yeni vəziyyəti göstərmək üçün “Sıfırla” basın.</span></p>` : ""}
+    <button class="btn primary" id="rvNext" style="min-height:56px;font-size:16px" ${rv.enabled && n ? "" : "disabled"}>${esc(label)} ${rv.enabled && n ? icon("next") : ""}</button>
+    ${rv.enabled && n ? `<p class="sub" style="margin:-6px 0 0">Növbəti (yalnız siz görürsünüz): <b>${esc(n.entry.name)}</b> · <span class="mono">${n.entry.avg.toFixed(1)}</span></p>` : ""}
+    <div class="row">
+      <button class="btn sm" id="rvBack" ${rv.enabled && rv.step > 0 ? "" : "disabled"}>${icon("reset")}Geri</button>
+      <button class="btn sm ghost" id="rvReset" ${rv.snapshotAt ? "" : "disabled"}>Sıfırla</button>
+      <a class="btn sm ghost" href="/reveal" target="_blank" rel="noopener">${icon("ext")}Açıqlama ekranı</a>
+    </div>`;
 }
 
 // ---------- ranking ----------
@@ -331,6 +388,17 @@ main.addEventListener("click", async e => {
   }
   if (t.closest("#rnCancel")) { editing = null; renderStage(); return; }
   if (t.closest("#lockSw")) { patchEvent({ locked: !S.event.locked }); return; }
+  if (t.closest("#rvAllow") && rv) {
+    if (rv.enabled) revealAction("disable");
+    else { rvConfirm = "enable"; renderReveal(); }
+    return;
+  }
+  if (t.closest("#rvYes")) { revealAction("enable"); return; }
+  if (t.closest("#rvNo")) { rvConfirm = null; renderReveal(); return; }
+  if (t.closest("#rvNext")) { revealAction("next"); return; }
+  if (t.closest("#rvBack")) { revealAction("back"); return; }
+  if (t.closest("#rvReset")) { rvConfirm = "reset"; renderReveal(); return; }
+  if (t.closest("#rvResetYes")) { revealAction("reset"); return; }
   const cell = t.closest<HTMLElement>("[data-cell]");
   if (cell) { const [j, tm2] = cell.dataset.cell!.split(":").map(Number); openCell(j, tm2); return; }
   if (t.closest("#wipe")) {
@@ -391,9 +459,11 @@ live({
       renderMatrix();
       renderHeat();
       renderDanger();
+      loadReveal();
     },
     "presence:changed": (p: PresenceEntry[]) => { if (S) { S.presence = p; renderJury(); } },
     "event:locked": (p: { locked: boolean }) => { if (S) { S.event.locked = p.locked; renderStatus(); } },
+    "reveal:changed": () => loadReveal(),
     "config:changed": () => load(),
   },
   resync: load,

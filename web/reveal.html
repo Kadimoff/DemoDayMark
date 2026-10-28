@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="az">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Nəticələr · Ignite Demo Day</title>
+<link rel="icon" href="/favicon.svg">
+<script type="module" src="/src/reveal.ts"></script>
+</head>
+<body class="rv">
+<canvas class="rv-fx" id="fx" aria-hidden="true"></canvas>
+
+<header class="rv-head">
+  <div class="rv-brand"><b>IGN<i>I</i>TE</b><span id="ev">Demo Day</span></div>
+  <div class="rv-title" id="title">Nəticələr</div>
+</header>
+
+<main class="rv-main" id="main" aria-live="polite"></main>
+
+<!-- Top-three ceremony: heartbeat suspense, then the reveal -->
+<div class="rv-overlay" id="overlay" hidden>
+  <div class="rv-vignette"></div>
+  <div class="rv-ov">
+    <div class="rv-ov-place" id="ovPlace"></div>
+    <svg class="rv-heart" id="heart" viewBox="0 0 120 108" aria-hidden="true">
+      <path d="M60 104 C 22 76 4 56 4 33 C 4 16 17 4 33 4 C 45 4 54 11 60 21 C 66 11 75 4 87 4 C 103 4 116 16 116 33 C 116 56 98 76 60 104 Z" />
+    </svg>
+    <svg class="rv-ecg" viewBox="0 0 800 120" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M0 60 H250 L272 60 L290 18 L310 104 L330 40 L346 60 H420 L436 52 L450 60 H800" />
+    </svg>
+    <div class="rv-ov-name" id="ovName"></div>
+    <div class="rv-ov-proj" id="ovProj"></div>
+    <div class="rv-ov-score mono" id="ovScore"></div>
+    <div class="rv-ov-hint" id="ovHint">Kim olacaq?</div>
+  </div>
+</div>
+
+<footer class="rv-dock" id="dock">
+  <span class="rv-toast" id="toast" hidden></span>
+  <div class="rv-btns" id="btns"></div>
+  <span class="rv-keys" id="keys" hidden>→ / Space növbəti · ← geri · F tam ekran · M səs</span>
+</footer>
+</body>
+</html>

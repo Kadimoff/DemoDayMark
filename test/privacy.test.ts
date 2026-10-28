@@ -225,6 +225,60 @@ describe("admin and juror in one browser", () => {
   });
 });
 
+describe("results reveal", () => {
+  const reveal = (action: string, cookie = adminCookie) => post("/api/admin/reveal", cookie).send({ action });
+
+  it("is admin-only and shows no results before the admin allows it", async () => {
+    expect((await reveal("enable", jurorCookie.ali)).status).toBe(403);
+    expect((await request(base).post("/api/admin/reveal").set("Origin", origin()).send({ action: "enable" })).status).toBe(401);
+    const pub = await get("/api/reveal");
+    expect(pub.body).toMatchObject({ enabled: false, total: 0, revealed: [] });
+    expect(JSON.stringify(pub.body)).not.toMatch(/Komanda \d/);
+  });
+
+  it("enabling freezes the ranking and locks scoring", async () => {
+    const r = await reveal("enable");
+    expect(r.status).toBe(200);
+    expect(r.body.enabled).toBe(true);
+    expect(r.body.locked).toBe(true);
+    expect((await request(base).put(`/api/juror/scores/${teamIds[3]}`).set("Origin", origin()).set("Cookie", jurorCookie.ali).send(fullScore(5))).status).toBe(423);
+  });
+
+  it("each step publishes exactly one more place, lowest first; unrevealed names never leave the server", async () => {
+    const adminView = (await get("/api/admin/reveal", adminCookie)).body;
+    const names: string[] = adminView.entries.map((e: { name: string }) => e.name);
+    expect(names.length).toBe(3); // three teams have complete scores in this test run
+    let pub = (await get("/api/reveal")).body;
+    expect(pub.revealed).toEqual([]);
+    for (const n of names) expect(JSON.stringify(pub)).not.toContain(n);
+
+    // Three scored teams are all "top three": suspense, then reveal, for 3rd, 2nd, 1st.
+    expect((await reveal("next")).status).toBe(200);
+    pub = (await get("/api/reveal")).body;
+    expect(pub.suspense).toMatchObject({ index: 2, rank: 3 });
+    for (const n of names) expect(JSON.stringify(pub)).not.toContain(n);
+
+    await reveal("next");
+    pub = (await get("/api/reveal")).body;
+    expect(pub.revealed.map((e: { name: string }) => e.name)).toEqual([names[2]]);
+    expect(JSON.stringify(pub)).not.toContain(names[0]);
+    expect(JSON.stringify(pub)).not.toContain(names[1]);
+
+    await reveal("back");
+    expect((await get("/api/reveal")).body.revealed).toEqual([]);
+  });
+
+  it("pushes reveal:changed to anonymous screens", async () => {
+    const anon = await socket();
+    const got = new Promise<any>(res => anon.once("reveal:changed", res));
+    await reveal("next");
+    const p = await got;
+    expect(p.revealed.length).toBe(1);
+    await reveal("disable");
+    expect((await get("/api/reveal")).body.enabled).toBe(false);
+  });
+});
+
 describe("login rate limit", () => {
   it("locks a username+IP after 5 failed attempts, even for the right password", async () => {
     for (let i = 0; i < 5; i++) {
