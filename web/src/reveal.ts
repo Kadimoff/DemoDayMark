@@ -4,6 +4,7 @@ import "./styles.css";
 import { ordinal, type RevealPublic, type RevealedEntry } from "../../shared/reveal";
 import { api, ApiError } from "./lib/api";
 import { $, esc, icon, reducedMotion } from "./lib/dom";
+import { FX, rgb } from "./lib/fx";
 import { live } from "./lib/socket";
 
 interface AdminReveal { enabled: boolean; step: number; stepsTotal: number; next: { kind: "suspense" | "reveal"; entry: { rank: number } } | null }
@@ -23,9 +24,22 @@ let ceremony = 0; // bumps on every state change so stale timeouts never touch a
 
 // ---------- sound (Web Audio; unlocked by the first click/key on the projector) ----------
 let audio: AudioContext | null = null;
+let master: GainNode | null = null;
+let noiseBuf: AudioBuffer | null = null;
 let muted = false;
 const ctx = () => {
-  if (!audio) audio = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+  if (!audio) {
+    audio = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    // One bus through a compressor so stacked fanfare + booms never clip the projector speakers.
+    const comp = audio.createDynamicsCompressor();
+    comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.25;
+    master = audio.createGain();
+    master.gain.value = 0.9;
+    master.connect(comp).connect(audio.destination);
+    noiseBuf = audio.createBuffer(1, audio.sampleRate * 2, audio.sampleRate);
+    const ch = noiseBuf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+  }
   if (audio.state === "suspended") audio.resume();
   return audio;
 };
@@ -42,9 +56,54 @@ function tone(freq: number, at: number, dur: number, type: OscillatorType, vol: 
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(a.destination);
+    o.connect(g).connect(master!);
     o.start(t);
     o.stop(t + dur + 0.03);
+  } catch { /* audio unavailable */ }
+}
+/** Filtered white noise: risers, booms, firework crackle. */
+function noise(at: number, dur: number, vol: number, type: BiquadFilterType, from: number, to = from, peak = 0.02) {
+  if (muted) return;
+  try {
+    const a = ctx();
+    if (a.state !== "running" || !noiseBuf) return;
+    const t = a.currentTime + at, src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+    src.buffer = noiseBuf;
+    f.type = type;
+    f.frequency.setValueAtTime(from, t);
+    f.frequency.exponentialRampToValueAtTime(to, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + Math.max(0.005, peak));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(master!);
+    src.start(t, Math.random());
+    src.stop(t + dur + 0.05);
+  } catch { /* audio unavailable */ }
+}
+/** Brass-like chord: detuned saws through an opening low-pass filter. */
+function brass(freqs: number[], at: number, dur: number, vol: number) {
+  if (muted) return;
+  try {
+    const a = ctx();
+    if (a.state !== "running") return;
+    const t = a.currentTime + at;
+    for (const f0 of freqs) for (const det of [-6, 6]) {
+      const o = a.createOscillator(), lp = a.createBiquadFilter(), g = a.createGain();
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(f0, t);
+      o.detune.setValueAtTime(det, t);
+      lp.type = "lowpass";
+      lp.frequency.setValueAtTime(500, t);
+      lp.frequency.exponentialRampToValueAtTime(3200, t + 0.08);
+      lp.frequency.exponentialRampToValueAtTime(1400, t + Math.min(dur, 0.6));
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol / freqs.length, t + 0.04);
+      g.gain.setValueAtTime(vol / freqs.length * 0.8, t + dur * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(lp).connect(g).connect(master!);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    }
   } catch { /* audio unavailable */ }
 }
 const sound = {
@@ -52,9 +111,24 @@ const sound = {
   beat: () => { tone(62, 0, 0.2, "sine", 0.9, 38); tone(55, 0.19, 0.18, "sine", 0.6, 34); },
   reveal: () => { tone(523.25, 0, 0.18, "triangle", 0.25); tone(783.99, 0.1, 0.35, "triangle", 0.22); },
   podium: () => [523.25, 659.25, 783.99].forEach((f, i) => tone(f, i * 0.12, 0.9, "triangle", 0.28)),
-  winner: () => {
-    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, i * 0.14, 0.5, "triangle", 0.3));
-    [523.25, 659.25, 783.99, 1046.5].forEach(f => tone(f, 0.62, 1.8, "sine", 0.18));
+  /** Tension before the ignition. */
+  riser: () => { noise(0, 0.95, 0.28, "bandpass", 300, 5000, 0.9); tone(160, 0, 0.95, "sine", 0.12, 880); },
+  boom: () => {
+    tone(72, 0, 1.6, "sine", 1, 26);
+    tone(144, 0, 0.3, "triangle", 0.35, 60);
+    noise(0, 0.7, 0.55, "lowpass", 1400, 90, 0.005);
+  },
+  shimmer: () => [1567.98, 2093, 2637.02, 3135.96].forEach((f, i) => tone(f, 0.05 + i * 0.05, 2.2, "sine", 0.05)),
+  fanfare: () => {
+    const C = [261.63, 329.63, 392, 523.25], F = [349.23, 440, 523.25, 698.46], G = [392, 493.88, 587.33, 783.99];
+    brass(C, 0, 0.42, 0.5); brass(C, 0.46, 0.16, 0.45); brass(F, 0.66, 0.42, 0.5); brass(G, 1.12, 0.42, 0.52);
+    brass([...C, 659.25], 1.6, 2.8, 0.6);
+    [0, 0.66, 1.12, 1.6, 1.72].forEach((t, i) => tone(i < 3 ? 98 : 65.41, t, 0.6, "sine", 0.65, 50));
+  },
+  crackle: () => {
+    tone(115, 0, 0.35, "sine", 0.45, 38);
+    noise(0, 0.6, 0.3, "highpass", 1800, 4500, 0.005);
+    for (let i = 0; i < 9; i++) noise(0.25 + Math.random() * 0.9, 0.035, 0.18, "highpass", 4000);
   },
 };
 
@@ -190,6 +264,7 @@ function showSuspense(rank: number) {
 }
 
 function ceremonyReveal(e: RevealedEntry) {
+  if (e.rank === 1 && e.index === 0) { winnerScene(e); return; }
   const my = ceremony;
   stopBeats();
   overlay.hidden = false;
@@ -201,7 +276,7 @@ function ceremonyReveal(e: RevealedEntry) {
   el.ovHint.textContent = e.rank === 1 ? "Təbriklər!" : "";
   fit(el.ovName, 24);
   countUp(el.ovScore, e.avg, 1600);
-  if (e.rank === 1) { sound.winner(); confetti(); } else sound.podium();
+  sound.podium();
   // Hand the stage back to the podium after the moment has landed.
   window.setTimeout(() => {
     if (my !== ceremony) return;
@@ -211,14 +286,21 @@ function ceremonyReveal(e: RevealedEntry) {
       overlay.hidden = true;
       fillSlot(e, true);
     }, calm ? 0 : 700);
-  }, e.rank === 1 ? 7000 : 4500);
+  }, 4500);
 }
 
 // ---------- apply server state ----------
+let lastSig = "";
 function apply(next: RevealPublic) {
+  // The same state can arrive twice (API response + socket echo); re-applying would cut a running scene.
+  const sig = JSON.stringify([next.enabled, next.eventName, next.step, next.total, next.stepsTotal, next.revealed.map(r => r.teamId)]);
+  if (sig === lastSig) return;
+  lastSig = sig;
   const prev = state;
   state = next;
   ceremony++;
+  stopWinner();
+  fxFront.embers(0, []);
   el.ev.textContent = next.eventName || "Demo Day";
   if (!next.enabled) { waiting(); renderButtons(); return; }
   if (boardTotal !== next.total) buildBoard(next.total);
@@ -245,40 +327,103 @@ function apply(next: RevealPublic) {
     overlay.hidden = true;
   }
   main.querySelectorAll(".rv-pod.p0").forEach(p => p.classList.toggle("champion", next.done));
+  ambient();
   renderButtons();
 }
 
-// ---------- confetti (one measured burst for the winner) ----------
-const fx = $<HTMLCanvasElement>("#fx");
-const g = fx.getContext("2d")!;
-const resize = () => { fx.width = innerWidth * devicePixelRatio; fx.height = innerHeight * devicePixelRatio; };
-addEventListener("resize", resize);
-resize();
-function confetti() {
-  if (calm) return;
-  const css = getComputedStyle(document.documentElement);
-  const colors = ["--rv-gold", "--rv-ember", "--rv-ink", "--rv-silver"].map(v => css.getPropertyValue(v).trim() || "#F1C24D");
-  const W = fx.width, H = fx.height, dpr = devicePixelRatio;
-  const parts = Array.from({ length: 220 }, () => ({
-    x: W / 2 + (Math.random() - 0.5) * W * 0.2, y: H * 0.35,
-    vx: (Math.random() - 0.5) * 22 * dpr, vy: (-Math.random() * 18 - 6) * dpr,
-    r: (Math.random() * 6 + 4) * dpr, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3,
-    c: colors[Math.floor(Math.random() * colors.length)],
-  }));
-  const t0 = performance.now();
-  const frame = (t: number) => {
-    const age = (t - t0) / 1000;
-    g.clearRect(0, 0, W, H);
-    if (age > 4.5) return;
-    g.globalAlpha = Math.max(0, 1 - Math.max(0, age - 3.2) / 1.3);
-    for (const p of parts) {
-      p.vy += 0.55 * dpr; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
-      g.save(); g.translate(p.x, p.y); g.rotate(p.rot); g.fillStyle = p.c; g.fillRect(-p.r / 2, -p.r / 4, p.r, p.r / 2); g.restore();
-    }
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
+// ---------- particles ----------
+const tok = (v: string, fb: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fb;
+const C = { gold: rgb(tok("--rv-gold", "#F1C24D")), ember: rgb(tok("--rv-ember", "#FF6F36")), ink: rgb(tok("--rv-ink", "#F3F4F8")), silver: rgb(tok("--rv-silver", "#D3DAE6")), bronze: rgb(tok("--rv-bronze", "#E0955F")) };
+const fxFront = new FX($<HTMLCanvasElement>("#fx"));
+const winFx = new FX($<HTMLCanvasElement>("#winFx"));
+fxFront.hot = winFx.hot = C.ink;
+winFx.onBurst = () => sound.crackle();
+
+// ---------- winner scene: hold → ignition → name forge → fireworks → podium ----------
+const win = $("#win");
+const winName = $("#winName");
+let winTimers: number[] = [];
+let winEntry: RevealedEntry | null = null;
+const later = (ms: number, fn: () => void) => {
+  const my = ceremony;
+  winTimers.push(window.setTimeout(() => { if (my === ceremony) fn(); }, ms));
+};
+function stopWinner() {
+  winTimers.forEach(clearTimeout);
+  winTimers = [];
+  winEntry = null;
+  win.hidden = true;
+  win.className = "rv-win";
+  winFx.clear();
+  overlay.classList.remove("hold");
 }
+function setWinnerName(name: string) {
+  let i = 0;
+  winName.querySelector(".chars")!.innerHTML = name.split(" ").map(word =>
+    `<span class="w">${Array.from(word).map(ch => `<span class="c" style="--i:${i++}">${esc(ch)}</span>`).join("")}</span>`).join(" ");
+  winName.querySelector(".shine")!.textContent = name;
+  fit(winName, 40);
+  return i;
+}
+function winnerScene(e: RevealedEntry) {
+  stopBeats();
+  winEntry = e;
+  $("#winLabel").textContent = `${ordinal(1)} yer · Qalib`;
+  $("#winProj").textContent = e.project;
+  $("#winScore").textContent = "0.0";
+  const letters = setWinnerName(e.name);
+  if (calm) {
+    overlay.hidden = true;
+    win.hidden = false;
+    win.className = "rv-win label name score congrats";
+    $("#winScore").textContent = e.avg.toFixed(1);
+    later(9000, () => finishWinner());
+    return;
+  }
+  overlay.classList.add("hold");            // the heart stops; the room holds its breath
+  sound.riser();
+  later(900, () => {                         // ignition
+    overlay.hidden = true;
+    overlay.classList.remove("hold");
+    win.hidden = false;
+    win.className = "rv-win ignite";
+    winFx.resize();
+    sound.boom();
+    sound.shimmer();
+    winFx.burst(0.5, 0.45, [C.gold, C.ink, C.ember], 280, 1.5);
+    winFx.embers(40, [C.gold, C.ember]);
+  });
+  later(1250, () => win.classList.add("label"));
+  later(1550, () => { win.classList.add("name"); sound.fanfare(); });
+  const named = 1550 + letters * 60 + 1000;
+  later(named, () => { win.classList.add("score"); countUp($("#winScore"), e.avg, 2200); });
+  later(named + 500, () => win.classList.add("shine"));
+  for (let i = 0; i < 14; i++) later(named + 300 + i * 480, () => winFx.rocket(0.1 + Math.random() * 0.8, [C.gold, C.gold, C.ember, C.silver]));
+  later(named + 600, () => fxFront.confetti(180, [C.gold, C.ember, C.ink, C.silver, C.bronze]));
+  later(named + 1400, () => win.classList.add("congrats"));
+  later(named + 9500, () => finishWinner());
+}
+/** Hands over to the podium (also when the admin presses next/Space during the scene). */
+function finishWinner() {
+  const e = winEntry;
+  if (!e) return;
+  winEntry = null;
+  winTimers.forEach(clearTimeout);
+  winTimers = [];
+  winFx.embers(0, []);
+  win.classList.add("leaving");
+  const my = ceremony;
+  window.setTimeout(() => {
+    if (my !== ceremony || winEntry) return; // the admin moved on meanwhile
+    win.hidden = true;
+    win.className = "rv-win";
+    winFx.clear();
+    fillSlot(e, true);
+    ambient();
+  }, calm ? 0 : 1400);
+}
+/** Slow golden embers behind the final podium. */
+function ambient() { fxFront.embers(state?.done && !calm && !winEntry ? 12 : 0, [C.gold, C.ember]); }
 
 // ---------- admin controls on the projector (optional; the admin panel has the same buttons) ----------
 let adminView: AdminReveal | null = null;
@@ -326,6 +471,7 @@ document.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if (k === "f") act("full");
   else if (k === "m") act("mute");
+  else if (winEntry && (e.code === "Space" || k === "arrowright" || k === "enter" || k === "escape")) { e.preventDefault(); finishWinner(); }
   else if (isAdmin && (e.code === "Space" || k === "arrowright" || k === "enter")) { e.preventDefault(); if (adminView?.next && adminView.enabled) act("next"); }
   else if (isAdmin && k === "arrowleft") act("back");
 });

@@ -36,6 +36,23 @@
   </div>
 </div>
 
+<!-- Winner scene: ignition → name forge → fireworks. Driven by winnerScene() in reveal.ts -->
+<div class="rv-win" id="win" hidden>
+  <canvas class="rv-win-fx" id="winFx" aria-hidden="true"></canvas>
+  <div class="rv-win-rays" aria-hidden="true"></div>
+  <div class="rv-win-beam l" aria-hidden="true"></div>
+  <div class="rv-win-beam r" aria-hidden="true"></div>
+  <div class="rv-win-shock" aria-hidden="true"></div>
+  <div class="rv-win-flash" aria-hidden="true"></div>
+  <div class="rv-win-content">
+    <div class="rv-win-label"><span class="line"></span><span id="winLabel">1-ci yer</span><span class="line"></span></div>
+    <h1 class="rv-win-name" id="winName"><span class="chars"></span><span class="shine" aria-hidden="true"></span></h1>
+    <div class="rv-win-proj" id="winProj"></div>
+    <div class="rv-win-score"><b class="mono" id="winScore">0.0</b><span>bal</span></div>
+    <div class="rv-win-congrats" id="winCongrats">Təbriklər!</div>
+  </div>
+</div>
+
 <footer class="rv-dock" id="dock">
   <span class="rv-toast" id="toast" hidden></span>
   <div class="rv-btns" id="btns"></div>
