@@ -6,7 +6,12 @@ export interface RevealEntry {
   name: string;
   project: string;
   rank: number;
-  avg: number;
+  /** Final score (entry + Demo Day when entry is included). */
+  score: number;
+  /** Demo Day score (mean juror total). */
+  demo: number;
+  /** Entry score, null when not set or not part of the final score. */
+  entry: number | null;
   n: number;
 }
 
@@ -14,6 +19,29 @@ export interface RevealSnapshot {
   createdAt: number;
   /** Best first; only teams that have a score. */
   entries: RevealEntry[];
+  /** Scale of `score` (e.g. 100), for bars. */
+  maxTotal: number;
+}
+
+/** Reads snapshots saved by older versions (which stored `avg` on a 0–100 scale). */
+export function normalizeSnapshot(raw: unknown): RevealSnapshot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const s = raw as { createdAt?: number; entries?: Array<Record<string, unknown>>; maxTotal?: number };
+  if (!Array.isArray(s.entries)) return null;
+  return {
+    createdAt: Number(s.createdAt ?? 0),
+    maxTotal: Number(s.maxTotal ?? 100),
+    entries: s.entries.map(e => ({
+      teamId: Number(e.teamId),
+      name: String(e.name ?? ""),
+      project: String(e.project ?? ""),
+      rank: Number(e.rank),
+      score: Number(e.score ?? e.avg ?? 0),
+      demo: Number(e.demo ?? e.avg ?? 0),
+      entry: e.entry == null ? null : Number(e.entry),
+      n: Number(e.n ?? 0),
+    })),
+  };
 }
 
 /** One admin click. Top-3 places take two clicks: suspense first, then the reveal. */
@@ -42,6 +70,8 @@ export interface RevealPublic {
   eventName: string;
   /** Number of places (slots) — 0 until the admin enables the reveal. */
   total: number;
+  /** Scale of the scores, for bars (0 while disabled). */
+  maxTotal: number;
   step: number;
   stepsTotal: number;
   revealed: RevealedEntry[];
@@ -54,7 +84,7 @@ export interface RevealPublic {
 
 export function revealPublic(snapshot: RevealSnapshot | null, step: number, enabled: boolean, eventName: string): RevealPublic {
   if (!enabled || !snapshot) {
-    return { enabled: false, eventName, total: 0, step: 0, stepsTotal: 0, revealed: [], suspense: null, last: null, done: false };
+    return { enabled: false, eventName, total: 0, maxTotal: 0, step: 0, stepsTotal: 0, revealed: [], suspense: null, last: null, done: false };
   }
   const steps = revealSteps(snapshot.entries);
   const s = Math.max(0, Math.min(step, steps.length));
@@ -67,6 +97,7 @@ export function revealPublic(snapshot: RevealSnapshot | null, step: number, enab
     enabled: true,
     eventName,
     total: snapshot.entries.length,
+    maxTotal: snapshot.maxTotal,
     step: s,
     stepsTotal: steps.length,
     revealed,

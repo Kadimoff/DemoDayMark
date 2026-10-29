@@ -11,6 +11,30 @@ Real vaxtda münsif qiymətləndirməsi və səhnə taymeri. 8 komanda, 4–5 m�
 | **Proyektor taymeri** | `/timer` | səhnə ekranı (girişsiz baxış; admin girişi ilə idarə) |
 | **Nəticə açıqlaması** | `/reveal` | proyektor; yalnız admin icazə verdikdən sonra, addım-addım |
 
+## Bal sistemi
+
+| Hissə | Mənbə | Maksimum |
+|---|---|---|
+| **Giriş balı** | Demo Day-dən əvvəlki seçim mərhələsi. Hər komanda üçün Quraşdırma → Komandalar → "Giriş balı" sahəsinə yazılır. | 50 |
+| **Demo Day balı** | Münsiflərin orta balı. Hər münsif 6 meyar üzrə bal verir, onun balı bu balların cəmidir. | 50 |
+| **Yekun** | Giriş balı + Demo Day balı | 100 |
+
+Demo Day meyarları (hər birində münsif 1-dən maksimuma qədər tam bal verir):
+
+| Meyar | Maks. |
+|---|---|
+| Təqdimat qabiliyyəti | 5 |
+| Komandanın qabiliyyəti | 10 |
+| Biznes Model | 10 |
+| Məhsul-Bazar uyğunluğu | 10 |
+| Bazar | 10 |
+| Təsir qabiliyyəti | 5 |
+
+- **Bərabərlik:** yekun bal bərabərdirsə, əvvəlcə Demo Day balı yüksək olan komanda öndə gedir. O da bərabərdirsə, maksimumu yüksək olan meyarların orta balı müqayisə olunur (Komanda → Biznes → Məhsul-Bazar → Bazar → Təqdimat → Təsir). Tam bərabərlikdə yer paylaşılır.
+- **Giriş balı yekuna daxil edilməsin** deyirsinizsə: Quraşdırma → "Yekun balın hesablanması" bölməsindəki açarı söndürün. Reytinq dərhal yalnız Demo Day balı ilə qurulur.
+- **Giriş balları admin və münsiflər üçün görünür.** Münsif panelində hər komandanın başlığında göstərilir. Başqa münsiflərin balları, Demo Day ortalaması, yekun və reytinq isə münsiflərə göndərilmir (`test/privacy.test.ts`).
+- Meyarları, onların maksimumunu və giriş balının maksimumunu Quraşdırma səhifəsindən dəyişmək olar.
+
 ## Taymer necə inteqrasiya olunub
 
 Köhnə "Pitch Deck Taymeri" (`docs/reference/pitch-deck-timer.html`) yalnız öz brauzerində işləyirdi. İndi taymerin vəziyyəti **serverdə** saxlanılır və bütün ekranlara eyni anda yayımlanır:
@@ -117,7 +141,7 @@ Tətbiq serverdə Coolify layihəsi **Ignite Demo Day** → tətbiq **demoday-ma
 - [ ] `.env`: güclü `ADMIN_PASSWORD`, təsadüfi `SESSION_SECRET`, düzgün `ORIGIN`.
 - [ ] Quraşdırma: tədbirin adı və tarixi, 8 komandanın adı və layihəsi, sıra.
 - [ ] 5 münsif hesabı (ad, istifadəçi adı, şifrə). Giriş məlumatlarını kağızda hər münsifə ayrıca verin.
-- [ ] Kriteriyaların çəki cəmi 100%.
+- [ ] Meyarlar və maksimum ballar düzgündür (cəmi 50), hər komandanın giriş balı yazılıb.
 - [ ] Tam prova (aşağıdakı ssenari), sonra **Canlı panel → Təhlükəli zona → Bütün qiymətləri sil**.
 - [ ] `npm run backup`.
 

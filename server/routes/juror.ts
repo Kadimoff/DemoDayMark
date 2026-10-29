@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { jurorTotal } from "../../shared/scoring.js";
+import { jurorTotal, MIN_POINTS } from "../../shared/scoring.js";
 import { requireRole } from "../auth.js";
 import { parseBody, type Ctx } from "../context.js";
 import { jurorState } from "../views.js";
 
 const scoreBody = z.object({
-  values: z.record(z.string(), z.number().int("Ballar tam ədəd olmalıdır.").min(1, "Bal 1–10 arası olmalıdır.").max(10, "Bal 1–10 arası olmalıdır.")),
+  values: z.record(z.string(), z.number().int("Ballar tam ədəd olmalıdır.").min(MIN_POINTS, `Bal ən azı ${MIN_POINTS} olmalıdır.`).max(100)),
   note: z.string().max(2000, "Şərh 2000 simvoldan uzun ola bilməz.").optional().default(""),
 });
 
@@ -28,7 +28,8 @@ export function jurorRoutes(app: FastifyInstance, { repo, rt }: Ctx) {
       const values: Record<string, number> = {};
       for (const c of criteria) {
         const v = body.values[c.key];
-        if (v == null) return reply.code(400).send({ error: `“${c.name}” kriteriyasına bal verilməyib.` });
+        if (v == null) return reply.code(400).send({ error: `“${c.name}” meyarına bal verilməyib.` });
+        if (v > c.maxScore) return reply.code(400).send({ error: `“${c.name}” üçün bal ${MIN_POINTS}–${c.maxScore} arası olmalıdır.` });
         values[c.key] = v;
       }
       const total = jurorTotal(values, criteria);

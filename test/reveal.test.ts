@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ordinal, revealPublic, revealSteps, type RevealEntry, type RevealSnapshot } from "../shared/reveal.js";
+import { normalizeSnapshot, ordinal, revealPublic, revealSteps, type RevealEntry, type RevealSnapshot } from "../shared/reveal.js";
 
-const entry = (teamId: number, rank: number, avg: number): RevealEntry => ({ teamId, name: `Team ${teamId}`, project: "", rank, avg, n: 5 });
+const entry = (teamId: number, rank: number, score: number): RevealEntry =>
+  ({ teamId, name: `Team ${teamId}`, project: "", rank, score, demo: score - 40, entry: 40, n: 5 });
 // Best first, as stored in the snapshot.
 const EIGHT = [entry(1, 1, 90), entry(2, 2, 85), entry(3, 3, 80), entry(4, 4, 70), entry(5, 5, 65), entry(6, 6, 60), entry(7, 7, 55), entry(8, 8, 50)];
-const snap: RevealSnapshot = { createdAt: 0, entries: EIGHT };
+const snap: RevealSnapshot = { createdAt: 0, entries: EIGHT, maxTotal: 100 };
 
 describe("revealSteps", () => {
   it("goes from last place up; top three get a suspense step before their reveal", () => {
@@ -40,7 +41,7 @@ describe("revealPublic", () => {
     const v = revealPublic(snap, 6, true, "Demo");
     expect(v.suspense).toEqual({ index: 2, rank: 3 });
     expect(v.revealed.map(e => e.teamId)).toEqual([8, 7, 6, 5, 4]);
-    expect(JSON.stringify(v)).not.toMatch(/"Team 3"|"teamId":3\b|"avg":80/);
+    expect(JSON.stringify(v)).not.toMatch(/"Team 3"|"teamId":3\b|"score":80/);
   });
 
   it("is done after the winner, and clamps out-of-range steps", () => {
@@ -48,6 +49,22 @@ describe("revealPublic", () => {
     expect(v.done).toBe(true);
     expect(v.step).toBe(11);
     expect(v.revealed[v.revealed.length - 1].teamId).toBe(1);
+  });
+});
+
+describe("normalizeSnapshot", () => {
+  it("reads snapshots stored before the points model (avg on 0–100)", () => {
+    const legacy = { createdAt: 5, entries: [{ teamId: 1, name: "A", project: "", rank: 1, avg: 88.5, n: 4 }] };
+    expect(normalizeSnapshot(legacy)).toEqual({
+      createdAt: 5, maxTotal: 100, entries: [{ teamId: 1, name: "A", project: "", rank: 1, score: 88.5, demo: 88.5, entry: null, n: 4 }],
+    });
+    expect(normalizeSnapshot(null)).toBeNull();
+    expect(normalizeSnapshot({ entries: "x" })).toBeNull();
+  });
+
+  it("publishes the score scale with the public view", () => {
+    expect(revealPublic(snap, 1, true, "Demo").maxTotal).toBe(100);
+    expect(revealPublic(snap, 1, false, "Demo").maxTotal).toBe(0);
   });
 });
 

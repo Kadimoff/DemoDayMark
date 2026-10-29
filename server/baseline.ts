@@ -4,15 +4,20 @@ import { hash, type Options } from "@node-rs/argon2";
 import type { Config } from "./config.js";
 import type { Repo } from "./repo.js";
 
+// Ignite Demo Day rubric: points per criterion, 50 in total (entry scores add another 50).
 export const DEFAULT_CRITERIA = [
-  { key: "problem", name: "Problem", weight: 15, description: "Problem real və aktualdırmı? Kimin problemidir və nə qədər ağrılıdır?" },
-  { key: "solution", name: "Həll və dəyər təklifi", weight: 15, description: "Həll problemi birbaşa aradan qaldırırmı? Alternativlərdən nə ilə fərqlənir?" },
-  { key: "mvp", name: "MVP / Demo", weight: 20, description: "Məhsul işləyirmi? Demo inandırıcıdırmı, texniki icra hansı səviyyədədir?" },
-  { key: "market", name: "Bazar və rəqabət", weight: 10, description: "Hədəf seqment və bazar həcmi aydındırmı? Rəqiblər bilinirmi?" },
-  { key: "biz", name: "Biznes model", weight: 10, description: "Necə gəlir əldə edəcək? Qiymət, satış kanalları məntiqlidirmi?" },
-  { key: "traction", name: "Validasiya və traction", weight: 10, description: "İstifadəçi, pilot, müştəri müsahibəsi, niyyət məktubu — sübut varmı?" },
-  { key: "team", name: "Komanda", weight: 10, description: "Komanda bu işi həyata keçirə bilərmi? Bacarıqlar tamamlayırmı?" },
-  { key: "pitch", name: "Təqdimat və sual-cavab", weight: 10, description: "Vaxta sığdımı, aydın idimi? Suallara dəqiq və inamlı cavab verdimi?" },
+  { key: "teqdimat", name: "Təqdimat qabiliyyəti", maxScore: 5,
+    description: "1. Təqdimatçının layihəni, görülən və görüləcək işləri təqdim etmə bacarığı\n2. Verilən suallara dolğun cavab vermə" },
+  { key: "komanda", name: "Komandanın qabiliyyəti", maxScore: 10,
+    description: "Komanda bu layihəni davamlı inkişaf etdirmək üçün müvafiq bacarıqları göstərir.\nKomandanın gördüyü işlər gələcəkdə görəcəyi işlərə istinad verir" },
+  { key: "biznes", name: "Biznes Model", maxScore: 10,
+    description: "Layihə dayanıqlı biznes modelə sahibdir, bu onun fəaliyyətinə və investisiya cəlbinə şərait yarada bilər" },
+  { key: "mehsul_bazar", name: "Məhsul-Bazar uyğunluğu", maxScore: 10,
+    description: "Layihə yerli və ya qlobal bazarda olan kritik bir problemi həll edir" },
+  { key: "bazar", name: "Bazar", maxScore: 10,
+    description: "Layihənin çıxış etdiyi bazar yerli və/və ya qlobal arenada böyük potensiala və həcmə malikdir.\nLayihə xarici ölkələrə də açıla bilər" },
+  { key: "tesir", name: "Təsir qabiliyyəti", maxScore: 5,
+    description: "Layihə yerli və qlobal bazarda iz qoyma və inkişaf imkanına malikdir" },
 ];
 
 // argon2id, OWASP-recommended parameters.

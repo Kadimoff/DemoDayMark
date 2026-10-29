@@ -1,100 +1,131 @@
 import { describe, expect, it } from "vitest";
-import { computeResults, isComplete, jurorTotal } from "../shared/scoring.js";
+import { band, computeResults, demoMax, displayParts, isComplete, jurorTotal } from "../shared/scoring.js";
 import { applyTimerAction, DEFAULT_TIMER, timerView } from "../shared/timer.js";
-import type { Criterion, Juror, ScoreRow, Team } from "../shared/types.js";
+import type { AdminTeam, Criterion, Juror, ScoreRow } from "../shared/types.js";
 
-const crit = (key: string, weight: number, orderIndex: number): Criterion =>
-  ({ id: orderIndex + 1, key, name: key, description: "", weight, orderIndex });
-const CRITERIA = [crit("problem", 15, 0), crit("solution", 15, 1), crit("mvp", 20, 2), crit("market", 10, 3),
-  crit("biz", 10, 4), crit("traction", 10, 5), crit("team", 10, 6), crit("pitch", 10, 7)];
-const team = (id: number): Team => ({ id, name: `Komanda ${id}`, project: "", orderIndex: id, active: true });
+const crit = (key: string, maxScore: number, orderIndex: number): Criterion =>
+  ({ id: orderIndex + 1, key, name: key, description: "", maxScore, orderIndex });
+// The Ignite Demo Day rubric: 5 + 10 + 10 + 10 + 10 + 5 = 50
+const CRITERIA = [crit("teqdimat", 5, 0), crit("komanda", 10, 1), crit("biznes", 10, 2), crit("mehsul_bazar", 10, 3),
+  crit("bazar", 10, 4), crit("tesir", 5, 5)];
+const team = (id: number, entryScore: number | null = null): AdminTeam =>
+  ({ id, name: `Komanda ${id}`, project: "", orderIndex: id, active: true, entryScore });
 const juror = (id: number): Juror => ({ id, username: `j${id}`, displayName: `Münsif ${id}`, active: true });
-const all = (v: number) => Object.fromEntries(CRITERIA.map(c => [c.key, v]));
+/** Same share v/10 on every criterion: v on 10-point criteria, v/2 (rounded up) on 5-point ones. */
+const at = (v: number) => Object.fromEntries(CRITERIA.map(c => [c.key, c.maxScore === 10 ? v : Math.ceil(v / 2)]));
 const score = (jurorId: number, teamId: number, values: Record<string, number>): ScoreRow =>
   ({ jurorId, teamId, values, note: "", createdAt: 0, updatedAt: 0 });
+const results = (teams: AdminTeam[], scores: ScoreRow[], opts: Partial<{ includeEntry: boolean; minJurorsForRank: number; jurors: Juror[] }> = {}) =>
+  computeResults({
+    teams, criteria: CRITERIA, scores, jurors: opts.jurors ?? [juror(1), juror(2), juror(3)],
+    minJurorsForRank: opts.minJurorsForRank ?? 1, includeEntry: opts.includeEntry ?? true, entryMax: 50,
+  });
 
-describe("jurorTotal", () => {
-  it("is Σ(score × weight) / Σ weight × 10", () => {
-    expect(jurorTotal(all(10), CRITERIA)).toBe(100);
-    expect(jurorTotal(all(1), CRITERIA)).toBe(10);
-    // only MVP (20%) gets 10, the rest 5 → (20*10 + 80*5) / 100 * 10 = 60
-    expect(jurorTotal({ ...all(5), mvp: 10 }, CRITERIA)).toBe(60);
+describe("jurorTotal (points)", () => {
+  it("is the plain sum of points; the rubric maximum is 50", () => {
+    expect(demoMax(CRITERIA)).toBe(50);
+    expect(jurorTotal(at(10), CRITERIA)).toBe(50);
+    expect(jurorTotal({ teqdimat: 1, komanda: 1, biznes: 1, mehsul_bazar: 1, bazar: 1, tesir: 1 }, CRITERIA)).toBe(6);
+    expect(jurorTotal({ teqdimat: 4, komanda: 8, biznes: 7, mehsul_bazar: 9, bazar: 6, tesir: 3 }, CRITERIA)).toBe(37);
   });
-  it("rounds to two decimals", () => {
-    const c = [crit("a", 1, 0), crit("b", 2, 1)];
-    expect(jurorTotal({ a: 1, b: 2 }, c)).toBe(16.67);
-  });
-  it("returns null for incomplete or out-of-range values", () => {
-    const { pitch: _p, ...missing } = all(7);
+
+  it("rejects missing criteria and anything outside 1..max of that criterion", () => {
+    const { tesir: _t, ...missing } = at(8);
     expect(jurorTotal(missing, CRITERIA)).toBeNull();
-    expect(isComplete({ ...all(7), mvp: 11 }, CRITERIA)).toBe(false);
-    expect(isComplete({ ...all(7), mvp: 0 }, CRITERIA)).toBe(false);
-    expect(isComplete({ ...all(7), mvp: 7.5 }, CRITERIA)).toBe(false);
+    expect(isComplete({ ...at(8), teqdimat: 6 }, CRITERIA)).toBe(false); // 5-point criterion
+    expect(isComplete({ ...at(8), komanda: 11 }, CRITERIA)).toBe(false);
+    expect(isComplete({ ...at(8), komanda: 0 }, CRITERIA)).toBe(false);
+    expect(isComplete({ ...at(8), komanda: 7.5 }, CRITERIA)).toBe(false);
+    expect(isComplete({ ...at(8), teqdimat: 5, tesir: 5 }, CRITERIA)).toBe(true);
   });
 });
 
 describe("computeResults", () => {
-  const teams = [team(1), team(2), team(3), team(4)];
-  const jurors = [juror(1), juror(2), juror(3)];
-
-  it("averages complete juror totals and ranks descending", () => {
-    const r = computeResults({
-      teams, jurors, criteria: CRITERIA, minJurorsForRank: 1,
-      scores: [score(1, 1, all(6)), score(2, 1, all(8)), score(1, 2, all(9)), score(1, 3, all(5))],
-    });
-    expect(r.ranking.map(x => [x.team.id, x.rank, x.avg])).toEqual([[2, 1, 90], [1, 2, 70], [3, 3, 50], [4, null, null]]);
-    const t1 = r.ranking.find(x => x.team.id === 1)!;
-    expect([t1.n, t1.min, t1.max]).toEqual([2, 60, 80]);
-    expect(r.matrix[1]).toEqual({ 1: 60, 2: 80, 3: null });
-    expect(r.done).toBe(4);
-    expect(r.need).toBe(12);
+  it("Demo Day score = mean juror total; final = entry + Demo Day", () => {
+    const r = results([team(1, 40), team(2, 50), team(3)], [
+      score(1, 1, at(6)), score(2, 1, at(8)),   // 30 and 40 → demo 35, final 75
+      score(1, 2, at(4)),                       // 20 → final 70
+      score(1, 3, at(10)),                      // 50, no entry → 50
+    ]);
+    expect(r.ranking.map(x => [x.team.id, x.rank, x.score, x.demo, x.entry])).toEqual([
+      [1, 1, 75, 35, 40], [2, 2, 70, 20, 50], [3, 3, 50, 50, null],
+    ]);
+    const t1 = r.ranking[0];
+    expect([t1.n, t1.min, t1.max]).toEqual([2, 30, 40]);
+    expect(r.matrix[1]).toEqual({ 1: 30, 2: 40, 3: null });
+    expect([r.demoMax, r.maxTotal, r.done, r.need]).toEqual([50, 100, 4, 9]);
   });
 
-  it("ignores incomplete scores entirely", () => {
-    const { mvp: _m, ...partial } = all(10);
-    const r = computeResults({ teams, jurors, criteria: CRITERIA, minJurorsForRank: 1, scores: [score(1, 1, all(5)), score(2, 1, partial)] });
-    const t1 = r.ranking.find(x => x.team.id === 1)!;
-    expect([t1.n, t1.avg]).toEqual([1, 50]);
+  it("can rank by the Demo Day score alone", () => {
+    const r = results([team(1, 50), team(2, 0)], [score(1, 1, at(4)), score(1, 2, at(8))], { includeEntry: false });
+    expect(r.ranking.map(x => [x.team.id, x.score])).toEqual([[2, 40], [1, 20]]);
+    expect(r.maxTotal).toBe(50);
+    expect(r.ranking[1].entry).toBe(50); // still reported, just not added
   });
 
-  it("breaks ties by the highest-weight criterion average (MVP), then the next", () => {
-    // Same total 60 for both; team 2 has the higher MVP average.
-    const a = { ...all(6) };                                  // 60
-    const b = { ...all(6), mvp: 9, problem: 4, solution: 4 }; // (20*9 + 15*4*2 + 50*6)/100*10 = 60
-    expect(jurorTotal(b, CRITERIA)).toBe(60);
-    const r = computeResults({ teams: [team(1), team(2)], jurors, criteria: CRITERIA, minJurorsForRank: 1, scores: [score(1, 1, a), score(1, 2, b)] });
-    expect(r.ranking.map(x => [x.team.id, x.rank])).toEqual([[2, 1], [1, 2]]);
-    expect(r.tieBreakKeys.slice(0, 3)).toEqual(["mvp", "problem", "solution"]);
+  it("adds an unrounded entry score once (41.666… + 40.666… = 82.33, not 82.34)", () => {
+    const plus1 = { ...at(8), bazar: 9 }; // at(8) = 4 + 8 + 8 + 8 + 8 + 4 = 40, so this is 41
+    const r = results([team(1, 125 / 3)], [score(1, 1, plus1), score(2, 1, plus1), score(3, 1, at(8))]);
+    expect(r.ranking[0].demo).toBe(40.67);
+    expect(r.ranking[0].score).toBe(82.33); // rounding entry and demo separately would give 41.67 + 40.67 = 82.34
   });
 
-  it("falls through to the next criterion when MVP also ties", () => {
-    const a = { ...all(6), problem: 8, solution: 4 }; // problem higher
-    const b = { ...all(6), problem: 4, solution: 8 };
-    const r = computeResults({ teams: [team(1), team(2)], jurors, criteria: CRITERIA, minJurorsForRank: 1, scores: [score(1, 1, b), score(1, 2, a)] });
+  it("breaks a tie on the final score by the Demo Day score", () => {
+    // A: 50 + 30 = 80; B: 40 + 40 = 80 → B ranks first (better on the day)
+    const r = results([team(1, 50), team(2, 40)], [score(1, 1, at(6)), score(1, 2, at(8))]);
+    expect(r.ranking.map(x => [x.team.id, x.rank, x.score])).toEqual([[2, 1, 80], [1, 2, 80]]);
+  });
+
+  it("then by the highest-maximum criteria in display order", () => {
+    const a = { teqdimat: 3, komanda: 9, biznes: 6, mehsul_bazar: 6, bazar: 6, tesir: 3 }; // komanda higher
+    const b = { teqdimat: 3, komanda: 6, biznes: 9, mehsul_bazar: 6, bazar: 6, tesir: 3 };
+    expect(jurorTotal(a, CRITERIA)).toBe(jurorTotal(b, CRITERIA));
+    const r = results([team(1, 40), team(2, 40)], [score(1, 1, b), score(1, 2, a)]);
     expect(r.ranking[0].team.id).toBe(2);
+    expect(r.tieBreakKeys).toEqual(["komanda", "biznes", "mehsul_bazar", "bazar", "teqdimat", "tesir"]);
   });
 
   it("gives a shared rank to a full tie", () => {
-    const r = computeResults({ teams, jurors, criteria: CRITERIA, minJurorsForRank: 1,
-      scores: [score(1, 1, all(7)), score(1, 2, all(7)), score(1, 3, all(5))] });
+    const r = results([team(1, 40), team(2, 40), team(3, 40), team(4)], [score(1, 1, at(7)), score(1, 2, at(7)), score(1, 3, at(5))]);
     expect(r.ranking.map(x => x.rank)).toEqual([1, 1, 3, null]);
   });
 
-  it("flags teams below MIN_JURORS_FOR_RANK and puts unscored teams last", () => {
-    const r = computeResults({ teams, jurors, criteria: CRITERIA, minJurorsForRank: 2,
-      scores: [score(1, 1, all(9)), score(1, 2, all(5)), score(2, 2, all(5))] });
+  it("ignores incomplete scores, flags thin coverage and puts unscored teams last", () => {
+    const { bazar: _b, ...partial } = at(10);
+    const r = results([team(1, 50), team(2), team(3)], [score(1, 1, at(9)), score(2, 1, partial), score(1, 2, at(5)), score(2, 2, at(5))],
+      { minJurorsForRank: 2 });
     const t1 = r.ranking.find(x => x.team.id === 1)!;
-    const t2 = r.ranking.find(x => x.team.id === 2)!;
-    expect(t1.incomplete).toBe(true);
-    expect(t2.incomplete).toBe(false);
-    expect(r.ranking.slice(-2).every(x => x.avg == null)).toBe(true);
+    expect([t1.n, t1.incomplete]).toEqual([1, true]);
+    expect(r.ranking.find(x => x.team.id === 2)!.incomplete).toBe(false);
+    const last = r.ranking[r.ranking.length - 1];
+    expect([last.team.id, last.score, last.rank]).toEqual([3, null, null]);
+  });
+
+  it("an entry score alone does not rank a team nobody scored", () => {
+    const r = results([team(1, 50)], []);
+    expect([r.ranking[0].score, r.ranking[0].rank]).toEqual([null, null]);
   });
 
   it("skips inactive teams and scores from unknown jurors", () => {
-    const r = computeResults({ teams: [team(1), { ...team(2), active: false }], jurors, criteria: CRITERIA, minJurorsForRank: 1,
-      scores: [score(99, 1, all(10)), score(1, 2, all(10))] });
+    const r = results([team(1), { ...team(2), active: false }], [score(99, 1, at(10)), score(1, 2, at(10))]);
     expect(r.ranking.map(x => x.team.id)).toEqual([1]);
-    expect(r.ranking[0].avg).toBeNull();
+    expect(r.ranking[0].score).toBeNull();
+  });
+});
+
+describe("displayParts", () => {
+  it("shows parts that add up to the shown total", () => {
+    // 46.666… + 43.666… = 90.333… → shown 90.33 = 46.67 + 43.66 (not 43.67, which would add to 90.34)
+    expect(displayParts(Math.round((140 / 3 + 131 / 3) * 100) / 100, 140 / 3)).toEqual({ score: "90.33", entry: "46.67", demo: "43.66" });
+    expect(displayParts(85, 125 / 3)).toEqual({ score: "85.00", entry: "41.67", demo: "43.33" });
+    expect(displayParts(44, null)).toEqual({ score: "44.00", entry: "0.00", demo: "44.00" });
+  });
+});
+
+describe("band", () => {
+  it("matches the original 1–10 bands and scales to 1–5", () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => band(v, 10))).toEqual([0, 0, 0, 1, 1, 1, 2, 2, 3, 3]);
+    expect([1, 2, 3, 4, 5].map(v => band(v, 5))).toEqual([0, 1, 1, 2, 3]);
   });
 });
 

@@ -2,6 +2,7 @@
 // (server: shared/reveal.ts), so nothing can leak ahead of the ceremony.
 import "./styles.css";
 import { ordinal, type RevealPublic, type RevealedEntry } from "../../shared/reveal";
+import { displayParts } from "../../shared/scoring";
 import { api, ApiError } from "./lib/api";
 import { $, esc, icon, reducedMotion } from "./lib/dom";
 import { FX, rgb } from "./lib/fx";
@@ -12,7 +13,7 @@ interface AdminReveal { enabled: boolean; step: number; stepsTotal: number; next
 const main = $("#main");
 const overlay = $("#overlay");
 const el = {
-  ev: $("#ev"), title: $("#title"), ovPlace: $("#ovPlace"), ovName: $("#ovName"), ovProj: $("#ovProj"), ovScore: $("#ovScore"),
+  ev: $("#ev"), title: $("#title"), ovPlace: $("#ovPlace"), ovName: $("#ovName"), ovProj: $("#ovProj"), ovScore: $("#ovScore"), ovBreak: $("#ovBreak"),
   ovHint: $("#ovHint"), btns: $("#btns"), keys: $("#keys"), toast: $("#toast"), dock: $("#dock"),
 };
 const calm = reducedMotion();
@@ -152,12 +153,12 @@ function stopBeats() { clearTimeout(beatTimer); overlay.classList.remove("beat")
 // ---------- helpers ----------
 const medal = (rank: number) => (rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "");
 function countUp(node: HTMLElement, to: number, ms: number) {
-  if (calm) { node.textContent = to.toFixed(1); return; }
+  if (calm) { node.textContent = to.toFixed(2); return; }
   const t0 = performance.now(), my = ceremony;
   const step = (t: number) => {
-    if (my !== ceremony) { node.textContent = to.toFixed(1); return; }
+    if (my !== ceremony) { node.textContent = to.toFixed(2); return; }
     const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3);
-    node.textContent = (to * e).toFixed(1);
+    node.textContent = (to * e).toFixed(2);
     if (k < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -206,7 +207,7 @@ function buildBoard(total: number) {
     </section>` : ""}
     <section class="rv-podium" aria-label="İlk üçlük">${pod.map(i => `
       <div class="rv-pod p${i}" data-slot="${i}">
-        <div class="rv-card"><span class="medal">${ordinal(i + 1)} yer</span><b class="nm">?</b><small class="pj"></small><span class="sc mono"></span></div>
+        <div class="rv-card"><span class="medal">${ordinal(i + 1)} yer</span><b class="nm">?</b><small class="pj"></small><span class="sc mono"></span><small class="bd"></small></div>
         <div class="rv-pillar"><span>${i + 1}</span></div>
       </div>`).join("")}
     </section></div>`;
@@ -222,21 +223,29 @@ function fillSlot(e: RevealedEntry, animate: boolean) {
   if (slot.classList.contains("rv-row")) {
     slot.querySelector(".rk")!.textContent = String(e.rank);
     slot.querySelector(".nm b")!.textContent = e.name;
-    slot.querySelector(".nm small")!.textContent = e.project;
-    slot.querySelector<HTMLElement>(".bar i")!.style.width = `${e.avg}%`;
+    slot.querySelector(".nm small")!.textContent = [e.project, breakdown(e)].filter(Boolean).join(" · ");
+    slot.querySelector<HTMLElement>(".bar i")!.style.width = `${pct(e.score)}%`;
   } else {
     slot.querySelector(".medal")!.textContent = `${ordinal(e.rank)} yer`;
     slot.querySelector(".nm")!.textContent = e.name;
     slot.querySelector(".pj")!.textContent = e.project;
+    slot.querySelector(".bd")!.textContent = breakdown(e);
     fit(slot.querySelector<HTMLElement>(".nm")!);
   }
   if (animate && !calm) {
     slot.classList.remove("enter");
     void slot.offsetWidth;
     slot.classList.add("enter");
-    countUp(sc, e.avg, 1300);
-  } else sc.textContent = e.avg.toFixed(1);
+    countUp(sc, e.score, 1300);
+  } else sc.textContent = e.score.toFixed(2);
 }
+/** "Giriş 41.7 + Demo Day 43.2" when the final score includes an entry score. */
+const breakdown = (e: RevealedEntry) => {
+  if (e.entry == null) return "";
+  const p = displayParts(e.score, e.entry);
+  return `Giriş ${p.entry} + Demo Day ${p.demo}`;
+};
+const pct = (score: number) => (state?.maxTotal ? Math.max(0, Math.min(100, (score / state.maxTotal) * 100)) : 0);
 
 function clearSlot(index: number) {
   const slot = main.querySelector<HTMLElement>(`[data-slot="${index}"]`);
@@ -259,6 +268,7 @@ function showSuspense(rank: number) {
   el.ovName.textContent = "";
   el.ovProj.textContent = "";
   el.ovScore.textContent = "";
+  el.ovBreak.textContent = "";
   el.ovHint.textContent = rank === 1 ? "Qalib kimdir?" : "Kim olacaq?";
   if (!calm) startBeats();
 }
@@ -272,10 +282,11 @@ function ceremonyReveal(e: RevealedEntry) {
   el.ovPlace.textContent = `${ordinal(e.rank)} yer`;
   el.ovName.textContent = e.name;
   el.ovProj.textContent = e.project;
-  el.ovScore.textContent = "0.0";
+  el.ovScore.textContent = "0.00";
   el.ovHint.textContent = e.rank === 1 ? "Təbriklər!" : "";
+  el.ovBreak.textContent = breakdown(e);
   fit(el.ovName, 24);
-  countUp(el.ovScore, e.avg, 1600);
+  countUp(el.ovScore, e.score, 1600);
   sound.podium();
   // Hand the stage back to the podium after the moment has landed.
   window.setTimeout(() => {
@@ -370,13 +381,14 @@ function winnerScene(e: RevealedEntry) {
   winEntry = e;
   $("#winLabel").textContent = `${ordinal(1)} yer · Qalib`;
   $("#winProj").textContent = e.project;
-  $("#winScore").textContent = "0.0";
+  $("#winScore").textContent = "0.00";
+  $("#winBreak").textContent = breakdown(e);
   const letters = setWinnerName(e.name);
   if (calm) {
     overlay.hidden = true;
     win.hidden = false;
     win.className = "rv-win label name score congrats";
-    $("#winScore").textContent = e.avg.toFixed(1);
+    $("#winScore").textContent = e.score.toFixed(2);
     later(9000, () => finishWinner());
     return;
   }
@@ -396,7 +408,7 @@ function winnerScene(e: RevealedEntry) {
   later(1250, () => win.classList.add("label"));
   later(1550, () => { win.classList.add("name"); sound.fanfare(); });
   const named = 1550 + letters * 60 + 1000;
-  later(named, () => { win.classList.add("score"); countUp($("#winScore"), e.avg, 2200); });
+  later(named, () => { win.classList.add("score"); countUp($("#winScore"), e.score, 2200); });
   later(named + 500, () => win.classList.add("shine"));
   for (let i = 0; i < 14; i++) later(named + 300 + i * 480, () => winFx.rocket(0.1 + Math.random() * 0.8, [C.gold, C.gold, C.ember, C.silver]));
   later(named + 600, () => fxFront.confetti(180, [C.gold, C.ember, C.ink, C.silver, C.bronze]));

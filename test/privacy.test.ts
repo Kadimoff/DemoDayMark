@@ -12,6 +12,7 @@ let adminCookie: string;
 const jurorCookie: Record<string, string> = {};
 const jurorId: Record<string, number> = {};
 let criteriaKeys: string[] = [];
+let criteriaMax: Record<string, number> = {};
 let teamIds: number[] = [];
 const sockets: Socket[] = [];
 
@@ -35,7 +36,8 @@ function socket(cookie?: string) {
   return new Promise<Socket>((res, rej) => { s.on("connect", () => res(s)); s.on("connect_error", rej); });
 }
 
-const fullScore = (v: number) => ({ values: Object.fromEntries(criteriaKeys.map(k => [k, v])), note: `şərh ${v}` });
+/** v on every criterion, capped at that criterion's maximum (the rubric mixes 5- and 10-point criteria). */
+const fullScore = (v: number) => ({ values: Object.fromEntries(criteriaKeys.map(k => [k, Math.min(v, criteriaMax[k])])), note: `şərh ${v}` });
 
 beforeAll(async () => {
   A = await buildApp(loadConfig({ dbFile: ":memory:", adminUsername: "admin", adminPassword: "admin-pass-123", origins: [], sessionSecret: "test-secret", webDir: "/nonexistent" }));
@@ -50,6 +52,7 @@ beforeAll(async () => {
   }
   const st = await get("/api/juror/state", jurorCookie.ali);
   criteriaKeys = st.body.criteria.map((c: { key: string }) => c.key);
+  criteriaMax = Object.fromEntries(st.body.criteria.map((c: { key: string; maxScore: number }) => [c.key, c.maxScore]));
   teamIds = st.body.teams.map((t: { id: number }) => t.id);
 });
 
@@ -105,7 +108,7 @@ describe("juror isolation", () => {
     expect(st.body.myScores[0].values[criteriaKeys[0]]).toBe(4);
     expect(json).not.toContain("şərh 9");
     expect(json).not.toContain("Aysel");
-    for (const k of ["results", "ranking", "matrix", "avg", "\"total\"", "jurors"]) expect(json).not.toContain(k);
+    for (const k of ["results", "ranking", "matrix", "avg", "\"total\"", "jurors", "demo", "score\""]) expect(json).not.toContain(k);
   });
 
   it("delivers score events to the admin socket in under a second and to nobody else", async () => {
@@ -125,7 +128,7 @@ describe("juror isolation", () => {
     expect(r.status).toBe(200);
     const { ms, payload } = await got;
     expect(ms).toBeLessThan(1000);
-    expect(payload).toMatchObject({ jurorId: jurorId.ali, teamId: teamIds[1], total: 70 });
+    expect(payload).toMatchObject({ jurorId: jurorId.ali, teamId: teamIds[1], total: 38 });
 
     await new Promise(r => setTimeout(r, 300));
     const leaked = [...ayselEvents, ...anonEvents].filter(([e]) => ["score:upserted", "results:changed", "my-score:saved", "presence:changed"].includes(e));
@@ -150,6 +153,10 @@ describe("juror isolation", () => {
     const { [criteriaKeys[0]]: _skip, ...partial } = fullScore(5).values;
     expect((await put({ values: partial })).status).toBe(400);
     expect((await put({ values: { ...fullScore(5).values, [criteriaKeys[0]]: 11 } })).status).toBe(400);
+    const five = criteriaKeys.find(k => criteriaMax[k] === 5)!;
+    const tooHigh = await put({ values: { ...fullScore(5).values, [five]: 6 } });
+    expect(tooHigh.status).toBe(400);
+    expect(tooHigh.body.error).toMatch(/1–5/);
     expect((await put({ values: { ...fullScore(5).values, [criteriaKeys[0]]: 2.5 } })).status).toBe(400);
     expect((await request(base).put("/api/juror/scores/99999").set("Origin", origin()).set("Cookie", jurorCookie.ali).send(fullScore(5))).status).toBe(404);
   });
@@ -171,8 +178,57 @@ describe("admin view", () => {
     const r = await get("/api/admin/results", adminCookie);
     expect(r.status).toBe(200);
     expect(r.body.results.ranking[0].team.id).toBe(teamIds[0]); // (90 + 80) / 2 = 85
-    expect(r.body.results.ranking[0].avg).toBe(85);
+    // team 0: aysel 9 → 5+9+9+9+9+5 = 46, ali 8 → 42; Demo Day 44; no entry score yet → final 44
+    expect(r.body.results.ranking[0].score).toBe(44);
+    expect(r.body.results.ranking[0].demo).toBe(44);
+    expect([r.body.results.demoMax, r.body.results.maxTotal]).toEqual([50, 100]);
     expect(r.body.scores.some((s: any) => s.note === "şərh 9")).toBe(true);
+  });
+
+  it("adds the entry score to the final score; jurors see entry scores but no results", async () => {
+    const patch = (body: object) => request(base).patch(`/api/admin/teams/${teamIds[0]}`).set("Origin", origin()).set("Cookie", adminCookie).send(body);
+    expect((await patch({ entryScore: 125 / 3 })).status).toBe(200);
+    let r = (await get("/api/admin/results", adminCookie)).body.results;
+    let t0 = r.ranking.find((x: any) => x.team.id === teamIds[0]);
+    expect([t0.entry, t0.demo, t0.score]).toEqual([125 / 3, 44, 85.67]);
+    expect((await patch({ entryScore: 51 })).status).toBe(400); // above the 50-point entry maximum
+    expect((await patch({ entryScore: -1 })).status).toBe(400);
+
+    const st = (await get("/api/juror/state", jurorCookie.ali)).body;
+    expect(st.teams.find((t: any) => t.id === teamIds[0]).entryScore).toBe(125 / 3);
+    expect(st.entryMax).toBe(50);
+    const js = JSON.stringify(st);
+    for (const k of ["results", "ranking", "matrix", "demo", "85.67"]) expect(js).not.toContain(k);
+
+    const toggle = (includeEntry: boolean) => request(base).patch("/api/admin/event").set("Origin", origin()).set("Cookie", adminCookie).send({ includeEntry });
+    expect((await toggle(false)).status).toBe(200);
+    r = (await get("/api/admin/results", adminCookie)).body.results;
+    t0 = r.ranking.find((x: any) => x.team.id === teamIds[0]);
+    expect([t0.score, r.maxTotal]).toEqual([44, 50]);
+    expect((await toggle(true)).status).toBe(200);
+    expect((await patch({ entryScore: null })).status).toBe(200);
+  });
+
+  it("validates criterion maxima", async () => {
+    const add = (body: object) => post("/api/admin/criteria", adminCookie).send(body);
+    expect((await add({ name: "X", description: "", maxScore: 0 })).status).toBe(400);
+    expect((await add({ name: "X", description: "", maxScore: 2.5 })).status).toBe(400);
+  });
+
+  it("refuses changes that would silently break stored data", async () => {
+    // entry maximum below an entry score already given
+    expect((await request(base).patch(`/api/admin/teams/${teamIds[1]}`).set("Origin", origin()).set("Cookie", adminCookie).send({ entryScore: 45 })).status).toBe(200);
+    const lower = await request(base).patch("/api/admin/event").set("Origin", origin()).set("Cookie", adminCookie).send({ entryMax: 40 });
+    expect(lower.status).toBe(400);
+    expect((await get("/api/admin/state", adminCookie)).body.event.entryMax).toBe(50);
+    expect((await request(base).patch(`/api/admin/teams/${teamIds[1]}`).set("Origin", origin()).set("Cookie", adminCookie).send({ entryScore: null })).status).toBe(200);
+
+    // criterion maximum below points jurors already gave (aysel gave 9 on 10-point criteria)
+    const crit = (await get("/api/admin/criteria", adminCookie)).body.find((c: any) => c.maxScore === 10);
+    const patchMax = (q = "") => request(base).patch(`/api/admin/criteria/${crit.id}${q}`).set("Origin", origin()).set("Cookie", adminCookie).send({ maxScore: 8 });
+    expect((await patchMax()).status).toBe(409);
+    expect((await patchMax("?force=1")).status).toBe(200);
+    expect((await request(base).patch(`/api/admin/criteria/${crit.id}`).set("Origin", origin()).set("Cookie", adminCookie).send({ maxScore: 10 })).status).toBe(200);
   });
 
   it("exports xlsx and pdf with Azerbaijani file names", async () => {

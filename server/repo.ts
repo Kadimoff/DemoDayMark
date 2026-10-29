@@ -1,7 +1,7 @@
 // Data access. Every function returns plain shared/types objects; no route touches SQL directly.
 import type { DB } from "./db.js";
-import type { RevealSnapshot } from "../shared/reveal.js";
-import type { Criterion, Juror, ScoreRow, StagePayload, Team, TimerState } from "../shared/types.js";
+import { normalizeSnapshot, type RevealSnapshot } from "../shared/reveal.js";
+import type { AdminTeam, Criterion, Juror, ScoreRow, StagePayload, TimerState } from "../shared/types.js";
 
 interface EventRow {
   name: string;
@@ -15,6 +15,8 @@ interface EventRow {
   qa_sec: number;
   locked: number;
   show_juror_total: number;
+  include_entry: number;
+  entry_max: number;
 }
 
 export interface EventState {
@@ -24,6 +26,10 @@ export interface EventState {
   timer: TimerState;
   locked: boolean;
   showJurorTotal: boolean;
+  /** Final score = entry score + Demo Day score when true; Demo Day score alone when false. */
+  includeEntry: boolean;
+  /** Scale of entry scores (e.g. 50). */
+  entryMax: number;
 }
 
 export interface UserRow {
@@ -56,6 +62,8 @@ export class Repo {
       },
       locked: !!r.locked,
       showJurorTotal: !!r.show_juror_total,
+      includeEntry: !!r.include_entry,
+      entryMax: r.entry_max,
     };
   }
 
@@ -63,16 +71,17 @@ export class Repo {
     const cur = this.getEvent();
     const n = { ...cur, ...p, timer: { ...cur.timer, ...(p.timer ?? {}) } };
     this.db.prepare(`UPDATE event SET name=?, date=?, current_team_id=?, timer_visible=?, timer_running=?,
-      timer_offset_sec=?, timer_anchor_at=?, pitch_sec=?, qa_sec=?, locked=?, show_juror_total=? WHERE id = 1`)
+      timer_offset_sec=?, timer_anchor_at=?, pitch_sec=?, qa_sec=?, locked=?, show_juror_total=?, include_entry=?, entry_max=?
+      WHERE id = 1`)
       .run(n.name, n.date, n.currentTeamId, +n.timer.visible, +n.timer.running, n.timer.offsetSec,
-        n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal);
+        n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal, +n.includeEntry, n.entryMax);
     return this.getEvent();
   }
 
   getReveal(): { enabled: boolean; step: number; snapshot: RevealSnapshot | null } {
     const r = this.db.prepare("SELECT reveal_enabled, reveal_step, reveal_snapshot FROM event WHERE id = 1").get() as
       { reveal_enabled: number; reveal_step: number; reveal_snapshot: string | null };
-    return { enabled: !!r.reveal_enabled, step: r.reveal_step, snapshot: r.reveal_snapshot ? JSON.parse(r.reveal_snapshot) : null };
+    return { enabled: !!r.reveal_enabled, step: r.reveal_step, snapshot: r.reveal_snapshot ? normalizeSnapshot(JSON.parse(r.reveal_snapshot)) : null };
   }
   setReveal(p: { enabled?: boolean; step?: number; snapshot?: RevealSnapshot | null }) {
     const cur = this.getReveal();
@@ -97,9 +106,11 @@ export class Repo {
   }
 
   // ---------- teams ----------
-  teams(): Team[] {
+  /** Includes entry scores (shown to the admin and to jurors). */
+  teams(): AdminTeam[] {
     return (this.db.prepare("SELECT * FROM teams ORDER BY order_index, id").all() as any[]).map(r => ({
       id: r.id, name: r.name, project: r.project, orderIndex: r.order_index, active: !!r.active,
+      entryScore: r.entry_score ?? null,
     }));
   }
   team(id: number) { return this.teams().find(t => t.id === id) ?? null; }
@@ -108,11 +119,11 @@ export class Repo {
     const r = this.db.prepare("INSERT INTO teams (order_index, name, project) VALUES (?, ?, ?)").run(max + 1, name, project);
     return this.team(Number(r.lastInsertRowid))!;
   }
-  updateTeam(id: number, p: Partial<Pick<Team, "name" | "project" | "active">>) {
+  updateTeam(id: number, p: Partial<Pick<AdminTeam, "name" | "project" | "active" | "entryScore">>) {
     const t = this.team(id);
     if (!t) return null;
     const n = { ...t, ...p };
-    this.db.prepare("UPDATE teams SET name=?, project=?, active=? WHERE id=?").run(n.name, n.project, +n.active, id);
+    this.db.prepare("UPDATE teams SET name=?, project=?, active=?, entry_score=? WHERE id=?").run(n.name, n.project, +n.active, n.entryScore, id);
     return this.team(id);
   }
   deleteTeam(id: number) { return this.db.prepare("DELETE FROM teams WHERE id=?").run(id).changes > 0; }
@@ -124,21 +135,22 @@ export class Repo {
   // ---------- criteria ----------
   criteria(): Criterion[] {
     return (this.db.prepare("SELECT * FROM criteria ORDER BY order_index, id").all() as any[]).map(r => ({
-      id: r.id, key: r.key, name: r.name, description: r.description, weight: r.weight, orderIndex: r.order_index,
+      id: r.id, key: r.key, name: r.name, description: r.description, maxScore: r.max_score, orderIndex: r.order_index,
     }));
   }
   criterion(id: number) { return this.criteria().find(c => c.id === id) ?? null; }
-  addCriterion(c: { key: string; name: string; description: string; weight: number }) {
+  // The legacy `weight` column (pre-v3 weighted model) is kept equal to max_score.
+  addCriterion(c: { key: string; name: string; description: string; maxScore: number }) {
     const max = (this.db.prepare("SELECT COALESCE(MAX(order_index), -1) m FROM criteria").get() as any).m;
-    const r = this.db.prepare("INSERT INTO criteria (order_index, key, name, description, weight) VALUES (?, ?, ?, ?, ?)")
-      .run(max + 1, c.key, c.name, c.description, c.weight);
+    const r = this.db.prepare("INSERT INTO criteria (order_index, key, name, description, weight, max_score) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(max + 1, c.key, c.name, c.description, c.maxScore, c.maxScore);
     return this.criterion(Number(r.lastInsertRowid))!;
   }
-  updateCriterion(id: number, p: Partial<Pick<Criterion, "name" | "description" | "weight">>) {
+  updateCriterion(id: number, p: Partial<Pick<Criterion, "name" | "description" | "maxScore">>) {
     const c = this.criterion(id);
     if (!c) return null;
     const n = { ...c, ...p };
-    this.db.prepare("UPDATE criteria SET name=?, description=?, weight=? WHERE id=?").run(n.name, n.description, n.weight, id);
+    this.db.prepare("UPDATE criteria SET name=?, description=?, weight=?, max_score=? WHERE id=?").run(n.name, n.description, n.maxScore, n.maxScore, id);
     return this.criterion(id);
   }
   deleteCriterion(id: number) { return this.db.prepare("DELETE FROM criteria WHERE id=?").run(id).changes > 0; }

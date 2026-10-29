@@ -15,7 +15,9 @@ export function jurorState(repo: Repo, jurorId: number): JurorStatePayload {
     locked: ev.locked,
     showJurorTotal: ev.showJurorTotal,
     stage: repo.stage(),
+    // Entry scores are public to jurors (organisers' decision); other jurors' scores and results are not.
     teams: repo.teams().filter(t => t.active),
+    entryMax: ev.entryMax,
     criteria,
     myScores: repo.scoresOf(jurorId).map(s => ({
       teamId: s.teamId,
@@ -32,7 +34,10 @@ export function adminResults(repo: Repo, cfg: Config) {
   const jurors = repo.jurors();
   const criteria = repo.criteria();
   const scores = repo.scores();
-  const results = computeResults({ teams, jurors, criteria, scores, minJurorsForRank: cfg.minJurorsForRank });
+  const ev = repo.getEvent();
+  const results = computeResults({
+    teams, jurors, criteria, scores, minJurorsForRank: cfg.minJurorsForRank, includeEntry: ev.includeEntry, entryMax: ev.entryMax,
+  });
   return {
     results,
     teams,
@@ -50,9 +55,13 @@ export function revealSnapshot(repo: Repo, cfg: Config): RevealSnapshot {
   const { results } = adminResults(repo, cfg);
   return {
     createdAt: Date.now(),
+    maxTotal: results.maxTotal,
     entries: results.ranking
-      .filter(r => r.avg != null && r.rank != null)
-      .map(r => ({ teamId: r.team.id, name: r.team.name, project: r.team.project, rank: r.rank!, avg: r.avg!, n: r.n })),
+      .filter(r => r.score != null && r.rank != null)
+      .map(r => ({
+        teamId: r.team.id, name: r.team.name, project: r.team.project, rank: r.rank!,
+        score: r.score!, demo: r.demo!, entry: results.includeEntry ? r.entry : null, n: r.n,
+      })),
   };
 }
 
@@ -67,7 +76,7 @@ export function revealAdminView(repo: Repo, cfg: Config) {
   const nextStep = steps[r.step] ?? null;
   const fresh = revealSnapshot(repo, cfg);
   // Has anything that would change the order or the numbers happened since the snapshot?
-  const sig = (s: RevealSnapshot | null) => JSON.stringify(s?.entries.map(e => [e.teamId, e.rank, e.avg, e.n]) ?? []);
+  const sig = (s: RevealSnapshot | null) => JSON.stringify(s?.entries.map(e => [e.teamId, e.rank, e.score, e.n]) ?? []);
   const { results, teams } = adminResults(repo, cfg);
   return {
     enabled: r.enabled,

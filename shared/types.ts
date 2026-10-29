@@ -7,7 +7,8 @@ export interface Criterion {
   key: string;
   name: string;
   description: string;
-  weight: number;
+  /** Jurors give 1..maxScore points for this criterion. */
+  maxScore: number;
   orderIndex: number;
 }
 
@@ -17,6 +18,11 @@ export interface Team {
   project: string;
   orderIndex: number;
   active: boolean;
+}
+
+/** A team with its pre-Demo-Day entry score (visible to the admin and to jurors). */
+export interface AdminTeam extends Team {
+  entryScore: number | null;
 }
 
 export interface Juror {
@@ -81,7 +87,9 @@ export interface JurorStatePayload {
   locked: boolean;
   showJurorTotal: boolean;
   stage: StagePayload;
-  teams: Team[];
+  /** Includes each team's entry score: jurors see it (decided by the organisers). */
+  teams: AdminTeam[];
+  entryMax: number;
   criteria: Criterion[];
   myScores: MyScore[];
 }

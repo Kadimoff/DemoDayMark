@@ -24,13 +24,17 @@ const eventBody = z.object({
   pitchSec: z.number().int().min(10).max(3600).optional(),
   qaSec: z.number().int().min(10).max(3600).optional(),
   timer: z.enum(["pitch", "qa", "toggle", "pause", "resume", "reset", "stop"]).optional(),
+  includeEntry: z.boolean().optional(),
+  entryMax: z.number().min(1, "Giriş balının maksimumu ən azı 1 olmalıdır.").max(1000).optional(),
 });
-const teamBody = z.object({ name: name(), project: z.string().trim().max(160).default("") });
-const teamPatch = z.object({ name: name().optional(), project: z.string().trim().max(160).optional(), active: z.boolean().optional() });
+const entryScore = z.number().min(0, "Giriş balı mənfi ola bilməz.").max(1000).nullable();
+const teamBody = z.object({ name: name(), project: z.string().trim().max(160).default(""), entryScore: entryScore.optional() });
+const teamPatch = z.object({ name: name().optional(), project: z.string().trim().max(160).optional(), active: z.boolean().optional(), entryScore: entryScore.optional() });
 const jurorBody = z.object({ displayName: name(80), username, password });
 const jurorPatch = z.object({ displayName: name(80).optional(), username: username.optional(), active: z.boolean().optional(), password: password.optional() });
-const critBody = z.object({ name: name(), description: z.string().trim().max(400).default(""), weight: z.number().int().min(0).max(100) });
-const critPatch = z.object({ name: name().optional(), description: z.string().trim().max(400).optional(), weight: z.number().int().min(0).max(100).optional() });
+const maxScore = z.number().int("Maksimum bal tam ədəd olmalıdır.").min(1, "Maksimum bal ən azı 1 olmalıdır.").max(100);
+const critBody = z.object({ name: name(), description: z.string().trim().max(400).default(""), maxScore });
+const critPatch = z.object({ name: name().optional(), description: z.string().trim().max(400).optional(), maxScore: maxScore.optional() });
 const reorderBody = z.object({ ids: z.array(z.number().int().positive()).min(1) });
 const wipeBody = z.object({ token: z.string().min(1) });
 const revealBody = z.object({ action: z.enum(["enable", "disable", "next", "back", "reset"]) });
@@ -65,6 +69,10 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const actor = req.user!.id;
       const cur = repo.getEvent();
       const now = Date.now();
+      if (b.entryMax !== undefined) {
+        const top = Math.max(0, ...repo.teams().map(t => t.entryScore ?? 0));
+        if (b.entryMax < top) return reply.code(400).send({ error: `Giriş balının maksimumu mövcud giriş ballarından (${Math.round(top * 100) / 100}) az ola bilməz.` });
+      }
       let timer = { ...cur.timer };
       if (b.pitchSec) timer.pitchSec = b.pitchSec;
       if (b.qaSec) timer.qaSec = b.qaSec;
@@ -84,6 +92,8 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         currentTeamId: b.currentTeamId !== undefined ? b.currentTeamId : cur.currentTeamId,
         locked: b.locked ?? cur.locked,
         showJurorTotal: b.showJurorTotal ?? cur.showJurorTotal,
+        includeEntry: b.includeEntry ?? cur.includeEntry,
+        entryMax: b.entryMax ?? cur.entryMax,
         timer,
       });
       if (b.locked !== undefined && b.locked !== cur.locked) {
@@ -94,6 +104,10 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         repo.audit(actor, "event.settings", { name: b.name, date: b.date, showJurorTotal: b.showJurorTotal });
         rt.emitConfig();
         stageChanged = true;
+      }
+      if ((b.includeEntry !== undefined && b.includeEntry !== cur.includeEntry) || (b.entryMax !== undefined && b.entryMax !== cur.entryMax)) {
+        repo.audit(actor, "event.scoring", { includeEntry: b.includeEntry, entryMax: b.entryMax });
+        rt.emitResults();
       }
       if (stageChanged) rt.emitStage();
       else if (timerChanged) rt.emitTimer();
@@ -119,7 +133,11 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     r.post("/api/admin/teams", async (req, reply) => {
       const b = parseBody(teamBody, req.body, reply);
       if (!b) return;
-      const t = repo.addTeam(b.name, b.project);
+      if (b.entryScore != null && b.entryScore > repo.getEvent().entryMax) {
+        return reply.code(400).send({ error: `Giriş balı 0–${repo.getEvent().entryMax} arası olmalıdır.` });
+      }
+      let t = repo.addTeam(b.name, b.project);
+      if (b.entryScore != null) t = repo.updateTeam(t.id, { entryScore: b.entryScore })!;
       repo.audit(req.user!.id, "team.create", t);
       configChanged();
       return t;
@@ -127,6 +145,9 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     r.patch("/api/admin/teams/:id", async (req, reply) => {
       const tid = id(req.params, reply); if (!tid) return;
       const b = parseBody(teamPatch, req.body, reply); if (!b) return;
+      if (b.entryScore != null && b.entryScore > repo.getEvent().entryMax) {
+        return reply.code(400).send({ error: `Giriş balı 0–${repo.getEvent().entryMax} arası olmalıdır.` });
+      }
       const t = repo.updateTeam(tid, b);
       if (!t) return reply.code(404).send({ error: "Komanda tapılmadı." });
       if (b.active === false && repo.getEvent().currentTeamId === tid) {
@@ -221,9 +242,16 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       configChanged();
       return c;
     });
-    r.patch("/api/admin/criteria/:id", async (req, reply) => {
+    r.patch<{ Querystring: { force?: string } }>("/api/admin/criteria/:id", async (req, reply) => {
       const cid = id(req.params, reply); if (!cid) return;
       const b = parseBody(critPatch, req.body, reply); if (!b) return;
+      const before = repo.criterion(cid);
+      if (!before) return reply.code(404).send({ error: "Meyar tapılmadı." });
+      // Lowering a maximum below points already given would silently drop those scores from the results.
+      if (b.maxScore !== undefined && b.maxScore < before.maxScore && req.query.force !== "1") {
+        const n = repo.scores().filter(s => Number(s.values[before.key]) > b.maxScore!).length;
+        if (n) return reply.code(409).send({ error: `${n} qiymətdə bu meyar üzrə ${b.maxScore}-dən yüksək bal var. Maksimum azaldılsa, həmin qiymətlər nəticəyə düşməyəcək.`, scoreCount: n });
+      }
       const c = repo.updateCriterion(cid, b);
       if (!c) return reply.code(404).send({ error: "Kriteriya tapılmadı." });
       repo.audit(req.user!.id, "criterion.update", { id: cid, ...b });

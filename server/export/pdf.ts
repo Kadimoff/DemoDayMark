@@ -7,6 +7,7 @@ import PDFDocument from "pdfkit";
 import type { Config } from "../config.js";
 import type { Repo } from "../repo.js";
 import { adminResults } from "../views.js";
+import { displayParts, fmt2 } from "../../shared/scoring.js";
 
 type FontName = "b400" | "b500" | "b600" | "b700" | "d500" | "d700" | "m500" | "m700";
 const FONT_FILES: Record<FontName, [file: string, fallback: string]> = {
@@ -140,31 +141,40 @@ export async function buildPdf(repo: Repo, cfg: Config): Promise<Buffer> {
     M, y + 46, { font: "b400", size: 9.5, color: C.mute, width: CW });
   y += 78;
 
+  const D = results.demoMax, E = results.entryMax, T = results.maxTotal, withEntry = results.includeEntry;
   const winner = results.ranking.find(x => x.rank === 1);
-  if (winner && winner.avg != null) {
+  if (winner && winner.score != null) {
     rect(M, y, CW, 58, C.soft);
     rect(M, y, 4, 58, C.acc);
     text("1-Cİ YER", M + 16, y + 12, { font: "b700", size: 7.5, color: C.mute });
-    text(winner.team.name, M + 16, y + 26, { font: "d700", size: 15, width: CW - 150 });
-    text(winner.avg.toFixed(1), M, y + 15, { font: "m700", size: 25, width: CW - 16, align: "right" });
+    text(winner.team.name, M + 16, y + 26, { font: "d700", size: 15, width: CW - 170 });
+    const wp = displayParts(winner.score, withEntry ? winner.entry : null);
+    text(wp.score, M, y + 11, { font: "m700", size: 25, width: CW - 16, align: "right" });
+    if (withEntry) text(`Giriş ${wp.entry} + Demo Day ${wp.demo}`, M, y + 41, { font: "b500", size: 7.5, color: C.mute, width: CW - 16, align: "right" });
     y += 76;
   }
 
-  title("Yekun reytinq", "Bal = münsiflərin çəkili yekun ballarının orta qiyməti (100 üzərindən)");
+  title("Yekun reytinq", withEntry
+    ? `Yekun = giriş balı (maks. ${E}) + Demo Day balı — münsiflərin orta balı (maks. ${D}); cəmi maks. ${T}`
+    : `Yekun = Demo Day balı — münsiflərin orta balı (maks. ${D})`);
   table([
-    { t: "Yer", w: 38, f: "d700", size: 10, color: v => (v === "1" ? C.gold : undefined) },
-    { t: "Komanda", w: 150, f: "b700" },
-    { t: "Layihə", w: 150, color: () => C.mute },
-    { t: "Orta bal", w: 62, a: "r", f: "m700", size: 9.5 },
-    { t: "Münsif", w: 45, a: "r", f: "m500" },
-    { t: "Min–Max", w: CW - 445, a: "r", f: "m500", size: 7.8, color: () => C.mute },
+    { t: "Yer", w: 30, f: "d700", size: 10, color: v => (v === "1" ? C.gold : undefined) },
+    { t: "Komanda", w: 122, f: "b700" },
+    { t: "Layihə", w: 103, color: () => C.mute },
+    { t: `Giriş (${E})`, w: 52, a: "r", f: "m500", color: () => (withEntry ? undefined : C.mute) },
+    { t: `Demo Day (${D})`, w: 60, a: "r", f: "m500" },
+    { t: `Yekun (${T})`, w: 56, a: "r", f: "m700", size: 9.5 },
+    { t: "Münsif", w: 38, a: "r", f: "m500" },
+    { t: "Min–Max", w: CW - 461, a: "r", f: "m500", size: 7.6, color: () => C.mute },
   ], results.ranking.map(x => [
     x.rank == null ? "–" : String(x.rank),
     x.team.name + (x.incomplete && x.n ? " *" : ""),
     x.team.project || "—",
-    fmt1(x.avg),
+    ...(x.score == null ? [fmt2(x.entry), "—", "—"]
+      : withEntry ? (p => [p.entry, p.demo, p.score])(displayParts(x.score, x.entry))
+      : [fmt2(x.entry), fmt2(x.demo), fmt2(x.score)]),
     `${x.n}/${jurors.filter(j => j.active).length}`,
-    x.n ? `${fmt1(x.min)}–${fmt1(x.max)}` : "—",
+    x.n ? `${x.min}–${x.max}` : "—", // juror totals are whole points
   ]), { rh: 25, hl: i => i === 0 && results.ranking[0]?.rank === 1 });
   if (results.ranking.some(x => x.incomplete && x.n)) {
     text(`* ${cfg.minJurorsForRank}-dən az münsif tərəfindən qiymətləndirilib`, M, y - 12, { font: "b400", size: 7.5, color: C.mute });
@@ -173,21 +183,21 @@ export async function buildPdf(repo: Repo, cfg: Config): Promise<Buffer> {
 
   const byOrder = results.ranking.slice().sort((a, b) => a.team.orderIndex - b.team.orderIndex);
   const jw = Math.floor((CW - 140 - 50) / Math.max(1, jurors.length));
-  title("Münsif matrisi", "Hər xana münsifin komandaya verdiyi yekun bal");
+  title("Münsif matrisi", `Hər xana münsifin Demo Day-də verdiyi balların cəmi (maks. ${D})`);
   table([
     { t: "Komanda", w: 140, f: "b600" },
     ...jurors.map(j => ({ t: j.displayName, w: jw, a: "r" as const, f: "m500" as FontName })),
     { t: "Orta", w: CW - 140 - jw * jurors.length, a: "r", f: "m700" },
-  ], byOrder.map(x => [x.team.name, ...jurors.map(j => fmt1(results.matrix[x.team.id]?.[j.id])), fmt1(x.avg)]));
+  ], byOrder.map(x => [x.team.name, ...jurors.map(j => String(results.matrix[x.team.id]?.[j.id] ?? "—")), fmt2(x.demo)]));
 
-  const cw = Math.floor((CW - 120 - 46) / Math.max(1, criteria.length));
-  title("Kriteriyalar üzrə orta bal", "1–10 şkalası; K1–K" + criteria.length + " kodları cədvəlin altında açıqlanır");
+  const cw = Math.floor((CW - 120 - 52) / Math.max(1, criteria.length));
+  title("Meyarlar üzrə orta bal", "Sütun başlığında meyarın maksimum balı; K1–K" + criteria.length + " kodları cədvəlin altında açıqlanır");
   table([
     { t: "Komanda", w: 120, f: "b600", size: 8.2 },
-    ...criteria.map((c, i) => ({ t: `K${i + 1}\n${c.weight}%`, w: cw, a: "r" as const, f: "m500" as FontName, size: 8 })),
-    { t: "Yekun", w: CW - 120 - cw * criteria.length, a: "r", f: "m700", size: 8.2 },
-  ], results.ranking.map(x => [x.team.name, ...criteria.map(c => fmt1(x.perCriterion[c.key])), fmt1(x.avg)]), { rh: 21 });
-  const legend = wrap(criteria.map((c, i) => `K${i + 1} — ${c.name} (${c.weight}%)`).join("  ·  "), "b400", 7.8, CW);
+    ...criteria.map((c, i) => ({ t: `K${i + 1}\nmaks. ${c.maxScore}`, w: cw, a: "r" as const, f: "m500" as FontName, size: 8 })),
+    { t: `Demo Day\nmaks. ${D}`, w: CW - 120 - cw * criteria.length, a: "r", f: "m700", size: 8.2 },
+  ], results.ranking.map(x => [x.team.name, ...criteria.map(c => fmt1(x.perCriterion[c.key])), fmt2(x.demo)]), { rh: 21 });
+  const legend = wrap(criteria.map((c, i) => `K${i + 1} — ${c.name} (maks. ${c.maxScore})`).join("  ·  "), "b400", 7.8, CW);
   y -= 8;
   for (const l of legend) { need(11); text(l, M, y, { font: "b400", size: 7.8, color: C.mute }); y += 11; }
   y += 16;

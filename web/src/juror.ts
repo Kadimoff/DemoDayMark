@@ -1,5 +1,6 @@
 import "./styles.css";
-import { isComplete, jurorTotal } from "../../shared/scoring";
+import { band, demoMax, isComplete, jurorTotal, MIN_POINTS } from "../../shared/scoring";
+import type { Criterion } from "../../shared/types";
 import type { JurorStatePayload, MyScore, ScoreValues, StagePayload, TimerState } from "../../shared/types";
 import { api, ApiError } from "./lib/api";
 import { $, esc, hhmm, icon, toast } from "./lib/dom";
@@ -99,6 +100,14 @@ function onStage(stage: StagePayload) {
 }
 
 // ---------- render ----------
+const BAND_LABELS = ["zəif", "orta", "güclü", "əla"];
+/** zəif / orta / güclü / əla under a 1..max scale, each label as wide as its buttons. */
+function bandsFor(c: Criterion) {
+  const counts = [0, 0, 0, 0];
+  for (let v = MIN_POINTS; v <= c.maxScore; v++) counts[band(v, c.maxScore)]++;
+  const cols = counts.filter(Boolean).map(n => `${n}fr`).join(" ");
+  return `<div class="bands" style="grid-template-columns:${cols}" aria-hidden="true">${counts.map((n, i) => (n ? `<span class="b${i}">${BAND_LABELS[i]}</span>` : "")).join("")}</div>`;
+}
 function render() {
   if (!S) return;
   if (!S.teams.length) { main.innerHTML = `<p class="empty">Komanda siyahısı hələ boşdur.</p>`; dock.hidden = true; return; }
@@ -119,14 +128,14 @@ function render() {
     </button>`;
   }).join("");
 
-  const critSig = S.criteria.map(c => `${c.key}:${c.weight}:${c.name}:${c.description}`).join("|");
-  const key = [team.id, team.name, team.project, critSig, d.base, locked, S.me.displayName].join("§");
+  const critSig = S.criteria.map(c => `${c.key}:${c.maxScore}:${c.name}:${c.description}`).join("|");
+  const key = [team.id, team.name, team.project, team.entryScore, S.entryMax, critSig, d.base, locked, S.me.displayName].join("§");
   if (key !== formKey) {
     formKey = key;
     main.innerHTML = `
       <div class="row between" style="margin-bottom:12px">
         <div class="row" style="gap:8px"><h3>Münsif</h3><b>${esc(S.me.displayName)}</b></div>
-        <span class="sub" style="margin:0">Şkala: 1–3 zəif · 4–6 orta · 7–8 güclü · 9–10 əla</span>
+        <span class="sub" style="margin:0">Hər meyar üzrə ${MIN_POINTS}-dən maksimum bala qədər · cəmi ${demoMax(S.criteria)} bal</span>
       </div>
       <div class="chips" id="chips" role="group" aria-label="Komandalar">${chips}</div>
       ${locked ? `<div class="banner lock" style="margin-top:12px">${icon("lock")}<span>Qiymətləndirmə koordinator tərəfindən bağlanıb. Ballarınıza yalnız baxa bilərsiniz.</span></div>` : ""}
@@ -136,16 +145,17 @@ function render() {
             <h3>Komanda ${idx} / ${S.teams.length}</h3>
             <h2>${esc(team.name)}</h2>
             ${team.project ? `<p class="sub">${esc(team.project)}</p>` : ""}
+            ${team.entryScore != null ? `<p class="entry">Giriş balı <b class="mono">${(Math.round(team.entryScore * 100) / 100).toString()}</b> <span>/ ${S.entryMax}</span></p>` : ""}
           </div>
           <div id="fstat"></div>
         </div>
         <div>${S.criteria.map(c => `
           <div class="crit">
-            <div class="ch"><b id="cl-${esc(c.key)}">${esc(c.name)}</b><span class="w">çəki ${c.weight}%</span></div>
+            <div class="ch"><b id="cl-${esc(c.key)}">${esc(c.name)}</b><span class="w">maks. ${c.maxScore}</span></div>
             ${c.description ? `<p>${esc(c.description)}</p>` : ""}
-            <div class="scale" role="group" aria-labelledby="cl-${esc(c.key)}">${Array.from({ length: 10 }, (_, k) =>
-              `<button type="button" data-c="${esc(c.key)}" data-v="${k + 1}" aria-pressed="${d.values[c.key] === k + 1}" aria-label="${esc(c.name)}: ${k + 1}" ${locked ? "disabled" : ""}>${k + 1}</button>`).join("")}</div>
-            <div class="bands" aria-hidden="true"><span>zəif</span><span>orta</span><span>güclü</span><span>əla</span></div>
+            <div class="scale" style="--n:${c.maxScore}" role="group" aria-labelledby="cl-${esc(c.key)}">${Array.from({ length: c.maxScore - MIN_POINTS + 1 }, (_, k) => k + MIN_POINTS).map(v =>
+              `<button type="button" data-c="${esc(c.key)}" data-v="${v}" aria-pressed="${d.values[c.key] === v}" aria-label="${esc(c.name)}: ${v} / ${c.maxScore}" ${locked ? "disabled" : ""}>${v}</button>`).join("")}</div>
+            ${bandsFor(c)}
           </div>`).join("")}
           <div class="crit">
             <div class="ch"><b><label for="note">Şərh</label></b><span class="w">istəyə bağlı</span></div>
@@ -164,7 +174,7 @@ function renderDock() {
   const d = draftFor(selTeam);
   const saved = mine.get(selTeam);
   const all = S.criteria.length;
-  const filled = S.criteria.filter(c => d.values[c.key] >= 1).length;
+  const filled = S.criteria.filter(c => { const v = d.values[c.key]; return Number.isInteger(v) && v >= MIN_POINTS && v <= c.maxScore; }).length;
   const complete = filled === all;
   let st: string, pill: string;
   if (S.locked) { st = "Qiymətləndirmə bağlanıb."; pill = `<span class="pill warn">Bağlıdır</span>`; }
@@ -172,16 +182,17 @@ function renderDock() {
     st = failure.network ? "Göndərilmədi. Qaralama bu cihazda saxlanılıb." : esc(failure.msg);
     pill = `<span class="pill danger">Göndərilmədi</span>`;
   }
-  else if (d.dirty) { st = `${filled}/${all} kriteriya · yadda saxlanmayıb`; pill = `<span class="pill hot">Dəyişiklik var</span>`; }
-  else if (saved) { st = `Göndərilib · ${hhmm(saved.updatedAt)}. Dəyişmək üçün balı yenidən seçin.`; pill = `<span class="pill ok">Göndərilib</span>`; }
-  else { st = `${filled}/${all} kriteriya doldurulub`; pill = `<span class="pill">Qiymətləndirilməyib</span>`; }
+  else if (d.dirty) { st = `${filled}/${all} meyar · yadda saxlanmayıb`; pill = `<span class="pill hot">Dəyişiklik var</span>`; }
+  else if (saved && isComplete(saved.values, S.criteria)) { st = `Göndərilib · ${hhmm(saved.updatedAt)}. Dəyişmək üçün balı yenidən seçin.`; pill = `<span class="pill ok">Göndərilib</span>`; }
+  else if (saved) { st = "Meyarlar dəyişib — bütün meyarlara yenidən bal verin."; pill = `<span class="pill warn">Yenidən qiymətləndirin</span>`; }
+  else { st = `${filled}/${all} meyar doldurulub`; pill = `<span class="pill">Qiymətləndirilməyib</span>`; }
   const fs = document.getElementById("fstat");
   if (fs) fs.innerHTML = pill;
 
   const total = S.showJurorTotal ? jurorTotal(d.values, S.criteria) : null;
   const left = S.showJurorTotal
-    ? `<b>${total != null ? total.toFixed(1) : "—"}</b><span>/ 100</span>`
-    : `<b>${filled}/${all}</b><span>kriteriya</span>`;
+    ? `<b>${total != null ? total : "—"}</b><span>/ ${demoMax(S.criteria)}</span>`
+    : `<b>${filled}/${all}</b><span>meyar</span>`;
   const can = !S.locked && !sending && complete && (d.dirty || !!(failure && failure.teamId === selTeam));
   let label = saved ? "Yenilə" : "Göndər";
   let cls = "btn primary";
@@ -200,7 +211,7 @@ function renderDock() {
 async function submit(teamId: number, quiet = false) {
   if (!S || sending) return;
   const d = draftFor(teamId);
-  if (!isComplete(d.values, S.criteria)) { toast("Bütün kriteriyalara bal verin.", "err"); return; }
+  if (!isComplete(d.values, S.criteria)) { toast("Bütün meyarlara bal verin.", "err"); return; }
   const values: ScoreValues = {};
   S.criteria.forEach(c => { values[c.key] = d.values[c.key]; });
   sending = true;

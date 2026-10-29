@@ -81,6 +81,14 @@ const MIGRATIONS: string[] = [
   ALTER TABLE event ADD COLUMN reveal_step INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE event ADD COLUMN reveal_snapshot TEXT;
   `,
+  // v3: points rubric (per-criterion maximum) and pre-Demo-Day entry scores
+  `
+  ALTER TABLE criteria ADD COLUMN max_score INTEGER NOT NULL DEFAULT 10;
+  ALTER TABLE teams ADD COLUMN entry_score REAL;
+  ALTER TABLE event ADD COLUMN include_entry INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE event ADD COLUMN entry_max REAL NOT NULL DEFAULT 50;
+  UPDATE event SET reveal_enabled = 0, reveal_step = 0, reveal_snapshot = NULL;
+  `,
 ];
 
 export function openDb(file: string): DB {

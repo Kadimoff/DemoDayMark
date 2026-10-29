@@ -1,12 +1,18 @@
 import "./styles.css";
 import { fmtClock } from "../../shared/timer";
-import type { Criterion, Juror, ScoreRow, Team, TimerState } from "../../shared/types";
+import type { AdminTeam, Criterion, Juror, ScoreRow, TimerState } from "../../shared/types";
 import { api, ApiError } from "./lib/api";
 import { $, esc, icon, toast } from "./lib/dom";
 import { topbar } from "./lib/topbar";
 
-interface EventState { name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean }
-interface SetupState { event: EventState; teams: Team[]; criteria: Criterion[]; scores: ScoreRow[] }
+interface EventState {
+  name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean;
+  includeEntry: boolean; entryMax: number;
+}
+interface SetupState { event: EventState; teams: AdminTeam[]; criteria: Criterion[]; scores: ScoreRow[] }
+
+/** 41.666… → "41.67"; null → "" (input value). */
+const entryValue = (v: number | null) => (v == null ? "" : String(Math.round(v * 100) / 100));
 type JurorRow = Juror & { sessionCount: number };
 
 const bar = topbar({
@@ -65,7 +71,7 @@ function render() {
   if (!S) return;
   const ev = S.event;
   const nScores = S.scores.length;
-  const wsum = S.criteria.reduce((a, c) => a + c.weight, 0);
+  const msum = S.criteria.reduce((a, c) => a + c.maxScore, 0);
   main.innerHTML = `
     <div class="stack">
       <div><h2>Quraşdırma</h2><p class="sub">Hər sahə xanadan çıxanda yadda saxlanılır və bütün ekranlarda dərhal yenilənir.</p></div>
@@ -80,10 +86,22 @@ function render() {
             <div style="flex:1 1 110px"><label class="f" for="evQa">Sual-cavab (dəq:san)</label><input type="text" id="evQa" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.qaSec)}"></div>
           </div>
           <p class="err" id="evErr" role="alert" style="color:var(--danger);margin:0;font-size:13px;font-weight:600"></p>
-          <div class="toggle" style="border-top:1px solid var(--line)"><div><b>Münsif öz yekun balını görsün</b><small>Bağlı olanda münsif yalnız kriteriya ballarını görür (tövsiyə olunur).</small></div>
+          <div class="toggle" style="border-top:1px solid var(--line)"><div><b>Münsif öz yekun balını görsün</b><small>Bağlı olanda münsif yalnız meyar ballarını görür (tövsiyə olunur).</small></div>
             <button type="button" class="sw" role="switch" id="evTotal" aria-checked="${ev.showJurorTotal}" aria-label="Münsif öz yekun balını görsün"></button></div>
           <div class="row"><button class="btn primary" type="submit">Yadda saxla</button></div>
         </form>
+      </section>
+
+      <section class="card pad stack" aria-labelledby="h-sc">
+        <div class="row between"><h3 id="h-sc">Yekun balın hesablanması</h3><span class="saved" id="scSaved"></span></div>
+        <div class="toggle" style="border-top:0;padding-top:0"><div><b>Giriş balı yekun bala əlavə olunsun</b>
+          <small>Yekun = giriş balı + Demo Day balı (münsiflərin orta balı). Söndürülsə, yekun yalnız Demo Day balıdır.</small></div>
+          <button type="button" class="sw" role="switch" id="scEntry" aria-checked="${ev.includeEntry}" aria-label="Giriş balı yekun bala əlavə olunsun"></button></div>
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:0 1 200px"><label class="f" for="scEntryMax">Giriş balının maksimumu</label>
+            <input type="number" id="scEntryMax" class="mono" min="1" max="1000" step="any" value="${ev.entryMax}"></div>
+          <p class="sub" id="scFormula" style="flex:1 1 260px;margin:0 0 10px">${formula()}</p>
+        </div>
       </section>
 
       <section class="card pad stack" aria-labelledby="h-teams">
@@ -91,12 +109,13 @@ function render() {
           <button class="btn sm" data-add="teams">${icon("plus")}Komanda əlavə et</button></div>
         ${nScores ? `<p class="note">Artıq <b>${nScores}</b> qiymət var. Qiyməti olan komandanı silsəniz, qiymətləri də silinəcək — bunun əvəzinə deaktiv edə bilərsiniz.</p>` : ""}
         <div class="ed teams" role="list">
-          <div class="er sub" aria-hidden="true" style="font-size:12px;font-weight:700"><span></span><span>Komanda adı</span><span class="pj">Layihə / məhsul</span><span>Aktiv</span><span></span><span></span></div>
+          <div class="er sub" aria-hidden="true" style="font-size:12px;font-weight:700"><span></span><span>Komanda adı</span><span class="pj">Layihə / məhsul</span><span class="en">Giriş balı</span><span>Aktiv</span><span></span><span></span></div>
           ${S.teams.map((t, i) => `
           <div class="er ${t.active ? "" : "off"}" role="listitem" data-row="teams:${t.id}">
             <span class="ix">${i + 1}</span>
             <input type="text" data-k="name" value="${esc(t.name)}" maxlength="120" aria-label="Komanda ${i + 1} adı">
             <input type="text" class="pj" data-k="project" value="${esc(t.project)}" maxlength="160" placeholder="məs. Ağıllı parkinq" aria-label="Komanda ${i + 1} layihəsi">
+            <input type="text" class="mono en" data-k="entryScore" value="${entryValue(t.entryScore)}" inputmode="decimal" autocomplete="off" placeholder="Giriş balı" aria-label="Komanda ${i + 1} giriş balı (maks. ${ev.entryMax})" title="maks. ${ev.entryMax}">
             <button type="button" class="sw" role="switch" data-active aria-checked="${t.active}" aria-label="Komanda ${i + 1} aktivdir"></button>
             <div class="mv"><button type="button" class="x" data-move="up" ${i ? "" : "disabled"} aria-label="Yuxarı">${icon("up")}</button><button type="button" class="x" data-move="down" ${i < S!.teams.length - 1 ? "" : "disabled"} aria-label="Aşağı">${icon("down")}</button></div>
             <button type="button" class="x del" data-del aria-label="Komanda ${i + 1}-i sil">${icon("trash")}</button>
@@ -139,26 +158,47 @@ function render() {
       </section>
 
       <section class="card pad stack" aria-labelledby="h-cr">
-        <div class="row between"><h3 id="h-cr">Kriteriyalar</h3><span class="sum ${wsum === 100 ? "" : "bad"}" role="status">Çəki cəmi: ${wsum}%${wsum === 100 ? "" : " — 100 olmalıdır"}</span></div>
-        ${nScores ? `<p class="note">Artıq <b>${nScores}</b> qiymət var. Kriteriya əlavə etsəniz, köhnə qiymətlər natamam sayılacaq; çəki dəyişsə, yekun ballar yenidən hesablanacaq.</p>` : ""}
+        <div class="row between"><h3 id="h-cr">Qiymətləndirmə meyarları</h3><span class="sum" role="status">Maksimum cəmi: ${msum} bal</span></div>
+        ${nScores ? `<p class="note">Artıq <b>${nScores}</b> qiymət var. Meyar əlavə etsəniz və ya maksimumu azaltsanız, uyğun gəlməyən köhnə qiymətlər natamam sayılacaq.</p>` : ""}
         <div class="ed cr">
-          <div class="er sub" aria-hidden="true" style="font-size:12px;font-weight:700"><span>Ad</span><span class="cd">Münsif üçün izah</span><span>Çəki %</span><span></span><span></span></div>
+          <div class="er sub" aria-hidden="true" style="font-size:12px;font-weight:700"><span>Meyar</span><span class="cd">Münsif üçün izah</span><span>Maks. bal</span><span></span><span></span></div>
           ${S.criteria.map((c, i) => `
           <div class="er" data-row="criteria:${c.id}">
-            <input type="text" data-k="name" value="${esc(c.name)}" maxlength="120" aria-label="Kriteriya ${i + 1} adı">
-            <input type="text" class="cd" data-k="description" value="${esc(c.description)}" maxlength="400" aria-label="Kriteriya ${i + 1} izahı">
-            <input type="number" class="mono" data-k="weight" value="${c.weight}" min="0" max="100" inputmode="numeric" aria-label="Kriteriya ${i + 1} çəkisi">
+            <input type="text" data-k="name" value="${esc(c.name)}" maxlength="120" aria-label="Meyar ${i + 1} adı">
+            <textarea class="cd" data-k="description" rows="3" maxlength="400" aria-label="Meyar ${i + 1} izahı">${esc(c.description)}</textarea>
+            <input type="number" class="mono" data-k="maxScore" value="${c.maxScore}" min="1" max="100" inputmode="numeric" aria-label="Meyar ${i + 1} maksimum balı">
             <div class="mv"><button type="button" class="x" data-move="up" ${i ? "" : "disabled"} aria-label="Yuxarı">${icon("up")}</button><button type="button" class="x" data-move="down" ${i < S!.criteria.length - 1 ? "" : "disabled"} aria-label="Aşağı">${icon("down")}</button></div>
-            <button type="button" class="x del" data-del aria-label="Kriteriya ${i + 1}-i sil">${icon("trash")}</button>
+            <button type="button" class="x del" data-del aria-label="Meyar ${i + 1}-i sil">${icon("trash")}</button>
             ${confirmRow("criteria", c.id)}
           </div>`).join("")}
         </div>
-        <div class="row"><button class="btn sm" data-add="criteria">${icon("plus")}Kriteriya əlavə et</button></div>
+        <div class="row"><button class="btn sm" data-add="criteria">${icon("plus")}Meyar əlavə et</button></div>
       </section>
     </div>`;
 }
 
 // ---------- helpers ----------
+function formula() {
+  if (!S) return "";
+  const D = S.criteria.reduce((a, c) => a + c.maxScore, 0);
+  return S.event.includeEntry
+    ? `Yekun = giriş balı (maks. ${S.event.entryMax}) + Demo Day balı (maks. ${D}) = maks. ${S.event.entryMax + D}`
+    : `Yekun = Demo Day balı (maks. ${D})`;
+}
+async function patchScoring(body: { includeEntry?: boolean; entryMax?: number }) {
+  try {
+    const r = await api<{ event: EventState }>("/api/admin/event", { method: "PATCH", body });
+    S!.event.includeEntry = r.event.includeEntry;
+    S!.event.entryMax = r.event.entryMax;
+    $("#scFormula").textContent = formula();
+    const s = $("#scSaved"); s.textContent = "Saxlanıldı"; setTimeout(() => { s.textContent = ""; }, 1800);
+    return true;
+  } catch (e) {
+    toast((e as ApiError).message, "err");
+    $<HTMLInputElement>("#scEntryMax").value = String(S!.event.entryMax);
+    return false;
+  }
+}
 const rowOf = (el: HTMLElement) => {
   const r = el.closest<HTMLElement>("[data-row]");
   if (!r) return null;
@@ -180,11 +220,9 @@ async function patchRow(kind: string, id: number, body: Record<string, unknown>,
       const list = kind === "teams" ? S!.teams : kind === "criteria" ? S!.criteria : jurors;
       const item = (list as Array<{ id: number }>).find(x => x.id === id);
       if (item) Object.assign(item, body);
-      if (kind === "criteria" && "weight" in body) {
-        const w = S!.criteria.reduce((a, c) => a + c.weight, 0);
-        const sum = main.querySelector<HTMLElement>(".sum")!;
-        sum.textContent = `Çəki cəmi: ${w}%${w === 100 ? "" : " — 100 olmalıdır"}`;
-        sum.classList.toggle("bad", w !== 100);
+      if (kind === "criteria" && "maxScore" in body) {
+        main.querySelector<HTMLElement>(".sum")!.textContent = `Maksimum cəmi: ${S!.criteria.reduce((a, c) => a + c.maxScore, 0)} bal`;
+        $("#scFormula").textContent = formula();
       }
       flashSaved(row);
     }
@@ -198,14 +236,39 @@ async function patchRow(kind: string, id: number, body: Record<string, unknown>,
 // ---------- events ----------
 main.addEventListener("change", async e => {
   const el = e.target as HTMLInputElement;
+  if (el.id === "scEntryMax") {
+    const v = Number(el.value);
+    if (!(v >= 1 && v <= 1000)) { toast("Giriş balının maksimumu 1–1000 arası olmalıdır.", "err"); el.value = String(S!.event.entryMax); return; }
+    await patchScoring({ entryMax: v });
+    return;
+  }
   const k = el.dataset.k;
   if (!k) return;
   const r = rowOf(el);
   if (!r) return;
-  let v: string | number = el.value.trim();
-  if (k === "weight") {
-    v = Math.max(0, Math.min(100, Math.round(Number(el.value) || 0)));
-    el.value = String(v);
+  let v: string | number | null = el.value.trim();
+  if (k === "maxScore") {
+    const cur = S!.criteria.find(c => c.id === r.id)!.maxScore;
+    const n = Number(el.value);
+    if (el.value.trim() === "" || el.validity.badInput || !Number.isInteger(n) || n < 1 || n > 100) {
+      toast("Maksimum bal 1–100 arası tam ədəd olmalıdır.", "err");
+      el.value = String(cur);
+      return;
+    }
+    v = n;
+    if (!(await patchRow(r.kind, r.id, { maxScore: n }, r.el))) el.value = String(cur); // e.g. 409: scores above the new maximum
+    return;
+  } else if (k === "entryScore") {
+    if (v === "") v = null;
+    else {
+      const n = Number(String(v).replace(",", "."));
+      if (!Number.isFinite(n) || n < 0 || n > S!.event.entryMax) {
+        toast(`Giriş balı 0–${S!.event.entryMax} arası olmalıdır.`, "err");
+        el.value = entryValue(S!.teams.find(t => t.id === r.id)?.entryScore ?? null);
+        return;
+      }
+      v = n;
+    }
   } else if (k === "name" || k === "displayName" || k === "username") {
     if (!v) {
       toast("Bu sahə boş ola bilməz.", "err");
@@ -227,7 +290,7 @@ main.addEventListener("click", async e => {
   if (add) {
     try {
       if (add.dataset.add === "teams") await api("/api/admin/teams", { method: "POST", body: { name: `Komanda ${S.teams.length + 1}`, project: "" } });
-      else await api("/api/admin/criteria", { method: "POST", body: { name: "Yeni kriteriya", description: "", weight: 0 } });
+      else await api("/api/admin/criteria", { method: "POST", body: { name: "Yeni meyar", description: "", maxScore: 10 } });
       await load();
       const rows = main.querySelectorAll<HTMLElement>(`[data-row^="${add.dataset.add}:"]`);
       rows[rows.length - 1]?.querySelector<HTMLInputElement>("input")?.select();
@@ -239,6 +302,12 @@ main.addEventListener("click", async e => {
   if (t.closest("#evTotal")) {
     const sw = t.closest<HTMLElement>("#evTotal")!;
     sw.setAttribute("aria-checked", String(sw.getAttribute("aria-checked") !== "true"));
+    return;
+  }
+  if (t.closest("#scEntry")) {
+    const sw = t.closest<HTMLElement>("#scEntry")!;
+    const next = sw.getAttribute("aria-checked") !== "true";
+    if (await patchScoring({ includeEntry: next })) sw.setAttribute("aria-checked", String(next));
     return;
   }
   if (t.closest("[data-cancel]")) { confirm = null; render(); return; }

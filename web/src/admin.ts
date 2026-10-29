@@ -1,8 +1,8 @@
 import "./styles.css";
 import { ordinal, type RevealEntry } from "../../shared/reveal";
-import type { Results } from "../../shared/scoring";
+import { displayParts, fmt2, type Results } from "../../shared/scoring";
 import { fmtClock, type TimerView } from "../../shared/timer";
-import type { Criterion, Juror, PresenceEntry, ScoreRow, StagePayload, Team, TimerAction, TimerState } from "../../shared/types";
+import type { AdminTeam, Criterion, Juror, PresenceEntry, ScoreRow, StagePayload, TimerAction, TimerState } from "../../shared/types";
 import { api, ApiError } from "./lib/api";
 import { $, esc, flip, fmt1, hhmm, icon, toast } from "./lib/dom";
 import { live } from "./lib/socket";
@@ -12,7 +12,7 @@ import { topbar } from "./lib/topbar";
 interface EventState { name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean }
 interface AdminData {
   results: Results;
-  teams: Team[];
+  teams: AdminTeam[];
   jurors: Juror[];
   criteria: Criterion[];
   scores: Array<ScoreRow & { total: number | null }>;
@@ -87,7 +87,7 @@ function build() {
     <div class="grid2 section-gap">
       <div>
         <div class="row between" style="margin-bottom:12px;align-items:flex-end">
-          <div><h2>Reytinq</h2><p class="sub">Bal = münsiflərin çəkili ballarının orta qiyməti (100 üzərindən). Bərabərlikdə ən yüksək çəkili kriteriya həlledicidir.</p></div>
+          <div><h2>Reytinq</h2><p class="sub" id="lbFormula"></p></div>
         </div>
         <div class="card" style="overflow:hidden" id="lbCard"></div>
       </div>
@@ -257,7 +257,7 @@ function renderReveal() {
       <button class="btn sm danger solid" id="rvResetYes">Bəli, sıfırla</button><button class="btn sm" id="rvNo">Ləğv et</button></div>` : ""}
     ${rv.stale ? `<p class="banner lock" style="margin:0">${icon("lock")}<span>Reytinq qeydə alınandan sonra ballar dəyişib. Yeni vəziyyəti göstərmək üçün “Sıfırla” basın.</span></p>` : ""}
     <button class="btn primary" id="rvNext" style="min-height:56px;font-size:16px" ${rv.enabled && n ? "" : "disabled"}>${esc(label)} ${rv.enabled && n ? icon("next") : ""}</button>
-    ${rv.enabled && n ? `<p class="sub" style="margin:-6px 0 0">Növbəti (yalnız siz görürsünüz): <b>${esc(n.entry.name)}</b> · <span class="mono">${n.entry.avg.toFixed(1)}</span></p>` : ""}
+    ${rv.enabled && n ? `<p class="sub" style="margin:-6px 0 0">Növbəti (yalnız siz görürsünüz): <b>${esc(n.entry.name)}</b> · <span class="mono">${fmt2(n.entry.score)}</span></p>` : ""}
     <div class="row">
       <button class="btn sm" id="rvBack" ${rv.enabled && rv.step > 0 ? "" : "disabled"}>${icon("reset")}Geri</button>
       <button class="btn sm ghost" id="rvReset" ${rv.snapshotAt ? "" : "disabled"}>Sıfırla</button>
@@ -272,13 +272,19 @@ function renderRanking() {
   const after = flip(card);
   const nJ = activeJurors().length;
   const rows = S.results.ranking;
+  const { demoMax: D, entryMax: E, maxTotal: T, includeEntry } = S.results;
+  document.getElementById("lbFormula")!.textContent = includeEntry
+    ? `Yekun = giriş balı (maks. ${E}) + Demo Day balı — münsiflərin orta balı (maks. ${D}); cəmi ${T}. Bərabərlikdə Demo Day balı, sonra ən yüksək maksimumlu meyarlar həlledicidir.`
+    : `Yekun = Demo Day balı — münsiflərin orta balı (maks. ${D}). Giriş balı yekuna daxil edilmir.`;
   card.innerHTML = rows.length ? `<ol class="lb">${rows.map(x => `
     <li data-flip="${x.team.id}" class="${x.rank ? (x.rank <= 3 ? "r" + x.rank : "") : "none"}">
       <span class="rk">${x.rank ?? "—"}</span>
-      <div class="nm"><b>${esc(x.team.name)} ${x.incomplete && x.n ? `<span class="pill warn" title="${S!.minJurorsForRank}-dən az münsif qiymətləndirib">eksik</span>` : ""}</b>
-        <small>${esc(x.team.project || "—")}</small>
-        <div class="track"><i style="width:${x.avg ?? 0}%"></i></div></div>
-      <div class="sc"><b>${fmt1(x.avg)}</b><small>${x.n}/${nJ} münsif${x.n > 1 ? ` · ${fmt1(x.min)}–${fmt1(x.max)}` : ""}</small></div>
+      <div class="nm"><b>${esc(x.team.name)} ${x.incomplete && x.n ? `<span class="pill warn" title="${S!.minJurorsForRank}-dən az münsif qiymətləndirib">eksik</span>` : ""}${includeEntry && x.entry == null ? `<span class="pill" title="Quraşdırmada giriş balını yazın">giriş balı yoxdur</span>` : ""}</b>
+        <small>${!includeEntry ? esc(x.team.project || "—")
+          : x.score == null ? `Giriş <span class="v">${fmt2(x.entry)}</span> · Demo Day —`
+          : (p => `Giriş <span class="v">${p.entry}</span> + Demo Day <span class="v">${p.demo}</span>`)(displayParts(x.score, x.entry))}</small>
+        <div class="track"><i style="width:${x.score != null && T ? Math.min(100, Math.max(0, (x.score / T) * 100)) : 0}%"></i></div></div>
+      <div class="sc"><b>${fmt2(x.score)}</b><small>${x.n}/${nJ} münsif${x.n > 1 ? ` · ${x.min}–${x.max}` : ""}</small></div>
     </li>`).join("")}</ol>` : `<p class="empty">Aktiv komanda yoxdur.</p>`;
   after();
 }
@@ -289,18 +295,18 @@ function renderMatrix() {
   const jurors = S.jurors.filter(j => j.active || S!.scores.some(s => s.jurorId === j.id));
   const teams = activeTeams();
   $("#matrixCard").innerHTML = `
-    <div class="pad" style="padding-bottom:8px"><h3>Münsif matrisi</h3><p class="sub">Xanaya toxunun: kriteriya balları və şərh.</p></div>
+    <div class="pad" style="padding-bottom:8px"><h3>Münsif matrisi</h3><p class="sub">Hər xana münsifin Demo Day cəmidir (maks. ${S.results.demoMax}). Toxunun: meyar balları və şərh.</p></div>
     <div class="tbl"><table>
-      <thead><tr><th>Komanda</th>${jurors.map((j, i) => `<th class="num" title="${esc(j.displayName)}">M${i + 1}</th>`).join("")}<th class="num">Orta</th></tr></thead>
+      <thead><tr><th>Komanda</th>${jurors.map((j, i) => `<th class="num" title="${esc(j.displayName)}">M${i + 1}</th>`).join("")}<th class="num" title="Demo Day orta balı">Demo</th></tr></thead>
       <tbody>${teams.map(t => {
-        const avg = S!.results.ranking.find(r => r.team.id === t.id)?.avg ?? null;
+        const avg = S!.results.ranking.find(r => r.team.id === t.id)?.demo ?? null;
         return `<tr><td>${esc(t.name)}</td>${jurors.map(j => {
           const v = S!.results.matrix[t.id]?.[j.id];
           const has = !!scoreOf(j.id, t.id);
           const k = `${j.id}:${t.id}`;
-          return has ? `<td class="cell${flashKey === k ? " flash" : ""}"><button data-cell="${k}" aria-label="${esc(j.displayName)} — ${esc(t.name)}">${v != null ? v.toFixed(1) : "…"}</button></td>`
+          return has ? `<td class="cell${flashKey === k ? " flash" : ""}"><button data-cell="${k}" aria-label="${esc(j.displayName)} — ${esc(t.name)}">${v != null ? v : "…"}</button></td>`
             : `<td class="num miss">—</td>`;
-        }).join("")}<td class="num"><b>${fmt1(avg)}</b></td></tr>`;
+        }).join("")}<td class="num"><b>${fmt2(avg)}</b></td></tr>`;
       }).join("")}</tbody>
     </table></div>
     <div class="pad" style="padding-top:10px"><p class="sub" style="margin:0">${jurors.map((j, i) => `M${i + 1} — ${esc(j.displayName)}`).join(" · ") || "Münsif yoxdur"}</p></div>`;
@@ -317,8 +323,8 @@ function openCell(jurorId: number, teamId: number) {
     <div class="dh"><div><h3>${esc(j.displayName)}</h3><h2 id="cellTitle" style="font-size:19px;margin-top:4px">${esc(t.name)}</h2></div>
       <button class="icon-btn" id="dlgClose" aria-label="Bağla">${icon("close")}</button></div>
     <div class="db">
-      <div class="vals">${S.criteria.map(c => `<span>${esc(c.name)} <span class="sub mono" style="font-size:12px">${c.weight}%</span></span><b>${s.values[c.key] ?? "—"}</b>`).join("")}
-        <span style="border-top:1px solid var(--line);padding-top:6px"><b style="font-family:var(--f-body);text-align:left">Yekun</b></span><b style="border-top:1px solid var(--line);padding-top:6px">${fmt1(s.total)}</b></div>
+      <div class="vals">${S.criteria.map(c => `<span>${esc(c.name)}</span><b>${s.values[c.key] ?? "—"} <span class="sub" style="font-size:12px">/ ${c.maxScore}</span></b>`).join("")}
+        <span style="border-top:1px solid var(--line);padding-top:6px"><b style="font-family:var(--f-body);text-align:left">Cəmi (Demo Day)</b></span><b style="border-top:1px solid var(--line);padding-top:6px">${s.total ?? "—"} <span class="sub" style="font-size:12px">/ ${S.results.demoMax}</span></b></div>
       ${s.note ? `<blockquote>${esc(s.note)}</blockquote>` : `<p class="sub">Şərh yazılmayıb.</p>`}
       <p class="sub" style="margin-top:12px">Son dəyişiklik: ${hhmm(s.updatedAt)}</p>
     </div>`;
@@ -332,14 +338,20 @@ dlg.addEventListener("click", e => {
 function renderHeat() {
   if (!S) return;
   const crit = S.criteria;
+  const { demoMax: D, entryMax: E, maxTotal: T, includeEntry } = S.results;
   $("#heatCard").innerHTML = `
-    <div class="pad" style="padding-bottom:8px"><h3>Kriteriyalar üzrə orta bal (1–10)</h3></div>
+    <div class="pad" style="padding-bottom:8px"><h3>Meyarlar üzrə orta bal</h3></div>
     <div class="tbl"><table>
-      <thead><tr><th>Yer</th><th>Komanda</th>${crit.map(c => `<th class="num" title="${esc(c.description)}">${esc(c.name)}<br><span style="font-weight:500">${c.weight}%</span></th>`).join("")}<th class="num">Yekun</th></tr></thead>
+      <thead><tr><th>Yer</th><th>Komanda</th>${crit.map(c => `<th class="num" title="${esc(c.description)}">${esc(c.name)}<br><span style="font-weight:500">maks. ${c.maxScore}</span></th>`).join("")}
+        <th class="num">Demo Day<br><span style="font-weight:500">maks. ${D}</span></th>
+        <th class="num">Giriş<br><span style="font-weight:500">${includeEntry ? `maks. ${E}` : "daxil deyil"}</span></th>
+        <th class="num">Yekun<br><span style="font-weight:500">maks. ${T}</span></th></tr></thead>
       <tbody>${S.results.ranking.map(x => `<tr><td class="mono">${x.rank ?? "—"}</td><td>${esc(x.team.name)}</td>${crit.map(c => {
         const v = x.perCriterion[c.key];
-        return v == null ? `<td class="num miss">—</td>` : `<td class="num heat" style="--h:${Math.round(Math.max(0, v - 4) * 6)}">${v.toFixed(1)}</td>`;
-      }).join("")}<td class="num"><b>${fmt1(x.avg)}</b></td></tr>`).join("")}</tbody>
+        // Colour by share of the criterion's maximum, so 4/5 and 8/10 look alike.
+        return v == null ? `<td class="num miss">—</td>` : `<td class="num heat" style="--h:${Math.round(Math.max(0, (v / c.maxScore) * 10 - 4) * 6)}">${v.toFixed(1)}</td>`;
+      }).join("")}${(p => `<td class="num">${p.demo}</td><td class="num${includeEntry ? "" : " miss"}">${p.entry}</td><td class="num"><b>${p.score}</b></td>`)(
+        x.score != null && includeEntry ? displayParts(x.score, x.entry) : { demo: fmt2(x.demo), entry: fmt2(x.entry), score: fmt2(x.score) })}</tr>`).join("")}</tbody>
     </table></div>`;
 }
 
