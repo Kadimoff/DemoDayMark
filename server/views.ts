@@ -20,6 +20,7 @@ export function jurorState(repo: Repo, jurorId: number): JurorStatePayload {
     teams: repo.teams().filter(t => t.active),
     entryMax: ev.entryMax,
     criteria,
+    includeEntry: ev.includeEntry,
     feedbackTags: ev.feedbackTags,
     myScores: repo.scoresOf(jurorId).map(s => ({
       teamId: s.teamId,
@@ -59,6 +60,7 @@ export function revealSnapshot(repo: Repo, cfg: Config): RevealSnapshot {
   return {
     createdAt: Date.now(),
     maxTotal: results.maxTotal,
+    top: repo.getEvent().revealTop,
     entries: results.ranking
       .filter(r => r.score != null && r.rank != null)
       .map(r => ({
@@ -75,7 +77,7 @@ export const revealPublicView = (repo: Repo) => {
 
 export function revealAdminView(repo: Repo, cfg: Config) {
   const r = repo.getReveal();
-  const steps = r.snapshot ? revealSteps(r.snapshot.entries) : [];
+  const steps = r.snapshot ? revealSteps(r.snapshot.entries, r.snapshot.top) : [];
   const nextStep = steps[r.step] ?? null;
   const fresh = revealSnapshot(repo, cfg);
   // Has anything that would change the order or the numbers happened since the snapshot?
@@ -84,6 +86,8 @@ export function revealAdminView(repo: Repo, cfg: Config) {
   return {
     enabled: r.enabled,
     step: r.step,
+    top: r.snapshot?.top ?? repo.getEvent().revealTop,
+    steps: steps.map(s => ({ ...s, rank: r.snapshot!.entries[s.index].rank, name: r.snapshot!.entries[s.index].name })),
     stepsTotal: steps.length,
     snapshotAt: r.snapshot?.createdAt ?? null,
     entries: r.snapshot?.entries ?? [],

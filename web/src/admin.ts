@@ -12,7 +12,7 @@ import { live } from "./lib/socket";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
 import { topbar } from "./lib/topbar";
 
-interface EventState { name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean }
+interface EventState { name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean; includeEntry: boolean; revealTop: number }
 interface AdminData {
   results: Results;
   teams: AdminTeam[];
@@ -26,7 +26,8 @@ interface AdminReveal {
   enabled: boolean; step: number; stepsTotal: number; snapshotAt: number | null; entries: RevealEntry[];
   next: { kind: "suspense" | "reveal"; index: number; entry: RevealEntry } | null;
   stale: boolean; unscored: number; progress: { done: number; need: number }; locked: boolean;
-  public: { revealed: RevealEntry[]; suspense: { index: number; rank: number } | null; total: number };
+  top: number; steps: Array<{ kind: "suspense" | "reveal"; index: number; rank: number; name: string }>;
+  public: { revealed: Array<RevealEntry & { index: number }>; suspense: { index: number; rank: number } | null; total: number };
 }
 
 const bar = topbar({
@@ -50,6 +51,9 @@ let flashKey = "";
 let rv: AdminReveal | null = null;
 let rvConfirm: "enable" | "reset" | null = null;
 let built = false;
+type JuryFilter = "all" | "wait" | "busy" | "sent" | "off" | "qr";
+let juryFilter: JuryFilter = "all";
+let juryView: "cards" | "table" = (() => { try { return localStorage.getItem("ij.juryView") === "table" ? "table" : "cards"; } catch { return "cards"; } })();
 
 const activeTeams = () => (S ? S.teams.filter(t => t.active) : []);
 const activeJurors = () => (S ? S.jurors.filter(j => j.active) : []);
@@ -176,7 +180,7 @@ function renderKpis(v?: TimerView) {
       <div class="kpi">
         <div class="top-r"><h3>Münsif qoşulması</h3><span class="dots">${jurors.map(j => `<i class="dot ${pres.get(j.id)?.online ? "on" : ""}"></i>`).join("")}</span></div>
         <div class="big ${onlineN === jurors.length && jurors.length ? "ok-t" : ""}">${onlineN} / ${jurors.length} <small>onlayn</small></div>
-        <div class="ln">${pending ? `<span class="warn-t">${pending} münsif QR gözləyir</span>` : jurors.length ? "Bütün münsiflər qoşulub" : "Münsif yoxdur"}</div>
+        <div class="ln">${!jurors.length ? "Münsif yoxdur" : pending ? `<span class="warn-t">${pending} münsif QR gözləyir</span>` : onlineN === jurors.length ? "Hamı onlayndır" : `${jurors.length - onlineN} münsif oflayndır`}</div>
       </div>
       <div class="kpi">
         <div class="top-r"><h3>Sistem vəziyyəti</h3><span class="pill ${S.event.locked ? "warn" : "ok"}">${S.event.locked ? "Bağlı" : "Açıq"}</span></div>
@@ -207,7 +211,7 @@ function renderStage() {
     <div class="bar1">
       <div class="row">
         ${cur ? `<span class="pill live">Səhnədə aktivdir</span>` : `<span class="pill">Səhnə boşdur</span>`}
-        ${cur ? `<span class="caps">Giriş balı: <span class="mono" style="color:var(--fg)">${cur.entryScore != null ? fmtE(cur.entryScore) : "—"} / ${fmtE(E)}</span></span>` : ""}
+        ${cur && S.event.includeEntry ? `<span class="caps">Giriş balı: <span class="mono" style="color:var(--fg)">${cur.entryScore != null ? fmtE(cur.entryScore) : "—"} / ${fmtE(E)}</span></span>` : ""}
       </div>
       ${cur ? `<button class="btn sm" id="rename">${icon("pencil")}Adı dəyiş</button>` : ""}
     </div>
@@ -284,53 +288,98 @@ function renderOrder() {
         : ci >= 0 && i === ci + 1 ? `<span class="st acc-t">Növbədə</span>`
         : n ? `<span class="st">${n}/${nJ} səs</span>` : `<span class="st">Gözləyir</span>`;
       return `<button data-cur="${t.id}" aria-pressed="${t.id === cur}"><span class="ix">#${String(i + 1).padStart(2, "0")}</span>
-        <span class="nm"><b>${esc(t.name)}</b><small>${esc(t.project || "—")}</small></span>${st}</button>`;
+        <span class="nm"><b>${esc(t.name)}</b>${t.project ? `<small>${esc(t.project)}</small>` : ""}</span>${st}</button>`;
     }).join("") || `<p class="note">Aktiv komanda yoxdur.</p>`}</div>
     <a class="btn sm ghost" href="/admin/setup" style="margin-top:auto">${icon("list")}Ardıcıllığı yenidən nizamla</a>`;
 }
 
 // ---------- jurors: live voting state ----------
+type JState = "sent" | "busy" | "wait" | "off" | "qr";
+const STATE_ORDER: Record<JState, number> = { wait: 0, busy: 1, off: 2, qr: 3, sent: 4 };
+const STATE_LABEL: Record<JState, string> = { wait: "Gözləyir", busy: "Doldurur", off: "Oflayn", qr: "QR gözləyir", sent: "Səs verdi" };
+
+function jurorRows() {
+  if (!S) return [];
+  const cur = activeTeams().find(t => t.id === S!.event.currentTeamId) ?? null;
+  const pres = new Map(S.presence.map(p => [p.jurorId, p]));
+  const sessions = new Set(S.sessions?.map(x => x.userId) ?? []);
+  return activeJurors().map(j => {
+    const p = pres.get(j.id);
+    const pendingQr = isPlaceholderName(j.displayName) && !sessions.has(j.id) && !S!.scores.some(x => x.jurorId === j.id);
+    const sc = cur ? scoreOf(j.id, cur.id) : null;
+    const prog = cur ? S!.progress.find(x => x.jurorId === j.id && x.teamId === cur.id) : null;
+    const state: JState = pendingQr ? "qr" : sc ? "sent" : prog && prog.filled > 0 ? "busy" : p?.online ? "wait" : "off";
+    return { j, p, sc, prog, state, done: S!.scores.filter(x => x.jurorId === j.id).length };
+  }).sort((x, y) => STATE_ORDER[x.state] - STATE_ORDER[y.state] || x.j.id - y.j.id);
+}
+
 function renderJury() {
   if (!S) return;
   const card = $("#juryCard");
-  const cur = activeTeams().find(t => t.id === S!.event.currentTeamId) ?? null;
-  const jurors = activeJurors();
-  const pres = new Map(S.presence.map(p => [p.jurorId, p]));
-  const sessions = new Set(S.sessions?.map(s => s.userId) ?? []);
+  const teams = activeTeams();
+  const cur = teams.find(t => t.id === S!.event.currentTeamId) ?? null;
+  const rows = jurorRows();
   const nCrit = S.criteria.length;
   const D = S.results.demoMax;
-  const waiting = cur ? jurors.filter(j => !scoreOf(j.id, cur.id)).length : 0;
+  const count = (st: JState) => rows.filter(r => r.state === st).length;
+  const waiting = cur ? rows.filter(r => r.state !== "sent" && r.state !== "qr").length : 0;
+  const shown = rows.filter(r => juryFilter === "all" || r.state === juryFilter);
+  const chip = (f: JuryFilter, label: string, n: number, dot = "") => `<button data-jf="${f}" aria-pressed="${juryFilter === f}">${dot ? `<span class="dot ${dot}"></span>` : ""}${label} <b>${n}</b></button>`;
+  const lastSeen = (r: ReturnType<typeof jurorRows>[number]) => r.p?.online ? "Onlayn" : r.p?.lastSeen ? `Son görülmə ${hhmm(r.p.lastSeen)}` : r.state === "qr" ? "QR ilə qoşulmayıb" : "Oflayn";
+  const body = juryView === "cards"
+    ? `<div class="jgrid">${shown.map(r => {
+        const { j, sc, prog, state } = r;
+        let k = STATE_LABEL[state], v = "", tag = "";
+        if (state === "qr") v = `<span>Hələ skan edilməyib</span>`;
+        else if (!cur) { k = r.p?.online ? "Onlayn" : "Oflayn"; v = `${r.done} <span>/ ${teams.length} komanda</span>`; }
+        else if (state === "sent") { v = `${sc!.total ?? "…"} <span>/ ${D}</span>`; tag = `<span class="ago">${ago(sc!.updatedAt)}</span>`; }
+        else if (state === "busy") { v = `${prog!.filled} <span>/ ${nCrit} meyar</span>`; tag = `<span class="ago">Yazır…</span>`; }
+        else { v = `-- <span>/ ${D}</span>`; }
+        const cls = state === "sent" ? "sent" : state === "busy" ? "busy" : state === "qr" ? "pending" : "";
+        const dot = state === "qr" ? "" : state === "busy" ? "busy" : r.p?.online ? "on" : "off";
+        return `<div class="jcard ${cls}">
+          <div class="tr"><span class="ini ${state === "qr" ? "wait" : ""}">${esc(initials(j.displayName))}</span><span class="dot ${dot}" title="${esc(lastSeen(r))}"></span></div>
+          <button class="qr-btn" data-qr="${j.id}" title="Yeni QR (əlaqə itibsə)" aria-label="${esc(j.displayName)} üçün yeni QR">${icon("qr")}</button>
+          <div class="nm"><b>${esc(j.displayName)}</b><small>${esc(lastSeen(r))} · ${r.done}/${teams.length}</small></div>
+          <div class="box"><div><div class="k">${k}</div><div class="v">${v}</div></div>${tag}</div>
+          ${state === "qr" ? `<button class="btn sm outline-acc" data-qr="${j.id}">${icon("qr")}QR göstər</button>` : ""}
+        </div>`;
+      }).join("")}
+        <button class="addj" id="addJuror">${icon("plus")}<span>Münsif əlavə et<br><small class="faint">QR kod yaradılır</small></span></button>
+      </div>`
+    : `<div class="track"><table>
+        <thead><tr><th>Münsif</th><th>Status</th>${teams.map((t, i) => `<th class="num${t.id === cur?.id ? " cur" : ""}" title="${esc(t.name)}">#${String(i + 1).padStart(2, "0")}</th>`).join("")}<th class="num">Cəmi</th><th></th></tr></thead>
+        <tbody>${shown.map(r => `<tr class="${r.state === "qr" ? "pending" : ""}">
+          <td class="nm"><b>${esc(r.j.displayName)}</b><small>${esc(lastSeen(r))}</small></td>
+          <td><span class="pill ${r.state === "sent" ? "ok" : r.state === "busy" || r.state === "qr" ? "warn" : r.state === "off" ? "danger" : ""}">${STATE_LABEL[r.state]}${r.state === "busy" ? ` ${r.prog!.filled}/${nCrit}` : ""}</span></td>
+          ${teams.map(t => {
+            const has = scoreOf(r.j.id, t.id);
+            const pr = S!.progress.find(x => x.jurorId === r.j.id && x.teamId === t.id && x.filled > 0);
+            return `<td class="st${t.id === cur?.id ? " cur" : ""} ${has ? "y" : pr ? "w" : "n"}" title="${esc(t.name)}">${has ? "✓" : pr ? "…" : "—"}</td>`;
+          }).join("")}
+          <td class="num"><b>${r.done}</b>/${teams.length}</td>
+          <td class="act"><button class="btn sm ghost" data-qr="${r.j.id}" title="Yeni QR">${icon("qr")}</button></td>
+        </tr>`).join("")}</tbody></table></div>
+      <div class="row"><button class="btn sm" id="addJuror">${icon("plus")}Münsif əlavə et (QR)</button></div>`;
   card.innerHTML = `
     <div class="head">
-      <div><h2 id="h-jury">${icon("users")}Münsiflərin canlı səsvermə vəziyyəti ${cur ? `<span class="pill">#${String(activeTeams().indexOf(cur) + 1).padStart(2, "0")} ${esc(cur.name)} üzrə</span>` : ""}</h2>
-        <p class="sub">Hər münsifin telefonundan gələn bal və doldurma gedişatı (bal dəyərləri yalnız göndəriləndən sonra görünür)</p></div>
+      <div><h2 id="h-jury">${icon("users")}Münsiflərin izlənməsi ${cur ? `<span class="pill">#${String(teams.indexOf(cur) + 1).padStart(2, "0")} ${esc(cur.name)}</span>` : ""}</h2>
+        <p class="sub">${cur ? `Səhnədəki komanda üzrə kim səs verib, kim gözlənilir. Bal dəyərləri yalnız göndəriləndən sonra görünür.` : "Səhnədə komanda yoxdur. Kartlarda hər münsifin neçə komandaya səs verdiyi görünür."}</p></div>
       <div class="row">
-        <button class="btn sm primary" id="nudge" ${cur && waiting && !S.event.locked ? "" : "disabled"}>${icon("bell")}Səs verməyənləri xəbərdar et${cur && waiting ? ` (${waiting})` : ""}</button>
+        <button class="btn sm primary" id="nudge" ${cur && waiting && !S.event.locked ? "" : "disabled"}>${icon("bell")}Xəbərdar et${cur && waiting ? ` (${waiting})` : ""}</button>
         <button class="btn sm" id="lockBtn">${icon("lock")}${S.event.locked ? "Kilidi aç" : "Səsverməni bağla"}</button>
+        <div class="seg" role="group" aria-label="Görünüş"><button data-jv="cards" aria-pressed="${juryView === "cards"}">${icon("users")}Kartlar</button><button data-jv="table" aria-pressed="${juryView === "table"}">${icon("sheet")}Cədvəl</button></div>
       </div>
     </div>
-    <div class="jgrid">${jurors.map(j => {
-      const p = pres.get(j.id);
-      const pendingQr = isPlaceholderName(j.displayName) && !sessions.has(j.id);
-      const sc = cur ? scoreOf(j.id, cur.id) : null;
-      const prog = cur ? S!.progress.find(x => x.jurorId === j.id && x.teamId === cur.id) : null;
-      let cls = "", k = "", v = "", tag = "";
-      if (pendingQr) { cls = "pending"; k = "QR gözləyir"; v = `<span>Hələ skan edilməyib</span>`; tag = ""; }
-      else if (!cur) { k = p?.online ? "Onlayn" : "Oflayn"; v = `<span>${S!.scores.filter(s => s.jurorId === j.id).length} komanda qiymətləndirib</span>`; }
-      else if (sc) { cls = "sent"; k = "Səs verdi"; v = `${sc.total ?? "…"} <span>/ ${D}</span>`; tag = `<span class="ago">${ago(sc.updatedAt)}</span>`; }
-      else if (prog && prog.filled > 0) { cls = "busy"; k = "Doldurur…"; v = `${prog.filled} <span>/ ${nCrit} meyar</span>`; tag = `<span class="ago">Yazır…</span>`; }
-      else { k = "Gözləyir"; v = `-- <span>/ ${D}</span>`; tag = `<span class="ago" style="color:var(--muted);background:var(--surface-3)">${p?.online ? "Onlayn" : "Oflayn"}</span>`; }
-      const dot = pendingQr ? "" : cls === "busy" ? "busy" : p?.online ? "on" : "off";
-      return `<div class="jcard ${cls}">
-        <div class="tr"><span class="ini">${esc(initials(j.displayName))}</span><span class="dot ${dot}" title="${p?.online ? "Onlayn" : p?.lastSeen ? `Son görülmə ${hhmm(p.lastSeen)}` : "Oflayn"}"></span></div>
-        <button class="qr-btn" data-qr="${j.id}" title="Yeni QR (əlaqə itibsə)" aria-label="${esc(j.displayName)} üçün yeni QR">${icon("qr")}</button>
-        <div class="nm"><b>${esc(j.displayName)}</b><small>${pendingQr ? "QR ilə qoşulmayıb" : p?.online ? "Onlayn" : p?.lastSeen ? `Son görülmə ${hhmm(p.lastSeen)}` : "Oflayn"}</small></div>
-        <div class="box"><div><div class="k">${k}</div><div class="v">${v}</div></div>${tag}</div>
-        ${pendingQr ? `<button class="btn sm outline-acc" data-qr="${j.id}">${icon("qr")}QR göstər</button>` : ""}
-      </div>`;
-    }).join("")}
-      <button class="addj" id="addJuror">${icon("plus")}<span>Münsif əlavə et<br><small class="faint">QR kod yaradılır</small></span></button>
-    </div>`;
+    <div class="jsum" role="group" aria-label="Süzgəc">
+      ${chip("all", "Hamısı", rows.length)}
+      ${cur ? chip("wait", "Gözləyir", count("wait"), "on") : ""}
+      ${cur ? chip("busy", "Doldurur", count("busy"), "busy") : ""}
+      ${cur ? chip("sent", "Səs verdi", count("sent"), "on") : ""}
+      ${chip("off", "Oflayn", count("off"), "off")}
+      ${count("qr") ? chip("qr", "QR gözləyir", count("qr")) : ""}
+    </div>
+    ${rows.length ? (shown.length ? body : `<p class="note">Bu süzgəcə uyğun münsif yoxdur.</p>`) : `<p class="note">Hələ münsif yoxdur. “Münsif QR yarat” ilə başlayın.</p><div class="row"><button class="btn sm primary" id="addJuror">${icon("qr")}Münsif QR yarat</button></div>`}`;
 }
 
 // ---------- results reveal ----------
@@ -348,52 +397,59 @@ async function revealAction(action: string) {
 }
 function renderReveal() {
   const card = document.getElementById("revealCard");
-  if (!card || !rv) return;
+  if (!card || !rv || !S) return;
   const n = rv.next;
-  const done = rv.enabled && !n && rv.stepsTotal > 0;
-  const label = !rv.enabled ? "Sıradakını açıqla"
-    : done ? "Bütün yerlər açıqlandı"
-    : n!.kind === "suspense" ? `${ordinal(n!.entry.rank)} yer: intizarı başlat`
-    : n!.entry.rank <= 3 ? `${ordinal(n!.entry.rank)} yeri açıqla`
-    : `Sıradakını açıqla (${ordinal(n!.entry.rank)} yer)`;
   const total = rv.entries.length;
-  const revealedN = rv.public?.revealed?.length ?? 0;
+  const done = rv.enabled && !n && rv.stepsTotal > 0;
   const susp = rv.public?.suspense;
-  const headline = !rv.enabled ? (rv.snapshotAt ? "Gözləmə rejimi" : "Açıqlama başlamayıb")
-    : done ? "Qalib elan olundu"
-    : susp ? `${ordinal(susp.rank)} yer intizardadır`
-    : revealedN ? `${ordinal(rv.entries[total - revealedN]?.rank ?? 0)} yer açıqlandı` : "Ekran hazırdır";
-  const subline = !rv.enabled ? "Proyektorda yalnız “Nəticələr tezliklə açıqlanacaq” yazısı görünür."
-    : susp ? "Səhnə monitorunda ürək döyüntüsü gedir. Komandanın adı və yekun balı hələ örtülüdür."
-    : done ? "Bütün yerlər açıqlanıb." : "Növbəti addım üçün düyməni basın.";
-  const { done: d, need } = rv.progress;
+  const top = rv.top;
+  const what = !rv.snapshotAt ? `İcazə verəndə qiymətləndirmə bağlanır və həmin anın reytinqi dondurulur. Daxil olan qiymətlər: <b class="mono">${rv.progress.done}/${rv.progress.need}</b>.`
+    : !rv.enabled ? "Proyektorda “Nəticələr tezliklə açıqlanacaq” yazısı görünür. İrəliləyiş saxlanılıb."
+    : done ? "Bütün yerlər açıqlanıb. Qalib ekranda qalır."
+    : n!.kind === "suspense" ? `Növbəti basış: <b>${ordinal(n!.entry.rank)} yer</b> üçün intizar (qaranlıq ekran, ürək döyüntüsü). Ad hələ görünmür.`
+    : `Növbəti basış: <b>${ordinal(n!.entry.rank)} yer</b> açıqlanır: <b>${esc(n!.entry.name)}</b> · <span class="mono">${fmt2(n!.entry.score)}</span> <span class="faint">(yalnız siz görürsünüz)</span>`;
+  const label = !rv.enabled ? "Açıqlamaya icazə ver" : done ? "Bütün yerlər açıqlandı"
+    : n!.kind === "suspense" ? `${ordinal(n!.entry.rank)} yer: intizarı başlat` : `${ordinal(n!.entry.rank)} yeri açıqla`;
+  // One chip per place, last place first, the way the ceremony goes.
+  const places = rv.entries.map((e, i) => ({ e, i })).reverse();
+  const revealedIdx = new Set((rv.public?.revealed ?? []).map(x => x.index));
+  const chips = places.map(({ e, i }) => {
+    const isNow = !!n && n.index === i || susp?.index === i;
+    const cls = revealedIdx.has(i) ? "done" : isNow ? "now" : "";
+    return `<div class="p ${cls} ${e.rank <= top ? "susp" : ""}"><span class="k">${e.rank <= top ? icon("medal") : ""}${ordinal(e.rank)} yer</span><b>${revealedIdx.has(i) || isNow ? esc(e.name) : "?"}</b></div>`;
+  }).join("");
   card.innerHTML = `
     <div class="head">
-      <div><h2 id="h-rv">${icon("medal")}Nəticə açıqlaması <span class="pill ${rv.enabled ? "ok" : ""}">${rv.enabled ? "İcazə verilib" : "Gözləmədə"}</span></h2>
-        <p class="sub">Səhnə monitorunda qalib təqdimatı üçün addım-addım intizar və server tərəfindən idarə olunan açıqlama</p></div>
-      <div class="allow"><span>Açıqlamaya icazə ver</span><button class="sw" role="switch" aria-checked="${rv.enabled}" id="rvAllow" aria-label="Açıqlamaya icazə ver"></button></div>
+      <div><h2 id="h-rv">${icon("medal")}Nəticə açıqlaması <span class="pill ${rv.enabled ? "ok" : ""}">${rv.enabled ? `Aktiv · ${rv.step}/${rv.stepsTotal} addım` : "Gözləmədə"}</span></h2>
+        <p class="sub">Proyektorda <a href="/reveal" target="_blank" rel="noopener">/reveal</a> açın. Yerlər sonuncudan birinciyə doğru, hər basışda bir addım açılır.</p></div>
+      <div class="allow"><span>Ekrana icazə</span><button class="sw" role="switch" aria-checked="${rv.enabled}" id="rvAllow" aria-label="Açıqlamaya icazə ver"></button></div>
     </div>
-    ${rvConfirm === "enable" ? `<div class="confirm"><span>Qiymətləndirmə bağlanacaq və cari reytinq qeydə alınacaq. Daxil olan qiymətlər: <b class="mono">${d}/${need}</b>${d < need ? " (hamısı daxil olmayıb!)" : ""}${rv.unscored ? ` · ${rv.unscored} komanda qiymətləndirilməyib və açıqlamaya düşməyəcək.` : ""}</span>
+    ${rvConfirm === "enable" ? `<div class="confirm"><span>Qiymətləndirmə bağlanacaq və cari reytinq qeydə alınacaq. Daxil olan qiymətlər: <b class="mono">${rv.progress.done}/${rv.progress.need}</b>${rv.progress.done < rv.progress.need ? " (hamısı daxil olmayıb!)" : ""}${rv.unscored ? ` · ${rv.unscored} komanda qiymətləndirilməyib və açıqlamaya düşməyəcək.` : ""}</span>
       <button class="btn sm primary" id="rvYes">Bəli, icazə ver</button><button class="btn sm" id="rvNo">Ləğv et</button></div>` : ""}
     ${rvConfirm === "reset" ? `<div class="confirm"><span>Açıqlama əvvələ qayıdacaq və reytinq yenidən qeydə alınacaq.</span>
       <button class="btn sm danger solid" id="rvResetYes">Bəli, sıfırla</button><button class="btn sm" id="rvNo">Ləğv et</button></div>` : ""}
-    ${rv.stale ? `<p class="banner lock" style="margin:0">${icon("warn")}<span>Reytinq qeydə alınandan sonra ballar dəyişib. Yeni vəziyyəti göstərmək üçün “Açıqlamanı sıfırla” basın.</span></p>` : ""}
+    ${rv.stale ? `<p class="banner lock" style="margin:0">${icon("warn")}<span>Reytinq qeydə alınandan sonra ballar dəyişib. Yeni vəziyyəti göstərmək üçün “Sıfırla” basın.</span></p>` : ""}
     <div class="rvbox">
-      <div class="rvstat">
-        <div class="row between"><h3>Hazırkı elan vəziyyəti</h3><span class="pill hot mono">${revealedN} / ${total} komanda açıqlanıb</span></div>
-        <div class="headline">${icon(susp ? "lock" : done ? "medal" : "sparkle")}${esc(headline)}</div>
-        <p class="sub" style="margin:0">${subline}</p>
-        <div class="segs">${Array.from({ length: Math.max(total, 1) }, (_, i) => `<i class="${i < revealedN ? "done" : i === revealedN && susp ? "cur" : ""}"></i>`).join("")}</div>
+      <div class="nextbox">
+        <div class="what">${what}</div>
+        <div class="rvacts">
+          <button class="btn" id="rvBack" ${rv.enabled && rv.step > 0 ? "" : "disabled"}>${icon("back")}Geri</button>
+          <button class="btn primary" id="rvNext" ${(!rv.enabled && !rv.snapshotAt) || (rv.enabled && n) || (!rv.enabled && rv.snapshotAt) ? "" : "disabled"}>${icon("play")}${esc(label)}</button>
+        </div>
+        <div class="row between">
+          <button class="btn sm ghost" id="rvReset" ${rv.snapshotAt ? "" : "disabled"}>${icon("reset")}Sıfırla</button>
+          <span class="row" style="gap:8px"><span class="caps">İntizarlı yer</span>
+            <span class="stepper"><button id="topDec" ${S.event.revealTop > 0 ? "" : "disabled"} aria-label="Azalt">−</button><b>${S.event.revealTop}</b><button id="topInc" ${S.event.revealTop < 10 ? "" : "disabled"} aria-label="Artır">+</button></span></span>
+        </div>
+        ${rv.snapshotAt && S.event.revealTop !== top ? `<p class="sub" style="margin:0">Yeni say (${S.event.revealTop}) “Sıfırla”dan sonra tətbiq olunur. İndiki açıqlama: ilk ${top} yer intizarla.</p>` : ""}
       </div>
-      <div class="rvacts">
-        <button class="btn" id="rvBack" ${rv.enabled && rv.step > 0 ? "" : "disabled"}>${icon("back")}Geri</button>
-        <button class="btn primary" id="rvNext" ${rv.enabled && n ? "" : "disabled"}>${icon("play")}${esc(label)}</button>
-        <button class="btn sm ghost" id="rvReset" ${rv.snapshotAt ? "" : "disabled"}>${icon("reset")}Açıqlamanı sıfırla</button>
-        <a class="btn sm ghost" href="/reveal" target="_blank" rel="noopener">${icon("ext")}Açıqlama ekranı</a>
-        ${rv.enabled && n ? `<p class="sub" style="grid-column:1/-1;margin:0">Növbəti (yalnız siz görürsünüz): <b style="color:var(--fg)">${esc(n.entry.name)}</b> · <span class="mono">${fmt2(n.entry.score)}</span></p>` : ""}
+      <div class="rvstat">
+        <div class="row between"><h3>Yerlər</h3><span class="caps">${(rv.public?.revealed ?? []).length} / ${total} açıqlanıb</span></div>
+        ${total ? `<div class="rvsteps">${chips}</div>` : `<p class="sub" style="margin:0">Hələ heç bir komanda tam qiymətləndirilməyib.</p>`}
+        <p class="sub" style="margin:0">${icon("medal")} işarəli yerlər iki basışla açılır: əvvəl intizar, sonra ad. Hazırda ilk <b>${top}</b> yer.</p>
       </div>
     </div>
-    <div class="isolation">${icon("shield")}<span><b>Server tərəfində izolyasiya:</b> reytinq dondurulub. İntizar addımında heç bir münsif və ya tamaşaçı yekun balı şəbəkə üzərindən qabaqcadan görə bilməz.</span></div>`;
+    <div class="isolation">${icon("shield")}<span><b>Server tərəfində izolyasiya:</b> reytinq dondurulub, ekrana yalnız açıqlanmış yerlər göndərilir. İntizar addımında ad və bal şəbəkəyə çıxmır.</span></div>`;
 }
 
 // ---------- ranking ----------
@@ -406,14 +462,14 @@ function renderRanking() {
   const { demoMax: D, entryMax: E, maxTotal: T, includeEntry } = S.results;
   document.getElementById("lbFormula")!.textContent = includeEntry
     ? `Yekun = giriş balı (maks. ${E}) + Demo Day balı, münsiflərin orta balı (maks. ${D}); cəmi ${T}. Bərabərlikdə Demo Day balı, sonra ən yüksək maksimumlu meyarlar həlledicidir.`
-    : `Yekun = Demo Day balı, münsiflərin orta balı (maks. ${D}). Giriş balı yekuna daxil edilmir.`;
+    : `Yekun bal = münsiflərin orta balı (maks. ${D}). Bərabərlikdə ən yüksək maksimumlu meyarların orta balı həlledicidir.`;
   card.innerHTML = rows.length ? `<ol class="lb">${rows.map(x => `
     <li data-flip="${x.team.id}" class="${x.rank ? (x.rank <= 3 ? "r" + x.rank : "") : "none"}">
       <span class="rk">${x.rank ?? "—"}</span>
       <div class="nm"><b>${esc(x.team.name)} ${x.incomplete && x.n ? `<span class="pill warn" title="${S!.minJurorsForRank}-dən az münsif qiymətləndirib">eksik</span>` : ""}${includeEntry && x.entry == null ? `<span class="pill" title="Quraşdırmada giriş balını yazın">giriş balı yoxdur</span>` : ""}</b>
-        <small>${!includeEntry ? esc(x.team.project || "—")
-          : x.score == null ? `Giriş <span class="v">${fmt2(x.entry)}</span> · Demo Day —`
-          : (p => `Giriş <span class="v">${p.entry}</span> + Demo Day <span class="v">${p.demo}</span>`)(displayParts(x.score, x.entry))}</small>
+        ${!includeEntry ? (x.team.project ? `<small>${esc(x.team.project)}</small>` : "")
+          : `<small>${x.score == null ? `Giriş <span class="v">${fmt2(x.entry)}</span> · Demo Day —`
+          : (p => `Giriş <span class="v">${p.entry}</span> + Demo Day <span class="v">${p.demo}</span>`)(displayParts(x.score, x.entry))}</small>`}
         <div class="track"><i style="width:${x.score != null && T ? Math.min(100, Math.max(0, (x.score / T) * 100)) : 0}%"></i></div></div>
       <div class="sc"><b>${fmt2(x.score)}</b><small>${x.n}/${nJ} münsif${x.n > 1 ? ` · ${x.min}–${x.max}` : ""}</small></div>
     </li>`).join("")}</ol>` : `<p class="empty">Aktiv komanda yoxdur.</p>`;
@@ -426,9 +482,9 @@ function renderMatrix() {
   const jurors = S.jurors.filter(j => j.active || S!.scores.some(s => s.jurorId === j.id));
   const teams = activeTeams();
   $("#matrixCard").innerHTML = `
-    <div class="pad" style="padding-bottom:8px"><h2>${icon("sheet")}Münsif matrisi</h2><p class="sub">Hər xana münsifin Demo Day cəmidir (maks. ${S.results.demoMax}). Toxunun: meyar balları, rəylər və şərh.</p></div>
+    <div class="pad" style="padding-bottom:8px"><h2>${icon("sheet")}Münsif matrisi</h2><p class="sub">Hər xana münsifin bal cəmidir (maks. ${S.results.demoMax}). Toxunun: meyar balları, rəylər və şərh.</p></div>
     <div class="tbl"><table>
-      <thead><tr><th>Komanda</th>${jurors.map((j, i) => `<th class="num" title="${esc(j.displayName)}">M${i + 1}</th>`).join("")}<th class="num" title="Demo Day orta balı">Demo</th></tr></thead>
+      <thead><tr><th>Komanda</th>${jurors.map((j, i) => `<th class="num" title="${esc(j.displayName)}">M${i + 1}</th>`).join("")}<th class="num" title="Münsiflərin orta balı">Orta</th></tr></thead>
       <tbody>${teams.map(t => {
         const avg = S!.results.ranking.find(r => r.team.id === t.id)?.demo ?? null;
         return `<tr><td>${esc(t.name)}</td>${jurors.map(j => {
@@ -475,14 +531,14 @@ function renderHeat() {
     <div class="pad" style="padding-bottom:8px"><h2>Meyarlar üzrə orta bal</h2></div>
     <div class="tbl"><table>
       <thead><tr><th>Yer</th><th>Komanda</th>${crit.map(c => `<th class="num" title="${esc(c.description)}">${esc(c.name)}<br><span style="font-weight:500">maks. ${c.maxScore}</span></th>`).join("")}
-        <th class="num">Demo Day<br><span style="font-weight:500">maks. ${D}</span></th>
-        <th class="num">Giriş<br><span style="font-weight:500">${includeEntry ? `maks. ${E}` : "daxil deyil"}</span></th>
+        <th class="num">${includeEntry ? "Demo Day" : "Orta bal"}<br><span style="font-weight:500">maks. ${D}</span></th>
+        ${includeEntry ? `<th class="num">Giriş<br><span style="font-weight:500">maks. ${E}</span></th>` : ""}
         <th class="num">Yekun<br><span style="font-weight:500">maks. ${T}</span></th></tr></thead>
       <tbody>${S.results.ranking.map(x => `<tr><td class="mono">${x.rank ?? "—"}</td><td>${esc(x.team.name)}</td>${crit.map(c => {
         const v = x.perCriterion[c.key];
         // Colour by share of the criterion's maximum, so 4/5 and 8/10 look alike.
         return v == null ? `<td class="num miss">—</td>` : `<td class="num heat" style="--h:${Math.round(Math.max(0, (v / c.maxScore) * 10 - 4) * 6)}">${v.toFixed(1)}</td>`;
-      }).join("")}${(p => `<td class="num">${p.demo}</td><td class="num${includeEntry ? "" : " miss"}">${p.entry}</td><td class="num"><b>${p.score}</b></td>`)(
+      }).join("")}${(p => `<td class="num">${p.demo}</td>${includeEntry ? `<td class="num">${p.entry}</td>` : ""}<td class="num"><b>${p.score}</b></td>`)(
         x.score != null && includeEntry ? displayParts(x.score, x.entry) : { demo: fmt2(x.demo), entry: fmt2(x.entry), score: fmt2(x.score) })}</tr>`).join("")}</tbody>
     </table></div>`;
 }
@@ -500,7 +556,7 @@ function renderDanger() {
   if (!S) return;
   const n = S.scores.length;
   $("#dangerCard").innerHTML = `
-    <div class="head"><h2 style="color:#FCA5A5">${icon("warn")}Təhlükəli zona</h2><span class="dz-pill">Danger zone</span></div>
+    <div class="head"><h2 style="color:var(--danger-t)">${icon("warn")}Təhlükəli zona</h2><span class="dz-pill">Danger zone</span></div>
     <p class="sub" style="margin:0">Bu əməliyyat canlı sessiyanın məlumatlarını geri dönməz şəkildə dəyişir. Silməzdən əvvəl yedək alın.</p>
     ${wipeToken
       ? `<div class="confirm"><span>Bütün <b>${wipeToken.count}</b> qiymət birdəfəlik silinəcək. Əminsiniz?</span>
@@ -556,7 +612,26 @@ main.addEventListener("click", async e => {
   }
   if (t.closest("#rvYes")) { revealAction("enable"); return; }
   if (t.closest("#rvNo")) { rvConfirm = null; renderReveal(); return; }
-  if (t.closest("#rvNext")) { revealAction("next"); return; }
+  if (t.closest("#rvNext") && rv) {
+    if (!rv.enabled) { if (rv.snapshotAt) revealAction("enable"); else { rvConfirm = "enable"; renderReveal(); } }
+    else revealAction("next");
+    return;
+  }
+  if (t.closest("#topDec") || t.closest("#topInc")) {
+    const v = Math.max(0, Math.min(10, S.event.revealTop + (t.closest("#topInc") ? 1 : -1)));
+    await patchEvent({ revealTop: v });
+    await loadReveal();
+    return;
+  }
+  const jf = t.closest<HTMLElement>("[data-jf]");
+  if (jf) { juryFilter = jf.dataset.jf as JuryFilter; renderJury(); return; }
+  const jv = t.closest<HTMLElement>("[data-jv]");
+  if (jv) {
+    juryView = jv.dataset.jv === "table" ? "table" : "cards";
+    try { localStorage.setItem("ij.juryView", juryView); } catch { /* private mode */ }
+    renderJury();
+    return;
+  }
   if (t.closest("#rvBack")) { revealAction("back"); return; }
   if (t.closest("#rvReset")) { rvConfirm = "reset"; renderReveal(); return; }
   if (t.closest("#rvResetYes")) { revealAction("reset"); return; }

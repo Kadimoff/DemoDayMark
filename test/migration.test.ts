@@ -34,10 +34,10 @@ describe("migrations v3 (points rubric + entry scores) and v4 (QR invites, tags,
 
     const db = openDb(file);
     const repo = new Repo(db);
-    expect(db.pragma("user_version", { simple: true })).toBe(4);
+    expect(db.pragma("user_version", { simple: true })).toBe(5);
     expect(repo.teams().map(t => [t.name, t.entryScore])).toEqual([["Pycore", null], ["Tusi", null]]);
     expect(repo.criteria().map(c => [c.key, c.maxScore])).toEqual([["mvp", 10]]);
-    expect(repo.getEvent()).toMatchObject({ name: "Ignite", includeEntry: true, entryMax: 50, feedbackTags: DEFAULT_FEEDBACK_TAGS });
+    expect(repo.getEvent()).toMatchObject({ name: "Ignite", includeEntry: true, entryMax: 50, feedbackTags: DEFAULT_FEEDBACK_TAGS, revealTop: 3 });
     expect(repo.stage().eventName).toBe("Ignite DemoDay");
     expect(repo.scores()).toMatchObject([{ jurorId: 7, teamId: 1, values: { mvp: 8 }, note: "yaxşı", tags: [] }]);
     expect(repo.getReveal()).toEqual({ enabled: false, step: 0, snapshot: null });

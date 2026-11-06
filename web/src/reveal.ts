@@ -4,7 +4,7 @@ import "./styles.css";
 import { ordinal, type RevealPublic, type RevealedEntry } from "../../shared/reveal";
 import { displayParts } from "../../shared/scoring";
 import { api, ApiError } from "./lib/api";
-import { $, esc, icon, reducedMotion } from "./lib/dom";
+import { $, brandHtml, esc, icon, reducedMotion } from "./lib/dom";
 import { FX, rgb } from "./lib/fx";
 import { live } from "./lib/socket";
 
@@ -312,7 +312,7 @@ function apply(next: RevealPublic) {
   ceremony++;
   stopWinner();
   fxFront.embers(0, []);
-  el.ev.textContent = next.eventName || "DemoDay";
+  el.ev.innerHTML = brandHtml(next.eventName || "DemoDay");
   if (!next.enabled) { waiting(); renderButtons(); return; }
   if (boardTotal !== next.total) buildBoard(next.total);
   el.title.textContent = next.done ? "Qaliblər" : "Nəticələr";

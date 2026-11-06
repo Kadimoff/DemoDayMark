@@ -19,6 +19,7 @@ interface EventRow {
   include_entry: number;
   entry_max: number;
   feedback_tags_json: string | null;
+  reveal_top: number;
 }
 
 export interface EventState {
@@ -35,6 +36,8 @@ export interface EventState {
   entryMax: number;
   /** Quick feedback chips jurors can tick. */
   feedbackTags: string[];
+  /** Places 1..revealTop get a suspense step in the results reveal. */
+  revealTop: number;
 }
 
 export interface UserRow {
@@ -70,6 +73,7 @@ export class Repo {
       includeEntry: !!r.include_entry,
       entryMax: r.entry_max,
       feedbackTags: parseTags(r.feedback_tags_json) ?? DEFAULT_FEEDBACK_TAGS,
+      revealTop: r.reveal_top,
     };
   }
 
@@ -78,10 +82,10 @@ export class Repo {
     const n = { ...cur, ...p, timer: { ...cur.timer, ...(p.timer ?? {}) } };
     this.db.prepare(`UPDATE event SET name=?, date=?, current_team_id=?, timer_visible=?, timer_running=?,
       timer_offset_sec=?, timer_anchor_at=?, pitch_sec=?, qa_sec=?, locked=?, show_juror_total=?, include_entry=?, entry_max=?,
-      feedback_tags_json=? WHERE id = 1`)
+      feedback_tags_json=?, reveal_top=? WHERE id = 1`)
       .run(n.name, n.date, n.currentTeamId, +n.timer.visible, +n.timer.running, n.timer.offsetSec,
         n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal, +n.includeEntry, n.entryMax,
-        JSON.stringify(n.feedbackTags));
+        JSON.stringify(n.feedbackTags), n.revealTop);
     return this.getEvent();
   }
 

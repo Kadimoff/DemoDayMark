@@ -5,7 +5,7 @@ const entry = (teamId: number, rank: number, score: number): RevealEntry =>
   ({ teamId, name: `Team ${teamId}`, project: "", rank, score, demo: score - 40, entry: 40, n: 5 });
 // Best first, as stored in the snapshot.
 const EIGHT = [entry(1, 1, 90), entry(2, 2, 85), entry(3, 3, 80), entry(4, 4, 70), entry(5, 5, 65), entry(6, 6, 60), entry(7, 7, 55), entry(8, 8, 50)];
-const snap: RevealSnapshot = { createdAt: 0, entries: EIGHT, maxTotal: 100 };
+const snap: RevealSnapshot = { createdAt: 0, entries: EIGHT, maxTotal: 100, top: 3 };
 
 describe("revealSteps", () => {
   it("goes from last place up; top three get a suspense step before their reveal", () => {
@@ -15,6 +15,15 @@ describe("revealSteps", () => {
     expect(steps.slice(5).map(s => [s.kind, s.index])).toEqual([
       ["suspense", 2], ["reveal", 2], ["suspense", 1], ["reveal", 1], ["suspense", 0], ["reveal", 0],
     ]);
+  });
+
+  it("uses the configured number of suspense places (0 = none, 5 = top five)", () => {
+    expect(revealSteps(EIGHT, 0).every(s => s.kind === "reveal")).toBe(true);
+    expect(revealSteps(EIGHT, 0)).toHaveLength(8);
+    expect(revealSteps(EIGHT, 5).filter(s => s.kind === "suspense").map(s => s.index)).toEqual([4, 3, 2, 1, 0]);
+    const v = revealPublic({ ...snap, top: 1 }, 7, true, "Demo");
+    expect(v.stepsTotal).toBe(9);
+    expect(v.revealed.map(e => e.teamId)).toEqual([8, 7, 6, 5, 4, 3, 2]);
   });
 
   it("treats every team sharing rank 3 as a top-three place", () => {
@@ -56,7 +65,7 @@ describe("normalizeSnapshot", () => {
   it("reads snapshots stored before the points model (avg on 0–100)", () => {
     const legacy = { createdAt: 5, entries: [{ teamId: 1, name: "A", project: "", rank: 1, avg: 88.5, n: 4 }] };
     expect(normalizeSnapshot(legacy)).toEqual({
-      createdAt: 5, maxTotal: 100, entries: [{ teamId: 1, name: "A", project: "", rank: 1, score: 88.5, demo: 88.5, entry: null, n: 4 }],
+      createdAt: 5, maxTotal: 100, top: 3, entries: [{ teamId: 1, name: "A", project: "", rank: 1, score: 88.5, demo: 88.5, entry: null, n: 4 }],
     });
     expect(normalizeSnapshot(null)).toBeNull();
     expect(normalizeSnapshot({ entries: "x" })).toBeNull();

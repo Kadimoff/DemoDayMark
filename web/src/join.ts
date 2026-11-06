@@ -2,7 +2,10 @@
 import "./styles.css";
 import { api, ApiError } from "./lib/api";
 import { $, esc, icon } from "./lib/dom";
+import { initTheme } from "./lib/theme";
 import { brandHtml } from "./lib/topbar";
+
+initTheme();
 
 const token = location.pathname.split("/").filter(Boolean)[1] ?? "";
 const box = $("#box");

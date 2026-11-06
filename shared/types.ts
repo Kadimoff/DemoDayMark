@@ -94,6 +94,8 @@ export interface JurorStatePayload {
   teams: AdminTeam[];
   entryMax: number;
   criteria: Criterion[];
+  /** False for hackathons: there are no entry scores, the final score is the jurors' mean. */
+  includeEntry: boolean;
   feedbackTags: string[];
   myScores: MyScore[];
 }

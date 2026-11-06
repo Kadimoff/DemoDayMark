@@ -1,5 +1,6 @@
 import { logout } from "./api";
-import { $, esc, icon } from "./dom";
+import { $, brandHtml, esc, icon } from "./dom";
+import { themeSwitch } from "./theme";
 
 export interface TopbarOpts {
   role: "admin" | "juror";
@@ -9,12 +10,7 @@ export interface TopbarOpts {
   wide?: boolean;
 }
 
-/** "Ignite DemoDay" → `IGNITE <i>DEMODAY</i>`: the fixed product word is highlighted. */
-export function brandHtml(name: string) {
-  const n = (name || "DemoDay").trim();
-  const m = n.match(/^(.*?)\s*(DemoDay)$/i);
-  return m && m[1] ? `${esc(m[1])} <i>${esc(m[2])}</i>` : `<i>${esc(n)}</i>`;
-}
+export { brandHtml } from "./dom";
 
 /** Renders the shared coordinator header into #top and returns setters for the brand and connection pill. */
 export function topbar(opts: TopbarOpts) {
@@ -25,10 +21,12 @@ export function topbar(opts: TopbarOpts) {
     ${opts.nav ? `<nav class="nav" aria-label="Bölmələr">${opts.nav.map(n => `<a href="${n.href}"${n.current ? ' aria-current="page"' : ""}${n.external ? ' target="_blank" rel="noopener"' : ""}>${esc(n.label)}${n.external ? icon("ext") : ""}</a>`).join("")}</nav>` : ""}
     <span class="spacer"></span>
     <span class="conn" id="conn">Qoşulur…</span>
+    <div id="themeSw"></div>
     <div class="who-me"><div class="nm"><b>Koordinator</b><small>Admin sessiyası</small></div><span class="avatar" aria-hidden="true">${icon("users")}</span></div>
     ${opts.logout !== false ? `<button class="icon-btn" id="logout" title="Çıxış" aria-label="Çıxış">${icon("logout")}</button>` : ""}
   </div>`;
   root.querySelector("#logout")?.addEventListener("click", () => logout(opts.role));
+  themeSwitch($("#themeSw"));
   return {
     setEventName(name: string) {
       $("#evName").innerHTML = brandHtml(name);

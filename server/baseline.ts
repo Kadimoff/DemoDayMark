@@ -4,14 +4,14 @@ import { hash, type Options } from "@node-rs/argon2";
 import type { Config } from "./config.js";
 import type { Repo } from "./repo.js";
 
-// Default Demo Day rubric: points per criterion, 50 in total (entry scores add another 50).
+// Default hackathon rubric: points per criterion, 50 in total. Entry scores are off by default.
 export const DEFAULT_CRITERIA = [
   { key: "teqdimat", name: "Təqdimat qabiliyyəti", maxScore: 5,
     description: "1. Təqdimatçının layihəni, görülən və görüləcək işləri təqdim etmə bacarığı\n2. Verilən suallara dolğun cavab vermə" },
   { key: "komanda", name: "Komandanın qabiliyyəti", maxScore: 10,
     description: "Komanda bu layihəni davamlı inkişaf etdirmək üçün müvafiq bacarıqları göstərir.\nKomandanın gördüyü işlər gələcəkdə görəcəyi işlərə istinad verir" },
-  { key: "biznes", name: "Biznes Model", maxScore: 10,
-    description: "Layihə dayanıqlı biznes modelə sahibdir, bu onun fəaliyyətinə və investisiya cəlbinə şərait yarada bilər" },
+  { key: "ai", name: "Süni intellektdən istifadə", maxScore: 10,
+    description: "Komanda süni intellektdən məhsulda və ya iş prosesində məqsədəuyğun və yaradıcı istifadə edir.\nAI həllin dəyərini artırır, sadəcə bəzək deyil" },
   { key: "mehsul_bazar", name: "Məhsul-Bazar uyğunluğu", maxScore: 10,
     description: "Layihə yerli və ya qlobal bazarda olan kritik bir problemi həll edir" },
   { key: "bazar", name: "Bazar", maxScore: 10,
@@ -30,7 +30,7 @@ export async function ensureBaseline(repo: Repo, cfg: Config, log: (m: string) =
   if (!db.prepare("SELECT 1 FROM event WHERE id = 1").get()) {
     const d = new Date();
     const date = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
-    db.prepare("INSERT INTO event (id, name, date, show_juror_total) VALUES (1, ?, ?, ?)")
+    db.prepare("INSERT INTO event (id, name, date, show_juror_total, include_entry) VALUES (1, ?, ?, ?, 0)")
       .run("", date, +cfg.showJurorTotal); // brand prefix, filled in from Setup
 
     log("event row created");

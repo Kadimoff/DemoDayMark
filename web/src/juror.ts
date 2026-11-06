@@ -6,6 +6,9 @@ import { api, ApiError } from "./lib/api";
 import { $, esc, hhmm, icon, initials, toast } from "./lib/dom";
 import { live } from "./lib/socket";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
+import { initTheme, themeToggleHtml, toggleTheme } from "./lib/theme";
+
+initTheme();
 
 interface Draft { values: ScoreValues; note: string; tags: string[]; dirty: boolean; base: number; pending?: boolean }
 interface Nudge { teamId: number; teamName: string; index: number }
@@ -144,6 +147,7 @@ function renderHead() {
         </div>
         <div class="tools">
           <span class="conn ${online ? "online" : "offline"}" id="conn">${online ? "Canlı" : "Oflayn"}</span>
+          ${themeToggleHtml()}
           <span class="avatar" title="${esc(S.me.displayName)}" aria-hidden="true">${esc(initials(S.me.displayName))}</span>
         </div>
       </div>
@@ -172,7 +176,7 @@ function render() {
 
   const critSig = S.criteria.map(c => `${c.key}:${c.maxScore}:${c.name}:${c.description}`).join("|");
   const key = [team.id, team.name, team.project, team.entryScore, S.entryMax, critSig, d.base, locked, S.feedbackTags.join("|"),
-    S.stage.team?.id, S.stage.team?.name, S.showJurorTotal].join("§");
+    S.stage.team?.id, S.stage.team?.name, S.showJurorTotal, S.includeEntry].join("§");
   if (key !== formKey) {
     formKey = key;
     const other = S.stage.team && !onStage ? S.stage.team : null;
@@ -193,13 +197,13 @@ function render() {
           </div>
           <span class="teamicon" aria-hidden="true">${esc(initials(team.name))}</span>
         </div>
-        <div class="minis">
+        <div class="minis"${S.includeEntry ? "" : ` style="grid-template-columns:minmax(0,1fr)"`}>
           <div class="mini" id="tmini"></div>
-          <div class="mini">
+          ${S.includeEntry ? `<div class="mini">
             <div class="lb"><span>Giriş balı</span>${icon("medal")}</div>
             <div class="v"><b>${team.entryScore != null ? fmtEntry(team.entryScore) : "—"}</b><span>/ ${fmtEntry(S.entryMax)}</span></div>
             <small>${team.entryScore != null ? `${icon("check")}Münsif üçün açıq` : "Yazılmayıb"}</small>
-          </div>
+          </div>` : ""}
         </div>
         <div class="privacy"><span>${icon("shield")}Digər münsiflərin balları gizlidir</span><span id="syncln" class="${online ? "ok-t" : "warn-t"}">● ${online ? "Sinxron aktiv" : "Oflayn"}</span></div>
       </section>
@@ -434,7 +438,8 @@ function onClick(e: Event) {
     if (i > 0) { select(S.teams[i - 1].id); render(); }
     return;
   }
-  if (t.closest("#nudgeX")) { nudge = null; renderNudge(); }
+  if (t.closest("#nudgeX")) { nudge = null; renderNudge(); return; }
+  if (t.closest("[data-theme-toggle]")) { toggleTheme(); head.dataset.sig = ""; renderHead(); }
 }
 main.addEventListener("click", onClick);
 head.addEventListener("click", onClick);

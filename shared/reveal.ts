@@ -21,6 +21,8 @@ export interface RevealSnapshot {
   entries: RevealEntry[];
   /** Scale of `score` (e.g. 100), for bars. */
   maxTotal: number;
+  /** Places 1..top get a suspense step before their reveal (frozen with the ranking). */
+  top: number;
 }
 
 /** Reads snapshots saved by older versions (which stored `avg` on a 0–100 scale). */
@@ -31,6 +33,7 @@ export function normalizeSnapshot(raw: unknown): RevealSnapshot | null {
   return {
     createdAt: Number(s.createdAt ?? 0),
     maxTotal: Number(s.maxTotal ?? 100),
+    top: clampTop((s as { top?: unknown }).top ?? SPECIAL_RANKS),
     entries: s.entries.map(e => ({
       teamId: Number(e.teamId),
       name: String(e.name ?? ""),
@@ -44,7 +47,7 @@ export function normalizeSnapshot(raw: unknown): RevealSnapshot | null {
   };
 }
 
-/** One admin click. Top-3 places take two clicks: suspense first, then the reveal. */
+/** One admin click. The top places (3 by default) take two clicks: suspense first, then the reveal. */
 export interface RevealStep {
   kind: "suspense" | "reveal";
   /** Index into snapshot.entries (0 = winner). */
@@ -52,11 +55,16 @@ export interface RevealStep {
 }
 
 export const SPECIAL_RANKS = 3;
+export const MAX_TOP = 10;
+export const clampTop = (v: unknown) => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(0, Math.min(MAX_TOP, n)) : SPECIAL_RANKS;
+};
 
-export function revealSteps(entries: RevealEntry[]): RevealStep[] {
+export function revealSteps(entries: RevealEntry[], top = SPECIAL_RANKS): RevealStep[] {
   const steps: RevealStep[] = [];
   for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i].rank <= SPECIAL_RANKS) steps.push({ kind: "suspense", index: i });
+    if (entries[i].rank <= top) steps.push({ kind: "suspense", index: i });
     steps.push({ kind: "reveal", index: i });
   }
   return steps;
@@ -86,7 +94,7 @@ export function revealPublic(snapshot: RevealSnapshot | null, step: number, enab
   if (!enabled || !snapshot) {
     return { enabled: false, eventName, total: 0, maxTotal: 0, step: 0, stepsTotal: 0, revealed: [], suspense: null, last: null, done: false };
   }
-  const steps = revealSteps(snapshot.entries);
+  const steps = revealSteps(snapshot.entries, snapshot.top);
   const s = Math.max(0, Math.min(step, steps.length));
   const done = steps.slice(0, s);
   const revealed = done

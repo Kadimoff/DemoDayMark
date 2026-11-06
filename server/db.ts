@@ -107,6 +107,10 @@ const MIGRATIONS: string[] = [
   UPDATE event SET name = trim(substr(name, 1, length(name) - 8)) WHERE lower(name) LIKE '%demo day';
   UPDATE event SET name = trim(substr(name, 1, length(name) - 7)) WHERE lower(name) LIKE '%demoday';
   `,
+  // v5: how many top places get a suspense step in the results reveal
+  `
+  ALTER TABLE event ADD COLUMN reveal_top INTEGER NOT NULL DEFAULT 3;
+  `,
 ];
 
 export function openDb(file: string): DB {

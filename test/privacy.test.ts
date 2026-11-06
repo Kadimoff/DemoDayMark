@@ -196,12 +196,14 @@ describe("admin view", () => {
     // team 0: aysel 9 → 5+9+9+9+9+5 = 46, ali 8 → 42; Demo Day 44; no entry score yet → final 44
     expect(r.body.results.ranking[0].score).toBe(44);
     expect(r.body.results.ranking[0].demo).toBe(44);
-    expect([r.body.results.demoMax, r.body.results.maxTotal]).toEqual([50, 100]);
+    expect([r.body.results.demoMax, r.body.results.maxTotal]).toEqual([50, 50]); // hackathon default: no entry score
     expect(r.body.scores.some((s: any) => s.note === "şərh 9")).toBe(true);
   });
 
   it("adds the entry score to the final score; jurors see entry scores but no results", async () => {
     const patch = (body: object) => request(base).patch(`/api/admin/teams/${teamIds[0]}`).set("Origin", origin()).set("Cookie", adminCookie).send(body);
+    expect((await get("/api/juror/state", jurorCookie.ali)).body.includeEntry).toBe(false);
+    expect((await request(base).patch("/api/admin/event").set("Origin", origin()).set("Cookie", adminCookie).send({ includeEntry: true })).status).toBe(200);
     expect((await patch({ entryScore: 125 / 3 })).status).toBe(200);
     let r = (await get("/api/admin/results", adminCookie)).body.results;
     let t0 = r.ranking.find((x: any) => x.team.id === teamIds[0]);
@@ -220,7 +222,6 @@ describe("admin view", () => {
     r = (await get("/api/admin/results", adminCookie)).body.results;
     t0 = r.ranking.find((x: any) => x.team.id === teamIds[0]);
     expect([t0.score, r.maxTotal]).toEqual([44, 50]);
-    expect((await toggle(true)).status).toBe(200);
     expect((await patch({ entryScore: null })).status).toBe(200);
   });
 

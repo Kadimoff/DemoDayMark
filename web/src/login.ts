@@ -1,7 +1,10 @@
 import "./styles.css";
 import { api, ApiError } from "./lib/api";
 import { $, esc } from "./lib/dom";
+import { themeSwitch } from "./lib/theme";
 import { brandHtml } from "./lib/topbar";
+
+themeSwitch($("#themeSw"));
 
 api<{ eventName: string }>("/api/stage").then(s => {
   $("#brand").innerHTML = brandHtml(s.eventName);

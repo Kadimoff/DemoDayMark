@@ -10,7 +10,7 @@ import { brandHtml, topbar } from "./lib/topbar";
 
 interface EventState {
   name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean;
-  includeEntry: boolean; entryMax: number; feedbackTags: string[];
+  includeEntry: boolean; entryMax: number; feedbackTags: string[]; revealTop: number;
 }
 interface SetupState { event: EventState; stage: StagePayload; teams: AdminTeam[]; criteria: Criterion[]; scores: ScoreRow[] }
 
@@ -75,7 +75,7 @@ function render() {
         <form id="evForm" class="stack" novalidate>
           <div class="row" style="align-items:flex-start">
             <div style="flex:2 1 240px"><label class="f" for="evName">Brend / prefiks (istəyə bağlı)</label>
-              <div class="row" style="flex-wrap:nowrap;gap:8px"><input type="text" id="evName" value="${esc(ev.name)}" maxlength="40" placeholder="məs. Ignite" autocomplete="off">
+              <div class="row brandrow" style="flex-wrap:nowrap;gap:8px"><input type="text" id="evName" value="${esc(ev.name)}" maxlength="40" placeholder="məs. Ignite" autocomplete="off">
               <span class="brandprev" aria-live="polite"><span class="flame" style="width:9px;height:9px;border-radius:50%;background:var(--accent)"></span><b id="evPrev">${brandHtml(brandName(ev.name))}</b></span></div></div>
             <div style="flex:1 1 140px"><label class="f" for="evDate">Tarix</label><input type="text" id="evDate" value="${esc(ev.date)}" maxlength="40" placeholder="29.10.2026"></div>
             <div style="flex:1 1 110px"><label class="f" for="evPitch">Pitch (dəq:san)</label><input type="text" id="evPitch" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.pitchSec)}"></div>
@@ -89,22 +89,25 @@ function render() {
       </section>
 
       <section class="card pad stack" aria-labelledby="h-sc">
-        <div class="row between"><h3 id="h-sc">Yekun balın hesablanması</h3><span class="saved" id="scSaved"></span></div>
-        <div class="toggle" style="border-top:0;padding-top:0"><div><b>Giriş balı yekun bala əlavə olunsun</b>
-          <small>Yekun = giriş balı + Demo Day balı (münsiflərin orta balı). Söndürülsə, yekun yalnız Demo Day balıdır.</small></div>
+        <div class="row between"><h3 id="h-sc">Nəticə və açıqlama</h3><span class="saved" id="scSaved"></span></div>
+        <div class="toggle" style="border-top:0;padding-top:0"><div><b>Giriş balı (seçim mərhələsi)</b>
+          <small>Hakatonda söndürün: yekun bal yalnız münsiflərin orta balıdır. Yandırsanız, yekun = giriş balı + münsiflərin orta balı.</small></div>
           <button type="button" class="sw" role="switch" id="scEntry" aria-checked="${ev.includeEntry}" aria-label="Giriş balı yekun bala əlavə olunsun"></button></div>
-        <div class="row" style="align-items:flex-end">
+        ${ev.includeEntry ? `<div class="row" style="align-items:flex-end">
           <div style="flex:0 1 200px"><label class="f" for="scEntryMax">Giriş balının maksimumu</label>
             <input type="number" id="scEntryMax" class="mono" min="1" max="1000" step="any" value="${ev.entryMax}"></div>
-          <p class="sub" id="scFormula" style="flex:1 1 260px;margin:0 0 10px">${formula()}</p>
-        </div>
+        </div>` : ""}
+        <p class="sub" id="scFormula" style="margin:0">${formula()}</p>
+        <div class="toggle"><div><b>İntizarlı yer sayı</b>
+          <small>Açıqlamada ilk neçə yer iki basışla açılsın (əvvəl ürək döyüntüsü, sonra ad). 0 = intizar yoxdur. Dəyişiklik növbəti “Sıfırla”/icazədən sonra tətbiq olunur.</small></div>
+          <input type="number" id="scTop" class="mono" min="0" max="10" step="1" value="${ev.revealTop}" style="width:84px;flex:0 0 auto" aria-label="İntizarlı yer sayı"></div>
       </section>
 
       <section class="card pad stack" aria-labelledby="h-teams">
         <div class="row between"><h3 id="h-teams">Komandalar (${S.teams.length})</h3>
           <button class="btn sm" data-add="teams">${icon("plus")}Komanda əlavə et</button></div>
         ${nScores ? `<p class="note">Artıq <b>${nScores}</b> qiymət var. Qiyməti olan komandanı silsəniz, qiymətləri də silinəcək — bunun əvəzinə deaktiv edə bilərsiniz.</p>` : ""}
-        <div class="ed teams" role="list">
+        <div class="ed teams${ev.includeEntry ? "" : " noentry"}" role="list">
           <div class="er sub" aria-hidden="true" style="font-size:12px;font-weight:700"><span></span><span>Komanda adı</span><span class="pj">Layihə / məhsul</span><span class="en">Giriş balı</span><span>Aktiv</span><span></span><span></span></div>
           ${S.teams.map((t, i) => `
           <div class="er ${t.active ? "" : "off"}" role="listitem" data-row="teams:${t.id}">
@@ -183,22 +186,28 @@ function formula() {
   const D = S.criteria.reduce((a, c) => a + c.maxScore, 0);
   return S.event.includeEntry
     ? `Yekun = giriş balı (maks. ${S.event.entryMax}) + Demo Day balı (maks. ${D}) = maks. ${S.event.entryMax + D}`
-    : `Yekun = Demo Day balı (maks. ${D})`;
+    : `Yekun = münsiflərin orta balı (maks. ${D})`;
 }
-async function patchScoring(body: { includeEntry?: boolean; entryMax?: number }) {
+async function patchScoring(body: { includeEntry?: boolean; entryMax?: number; revealTop?: number }) {
   try {
     const r = await api<{ event: EventState }>("/api/admin/event", { method: "PATCH", body });
+    const rerender = body.includeEntry !== undefined && body.includeEntry !== S!.event.includeEntry;
     S!.event.includeEntry = r.event.includeEntry;
     S!.event.entryMax = r.event.entryMax;
+    S!.event.revealTop = r.event.revealTop;
+    if (rerender) { render(); flashSc(); return true; }
     $("#scFormula").textContent = formula();
-    const s = $("#scSaved"); s.textContent = "Saxlanıldı"; setTimeout(() => { s.textContent = ""; }, 1800);
+    flashSc();
     return true;
   } catch (e) {
     toast((e as ApiError).message, "err");
-    $<HTMLInputElement>("#scEntryMax").value = String(S!.event.entryMax);
+    const em = document.querySelector<HTMLInputElement>("#scEntryMax");
+    if (em) em.value = String(S!.event.entryMax);
+    $<HTMLInputElement>("#scTop").value = String(S!.event.revealTop);
     return false;
   }
 }
+function flashSc() { const s = document.getElementById("scSaved"); if (s) { s.textContent = "Saxlanıldı"; setTimeout(() => { s.textContent = ""; }, 1800); } }
 const rowOf = (el: HTMLElement) => {
   const r = el.closest<HTMLElement>("[data-row]");
   if (!r) return null;
@@ -236,6 +245,12 @@ async function patchRow(kind: string, id: number, body: Record<string, unknown>,
 // ---------- events ----------
 main.addEventListener("change", async e => {
   const el = e.target as HTMLInputElement;
+  if (el.id === "scTop") {
+    const v = Number(el.value);
+    if (!Number.isInteger(v) || v < 0 || v > 10) { toast("İntizarlı yer sayı 0–10 arası tam ədəd olmalıdır.", "err"); el.value = String(S!.event.revealTop); return; }
+    await patchScoring({ revealTop: v });
+    return;
+  }
   if (el.id === "scEntryMax") {
     const v = Number(el.value);
     if (!(v >= 1 && v <= 1000)) { toast("Giriş balının maksimumu 1–1000 arası olmalıdır.", "err"); el.value = String(S!.event.entryMax); return; }
@@ -313,7 +328,7 @@ main.addEventListener("click", async e => {
   if (t.closest("#scEntry")) {
     const sw = t.closest<HTMLElement>("#scEntry")!;
     const next = sw.getAttribute("aria-checked") !== "true";
-    if (await patchScoring({ includeEntry: next })) sw.setAttribute("aria-checked", String(next));
+    await patchScoring({ includeEntry: next });
     return;
   }
   if (t.closest("[data-cancel]")) { confirm = null; render(); return; }

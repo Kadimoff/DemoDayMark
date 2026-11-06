@@ -110,3 +110,10 @@ export function ago(ms: number, now = Date.now()) {
   if (s < 3600) return `${Math.floor(s / 60)} dəq əvvəl`;
   return hhmm(ms);
 }
+
+/** "Ignite DemoDay" → `Ignite <i>DemoDay</i>`: the fixed product word is highlighted. */
+export function brandHtml(name: string) {
+  const n = (name || "DemoDay").trim();
+  const m = n.match(/^(.*?)\s*(DemoDay)$/i);
+  return m && m[1] ? `${esc(m[1])} <i>${esc(m[2])}</i>` : `<i>${esc(n)}</i>`;
+}

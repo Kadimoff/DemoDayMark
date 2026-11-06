@@ -28,6 +28,7 @@ const eventBody = z.object({
   timer: z.enum(["pitch", "qa", "toggle", "pause", "resume", "reset", "stop"]).optional(),
   includeEntry: z.boolean().optional(),
   entryMax: z.number().min(1, "Giriş balının maksimumu ən azı 1 olmalıdır.").max(1000).optional(),
+  revealTop: z.number().int().min(0, "İntizarlı yer sayı 0–10 arası olmalıdır.").max(10, "İntizarlı yer sayı 0–10 arası olmalıdır.").optional(),
 });
 const entryScore = z.number().min(0, "Giriş balı mənfi ola bilməz.").max(1000).nullable();
 const teamBody = z.object({ name: name(), project: z.string().trim().max(160).default(""), entryScore: entryScore.optional() });
@@ -98,6 +99,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         includeEntry: b.includeEntry ?? cur.includeEntry,
         entryMax: b.entryMax ?? cur.entryMax,
         feedbackTags: b.feedbackTags ? [...new Set(b.feedbackTags)] : cur.feedbackTags,
+        revealTop: b.revealTop ?? cur.revealTop,
         timer,
       });
       if (b.locked !== undefined && b.locked !== cur.locked) {
@@ -112,6 +114,11 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       if ((b.includeEntry !== undefined && b.includeEntry !== cur.includeEntry) || (b.entryMax !== undefined && b.entryMax !== cur.entryMax)) {
         repo.audit(actor, "event.scoring", { includeEntry: b.includeEntry, entryMax: b.entryMax });
         rt.emitResults();
+        rt.emitConfig(); // jurors show or hide entry scores
+      }
+      if (b.revealTop !== undefined && b.revealTop !== cur.revealTop) {
+        repo.audit(actor, "event.revealTop", { revealTop: b.revealTop });
+        rt.emitReveal();
       }
       if (stageChanged) rt.emitStage();
       else if (timerChanged) rt.emitTimer();
@@ -365,7 +372,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         }
         case "next": {
           if (!cur.enabled || !cur.snapshot) return reply.code(409).send({ error: "Əvvəlcə açıqlamaya icazə verin." });
-          if (cur.step >= revealSteps(cur.snapshot.entries).length) return reply.code(409).send({ error: "Bütün yerlər artıq açıqlanıb." });
+          if (cur.step >= revealSteps(cur.snapshot.entries, cur.snapshot.top).length) return reply.code(409).send({ error: "Bütün yerlər artıq açıqlanıb." });
           repo.setReveal({ step: cur.step + 1 });
           break;
         }
