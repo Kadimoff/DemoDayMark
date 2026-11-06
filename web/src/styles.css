@@ -621,6 +621,7 @@ dialog.qrdlg { width: min(560px, calc(100% - 24px)); }
 .rvsteps .p.now { border-color: var(--accent-line); background: var(--accent-soft); box-shadow: var(--accent-glow); }
 .rvsteps .p.now .k { color: var(--accent-text); }
 .rvsteps .p.susp { border-style: dashed; border-color: rgba(239, 68, 68, .5); }
+.rvsteps .p.done.susp { border-style: solid; border-color: rgba(16, 185, 129, .35); }
 .nextbox { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px; display: grid; gap: 10px; }
 .nextbox .what { font-size: 13px; color: var(--muted); }
 .nextbox .what b { color: var(--fg); }
