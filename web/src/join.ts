@@ -44,8 +44,8 @@ async function start() {
   const input = $<HTMLInputElement>("#nm");
   input.focus();
   // Warm the cache with the juror panel's heavy shared chunks while the juror is typing their name.
-  void import("./lib/socket");
-  void import("./lib/stage");
+  import("./lib/socket").catch(() => { /* only a cache warm-up */ });
+  import("./lib/stage").catch(() => { /* only a cache warm-up */ });
   $("#form").addEventListener("submit", async e => {
     e.preventDefault();
     const displayName = input.value.trim().replace(/\s+/g, " ");
