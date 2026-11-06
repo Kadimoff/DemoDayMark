@@ -32,7 +32,10 @@ const PAGES: Record<string, { file: string; role?: "admin" | "juror" }> = {
 
 export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Promise<App> {
   // Request logs are noisy during the event; LOG_LEVEL=info brings them back.
-  const app = Fastify({ logger: opts.logger ? { level: process.env.LOG_LEVEL ?? "warn" } : false, trustProxy: cfg.trustProxy, bodyLimit: 256 * 1024 });
+  // keepAliveTimeout 4 s: an idle HTTP connection is closed by us (with a FIN the phone sees) before Wi-Fi/NAT gear drops it
+  // silently; otherwise a juror who spent two minutes on the form could send their score into a dead connection.
+  const app = Fastify({ logger: opts.logger ? { level: process.env.LOG_LEVEL ?? "warn" } : false, trustProxy: cfg.trustProxy, bodyLimit: 256 * 1024,
+    keepAliveTimeout: 4000 });
   const db = openDb(cfg.dbFile);
   const repo = new Repo(db);
   await ensureBaseline(repo, cfg, m => app.log.info(m));

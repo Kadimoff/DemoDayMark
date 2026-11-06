@@ -7,6 +7,7 @@ import { $, esc, hhmm, icon, initials, toast } from "./lib/dom";
 import { live } from "./lib/socket";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
 import { initTheme, themeToggleHtml, toggleTheme } from "./lib/theme";
+import { blinkTitle, canNotify, chime, enableNotifications, notifyPermission, systemNotify } from "./lib/alert";
 
 initTheme();
 
@@ -346,7 +347,8 @@ function renderNudge() {
   if (!box) return;
   if (!nudge || mine.has(nudge.teamId)) { box.innerHTML = ""; return; }
   box.innerHTML = `<div class="nudge" role="alert">${icon("bell")}<div><b>Koordinator xatırladır</b>#${nudge.index} ${esc(nudge.teamName)} üçün qiymətinizi göndərin.</div>
-    <button type="button" id="nudgeX" aria-label="Bağla">${icon("close")}</button></div>`;
+    <button type="button" id="nudgeX" aria-label="Bağla">${icon("close")}</button></div>
+    ${canNotify() && notifyPermission() === "default" ? `<button type="button" class="btn sm" id="notifyOn" style="margin-top:8px">${icon("bell")}Telefon bildirişlərini aç</button>` : ""}`;
 }
 
 function renderDock() {
@@ -392,7 +394,7 @@ async function submit(teamId: number, quiet = false) {
   failure = null;
   renderDock();
   try {
-    const saved = await api<MyScore>(`/api/juror/scores/${teamId}`, { method: "PUT", body: { values, note: d.note.slice(0, 2000), tags: d.tags } });
+    const saved = await sendScore(teamId, { values, note: d.note.slice(0, 2000), tags: d.tags });
     mine.set(teamId, saved);
     drafts.set(teamId, { values: { ...saved.values }, note: saved.note, tags: [...(saved.tags ?? [])], dirty: false, base: saved.updatedAt });
     persist(teamId);
@@ -415,6 +417,49 @@ async function submit(teamId: number, quiet = false) {
     render();
   }
 }
+
+/**
+ * Socket first: it is already open and kept alive by pings, so a score never goes into an HTTP connection that the
+ * venue Wi-Fi dropped while the juror was filling the form. HTTP (with timeout and one retry) only as a fallback.
+ * Saving is an upsert, so a retry after a lost answer cannot duplicate anything.
+ */
+async function sendScore(teamId: number, body: { values: ScoreValues; note: string; tags: string[] }): Promise<MyScore> {
+  if (sock.connected) {
+    try {
+      const r = await sock.timeout(7000).emitWithAck("score:submit", { teamId, ...body }) as
+        { ok: true; score: MyScore } | { ok: false; status: number; error: string };
+      if (r.ok) return r.score;
+      throw new ApiError(r.error, r.status);
+    } catch (e) {
+      if (e instanceof ApiError) throw e; // the server answered: a real refusal (locked, invalid…)
+      // no ack in time: fall through to HTTP
+    }
+  }
+  const put = () => api<MyScore>(`/api/juror/scores/${teamId}`, { method: "PUT", body, timeoutMs: 10000 });
+  try { return await put(); }
+  catch (e) {
+    if (!(e as ApiError).network) throw e;
+    await new Promise(r => setTimeout(r, 600));
+    return put(); // a fresh connection usually goes through
+  }
+}
+
+// ---------- reminder modal ----------
+function showNudgeModal(p: Nudge) {
+  closeNudgeModal();
+  const m = document.createElement("div");
+  m.className = "nudge-modal";
+  m.id = "nudgeModal";
+  m.setAttribute("role", "alertdialog");
+  m.setAttribute("aria-labelledby", "nmT");
+  m.innerHTML = `<div class="nm-card">${icon("bell")}<b id="nmT">Koordinator xatırladır</b>
+    <p>#${p.index} <strong>${esc(p.teamName)}</strong> üçün qiymətinizi göndərin.</p>
+    <button type="button" class="btn primary lg" id="nudgeGo">Qiymətləndirməyə keç</button></div>`;
+  m.addEventListener("click", e => { if ((e.target as HTMLElement).closest("#nudgeGo") || e.target === m) { closeNudgeModal(); window.scrollTo({ top: 0, behavior: "smooth" }); } });
+  document.body.appendChild(m);
+  m.querySelector<HTMLButtonElement>("#nudgeGo")?.focus();
+}
+function closeNudgeModal() { document.getElementById("nudgeModal")?.remove(); }
 
 async function retryPending() {
   if (!S || S.locked) return;
@@ -493,6 +538,11 @@ function onClick(e: Event) {
     return;
   }
   if (t.closest("#nudgeX")) { nudge = null; renderNudge(); return; }
+  if (t.closest("#nudgeGo")) { closeNudgeModal(); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+  if (t.closest("#notifyOn")) {
+    enableNotifications().then(p => { toast(p === "granted" ? "Bildirişlər açıldı" : "Bildirişə icazə verilmədi", p === "granted" ? "ok" : "err"); renderNudge(); });
+    return;
+  }
   if (t.closest("[data-theme-toggle]")) { toggleTheme(); head.dataset.sig = ""; renderHead(); }
 }
 main.addEventListener("click", onClick);
@@ -534,9 +584,15 @@ const sock = live({
     },
     nudge: (p: Nudge) => {
       nudge = p;
-      try { navigator.vibrate?.([220, 120, 220]); } catch { /* unsupported */ }
+      const text = `#${p.index} ${p.teamName} üçün qiymətinizi göndərin.`;
+      try { navigator.vibrate?.([220, 120, 220, 120, 400]); } catch { /* unsupported */ }
+      chime();
+      blinkTitle("Koordinator xatırladır");
+      // Screen off or another app in front: a system notification (HTTPS only); the page modal waits for the juror.
+      if (document.visibilityState !== "visible" || !document.hasFocus()) void systemNotify("Koordinator xatırladır", text);
       if (selTeam !== p.teamId && !(selTeam != null && drafts.get(selTeam)?.dirty)) select(p.teamId);
       render();
+      showNudgeModal(p);
     },
     "config:changed": () => load(),
   },

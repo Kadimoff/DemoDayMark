@@ -10,6 +10,7 @@ import type { PresenceEntry, ProgressEntry, ScoreRow } from "../shared/types.js"
 import { originAllowed, resolveUser, type AuthUser } from "./auth.js";
 import type { Config } from "./config.js";
 import type { Repo } from "./repo.js";
+import { submitScore } from "./scores.js";
 import { adminResults, revealPublicView } from "./views.js";
 
 export class Realtime {
@@ -71,6 +72,22 @@ export class Realtime {
       if (!this.repo.team(teamId as number)) return;
       this.drafts.set(k, { jurorId: user.id, teamId: teamId as number, filled: f, at: Date.now() });
       this.emitProgress();
+    });
+    // Score submit over the already-open socket, acknowledged. A long-idle HTTP connection can be dropped
+    // silently by NAT/Wi-Fi gear on the way; the socket is kept alive by pings and reconnects by itself.
+    socket.on("score:submit", (p: unknown, ack?: (r: unknown) => void) => {
+      if (typeof ack !== "function") return;
+      // The session may have been ended (juror deactivated / logged out) since the socket connected.
+      const s = this.repo.session(user.sessionId);
+      const u = s ? this.repo.userById(user.id) : null;
+      if (!s || !u || !u.active || u.role !== "juror") { ack({ ok: false, status: 401, error: "Sessiya bitib. Koordinatordan yeni QR istəyin." }); return; }
+      const { teamId, ...body } = (p ?? {}) as { teamId?: unknown };
+      try {
+        const r = submitScore(this.repo, this, user.id, teamId, body);
+        ack(r.ok ? { ok: true, score: r.body } : { ok: false, status: r.status, error: r.error });
+      } catch {
+        ack({ ok: false, status: 500, error: "Serverdə xəta baş verdi." });
+      }
     });
     socket.on("disconnect", () => {
       set.delete(socket.id);

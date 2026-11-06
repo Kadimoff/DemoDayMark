@@ -508,6 +508,41 @@ describe("hackathon results controls", () => {
   });
 });
 
+describe("score submit over the juror socket", () => {
+  it("saves with an ack, broadcasts like the REST path, and refuses when locked or the session is gone", async () => {
+    const ali = await socket(jurorCookie.ali);
+    const admin = await socket(adminCookie);
+    const seen = new Promise<any>(res => admin.once("score:upserted", res));
+    const body = { teamId: teamIds[5], ...fullScore(7), tags: [] };
+    await request(base).patch("/api/admin/event").set("Origin", origin()).set("Cookie", adminCookie).send({ locked: false }); // the reveal tests left it locked
+    const r: any = await ali.timeout(3000).emitWithAck("score:submit", body);
+    expect(r, JSON.stringify(r)).toMatchObject({ ok: true });
+    expect(r.score).toMatchObject({ teamId: teamIds[5], values: fullScore(7).values });
+    expect((await seen).jurorId).toBe(jurorId.ali);
+    // same as PUT: invalid values are refused
+    const bad: any = await ali.timeout(3000).emitWithAck("score:submit", { teamId: teamIds[5], values: {} });
+    expect([bad.ok, bad.status]).toEqual([false, 400]);
+    // locked
+    await request(base).patch("/api/admin/event").set("Origin", origin()).set("Cookie", adminCookie).send({ locked: true });
+    const locked: any = await ali.timeout(3000).emitWithAck("score:submit", body);
+    expect([locked.ok, locked.status]).toEqual([false, 423]);
+    await request(base).patch("/api/admin/event").set("Origin", origin()).set("Cookie", adminCookie).send({ locked: false });
+    // anonymous sockets cannot submit at all
+    const anon = await socket();
+    const none = await anon.timeout(800).emitWithAck("score:submit", body).catch(() => "no-ack");
+    expect(none).toBe("no-ack");
+  });
+
+  it("refuses a socket whose session was ended", async () => {
+    const extra = await claim(await newQr(jurorId.aysel), "Aysel Quliyeva");
+    const s = await socket(extra);
+    A.ctx.repo.db.prepare("DELETE FROM sessions WHERE user_id = ?").run(jurorId.aysel); // logged out elsewhere
+    const r: any = await s.timeout(3000).emitWithAck("score:submit", { teamId: teamIds[5], ...fullScore(5) });
+    expect([r.ok, r.status]).toEqual([false, 401]);
+    jurorCookie.aysel = await claim(await newQr(jurorId.aysel), "Aysel Quliyeva");
+  });
+});
+
 describe("login rate limit", () => {
   it("locks a username+IP after 5 failed attempts, even for the right password", async () => {
     for (let i = 0; i < 5; i++) {

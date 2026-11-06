@@ -4,17 +4,23 @@ export class ApiError extends Error {
   get network() { return this.status === 0 || this.status >= 502; }
 }
 
-export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+/** `timeoutMs`: a request that hangs (dead connection on a flaky network) fails instead of spinning forever. */
+export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown; timeoutMs?: number } = {}): Promise<T> {
   let res: Response;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), opts.timeoutMs ?? 15000);
   try {
     res = await fetch(path, {
       method: opts.method ?? "GET",
       credentials: "same-origin",
       headers: opts.body !== undefined ? { "Content-Type": "application/json" } : undefined,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: ctl.signal,
     });
   } catch {
-    throw new ApiError("Serverə qoşulmaq mümkün olmadı. İnterneti yoxlayın.", 0);
+    throw new ApiError(ctl.signal.aborted ? "Server vaxtında cavab vermədi." : "Serverə qoşulmaq mümkün olmadı. İnterneti yoxlayın.", 0);
+  } finally {
+    clearTimeout(timer);
   }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && !location.pathname.startsWith("/login") && !path.startsWith("/api/auth/")) {
