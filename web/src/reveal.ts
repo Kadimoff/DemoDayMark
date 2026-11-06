@@ -321,7 +321,7 @@ function showSuspense(rank: number) {
   el.ovProj.textContent = "";
   el.ovScore.textContent = "";
   el.ovBreak.textContent = "";
-  el.ovHint.textContent = rank === 1 ? "Qalib kimdir?" : "Kim olacaq?";
+  el.ovHint.textContent = ""; // suspense shows only the place and the heartbeat
   play(vid.sus, true);
   if (!calm) startBeats();
 }
