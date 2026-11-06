@@ -29,6 +29,20 @@ async function login(username: string, password: string) {
   return (res.headers["set-cookie"] as unknown as string[])[0].split(";")[0];
 }
 
+const cookieOf = (res: request.Response) => (res.headers["set-cookie"] as unknown as string[])[0].split(";")[0];
+
+/** Scans a juror QR: the invite path's token is claimed with a typed name. */
+async function claim(path: string, displayName: string) {
+  const res = await post(`/api/auth/invite/${path.replace(/^\/j\//, "")}`).send({ displayName });
+  expect(res.status).toBe(200);
+  return cookieOf(res);
+}
+async function newQr(id: number) {
+  const r = await post(`/api/admin/jurors/${id}/invite`, adminCookie).send({});
+  expect(r.status).toBe(200);
+  return r.body.invite.path as string;
+}
+
 function socket(cookie?: string) {
   const role = cookie?.startsWith("ij_admin=") ? "admin" : cookie?.startsWith("ij_juror=") ? "juror" : undefined;
   const s = ioc(base, { transports: ["websocket"], extraHeaders: { origin: origin(), ...(cookie ? { cookie } : {}) }, auth: role ? { role } : {}, forceNew: true });
@@ -45,10 +59,11 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${(A.app.server.address() as AddressInfo).port}`;
   adminCookie = await login("admin", "admin-pass-123");
   for (const name of ["ali", "aysel"]) {
-    const r = await post("/api/admin/jurors", adminCookie).send({ displayName: name === "ali" ? "Əli Məmmədov" : "Aysel Quliyeva", username: name, password: "parol-123" });
+    const r = await post("/api/admin/jurors", adminCookie).send({});
     expect(r.status).toBe(200);
-    jurorId[name] = r.body.id;
-    jurorCookie[name] = await login(name, "parol-123");
+    expect(r.body.juror.displayName).toMatch(/^Münsif \d+$/);
+    jurorId[name] = r.body.juror.id;
+    jurorCookie[name] = await claim(r.body.invite.path, name === "ali" ? "Əli Məmmədov" : "Aysel Quliyeva");
   }
   const st = await get("/api/juror/state", jurorCookie.ali);
   criteriaKeys = st.body.criteria.map((c: { key: string }) => c.key);
@@ -236,7 +251,7 @@ describe("admin view", () => {
       const c: Buffer[] = []; res.on("data", (d: Buffer) => c.push(d)); res.on("end", () => cb(null, Buffer.concat(c)));
     });
     expect(x.status).toBe(200);
-    expect(x.headers["content-disposition"]).toMatch(/Ignite_DemoDay_.*_netice\.xlsx/);
+    expect(x.headers["content-disposition"]).toMatch(/DemoDay_.*_netice\.xlsx/);
     expect((x.body as Buffer).subarray(0, 2).toString()).toBe("PK");
     const p = await get("/api/admin/export.pdf", adminCookie).buffer(true).parse((res, cb) => {
       const c: Buffer[] = []; res.on("data", (d: Buffer) => c.push(d)); res.on("end", () => cb(null, Buffer.concat(c)));
@@ -246,14 +261,118 @@ describe("admin view", () => {
   });
 });
 
-describe("sessions", () => {
-  it("ends a juror's sessions when the admin resets the password", async () => {
-    const c = await login("aysel", "parol-123");
-    const r = await request(base).patch(`/api/admin/jurors/${jurorId.aysel}`).set("Origin", origin()).set("Cookie", adminCookie).send({ password: "yeni-parol-1" });
+describe("QR sign-in", () => {
+  it("names the juror from the QR page and shows that name to the juror and the admin", async () => {
+    const st = await get("/api/juror/state", jurorCookie.ali);
+    expect(st.body.me.displayName).toBe("Əli Məmmədov");
+    const list = await get("/api/admin/jurors", adminCookie);
+    expect(list.body.find((j: any) => j.id === jurorId.ali)).toMatchObject({ displayName: "Əli Məmmədov", claimed: true });
+  });
+
+  it("tells the admin's socket the moment a juror joins", async () => {
+    const admin = await socket(adminCookie);
+    const r = await post("/api/admin/jurors", adminCookie).send({});
+    const got = new Promise<any>(res => admin.once("juror:joined", res));
+    await claim(r.body.invite.path, "Nigar Rzayeva");
+    expect(await got).toEqual({ jurorId: r.body.juror.id, displayName: "Nigar Rzayeva" });
+    expect((await request(base).delete(`/api/admin/jurors/${r.body.juror.id}`).set("Origin", origin()).set("Cookie", adminCookie)).status).toBe(200);
+  });
+
+  it("uses each QR only once", async () => {
+    const path = await newQr(jurorId.aysel);
+    const first = await post(`/api/auth/invite/${path.slice(3)}`).send({ displayName: "Aysel Quliyeva" });
+    expect(first.status).toBe(200);
+    jurorCookie.aysel = cookieOf(first);
+    const again = await post(`/api/auth/invite/${path.slice(3)}`).send({ displayName: "Başqa Adam" });
+    expect(again.status).toBe(410);
+    expect(again.body.error).toMatch(/artıq istifadə/);
+    expect((await get(`/api/auth/invite/${path.slice(3)}`)).status).toBe(410);
+    expect((await get("/api/juror/state", jurorCookie.aysel)).body.me.displayName).toBe("Aysel Quliyeva");
+  });
+
+  it("a new QR for the same juror replaces the unused old one and keeps the juror's scores", async () => {
+    const old = await newQr(jurorId.ali);
+    const fresh = await newQr(jurorId.ali);
+    expect((await get(`/api/auth/invite/${old.slice(3)}`)).status).toBe(410);
+    const info = await get(`/api/auth/invite/${fresh.slice(3)}`);
+    expect(info.body).toMatchObject({ valid: true, currentName: "Əli Məmmədov" });
+    const c = await claim(fresh, "Əli Məmmədov");
+    const st = await get("/api/juror/state", c);
+    expect(st.body.me.id).toBe(jurorId.ali);
+    expect(st.body.myScores.length).toBeGreaterThan(0);
+  });
+
+  it("rejects unknown, expired and deactivated-juror QRs", async () => {
+    expect((await post("/api/auth/invite/not-a-real-token-but-long-enough").send({ displayName: "X Y" })).status).toBe(410);
+    const path = await newQr(jurorId.aysel);
+    A.ctx.repo.db.prepare("UPDATE juror_invites SET expires_at = 1 WHERE used_at IS NULL AND revoked_at IS NULL").run();
+    const expired = await post(`/api/auth/invite/${path.slice(3)}`).send({ displayName: "Aysel Quliyeva" });
+    expect([expired.status, expired.body.error]).toEqual([410, expect.stringMatching(/vaxtı bitib/)]);
+
+    const path2 = await newQr(jurorId.aysel);
+    const off = (active: boolean) => request(base).patch(`/api/admin/jurors/${jurorId.aysel}`).set("Origin", origin()).set("Cookie", adminCookie).send({ active });
+    expect((await off(false)).status).toBe(200);
+    expect((await get("/api/juror/state", jurorCookie.aysel)).status).toBe(401); // sessions ended
+    expect((await post(`/api/auth/invite/${path2.slice(3)}`).send({ displayName: "Aysel Quliyeva" })).status).toBe(410);
+    expect((await off(true)).status).toBe(200);
+    jurorCookie.aysel = await claim(await newQr(jurorId.aysel), "Aysel Quliyeva");
+  });
+
+  it("refuses password sign-in for jurors", async () => {
+    const u = A.ctx.repo.userById(jurorId.ali)!;
+    const { hashPassword } = await import("../server/baseline.js");
+    A.ctx.repo.updateUser(u.id, { passwordHash: await hashPassword("legacy-pass-1") }); // a juror from before QR sign-in
+    const r = await post("/api/auth/login").send({ username: u.username, password: "legacy-pass-1" });
+    expect(r.status).toBe(403);
+    expect(r.body.error).toMatch(/QR/);
+  });
+});
+
+describe("live progress, tags and nudges", () => {
+  it("sends the admin only the count of filled criteria, never the points", async () => {
+    const admin = await socket(adminCookie);
+    const ali = await socket(jurorCookie.ali);
+    const aysel = await socket(jurorCookie.aysel);
+    const ayselEvents: string[] = [];
+    aysel.onAny(e => ayselEvents.push(e));
+    const got = new Promise<any>(res => admin.on("progress:changed", (p: any[]) => { if (p.some(x => x.teamId === teamIds[4])) res(p); }));
+    ali.emit("draft:progress", { teamId: teamIds[4], filled: 3, values: { secret: 9 } });
+    const p = await got;
+    expect(p.find((x: any) => x.teamId === teamIds[4])).toMatchObject({ jurorId: jurorId.ali, filled: 3 });
+    expect(JSON.stringify(p)).not.toContain("secret");
+    await new Promise(r => setTimeout(r, 200));
+    expect(ayselEvents).not.toContain("progress:changed");
+  });
+
+  it("stores only listed feedback tags, privately", async () => {
+    const tags = (await get("/api/juror/state", jurorCookie.ali)).body.feedbackTags as string[];
+    expect(tags.length).toBeGreaterThan(2);
+    const r = await request(base).put(`/api/juror/scores/${teamIds[2]}`).set("Origin", origin()).set("Cookie", jurorCookie.ali)
+      .send({ ...fullScore(6), tags: [tags[1], "uydurma etiket", tags[0]] });
     expect(r.status).toBe(200);
-    expect((await get("/api/juror/state", c)).status).toBe(401);
-    expect((await get("/api/juror/state", jurorCookie.aysel)).status).toBe(401);
-    jurorCookie.aysel = await login("aysel", "yeni-parol-1");
+    expect(r.body.tags).toEqual([tags[0], tags[1]]);
+    const other = (await get("/api/juror/state", jurorCookie.aysel)).body;
+    expect(JSON.stringify(other.myScores)).not.toContain(tags[1]);
+    const admin = (await get("/api/admin/results", adminCookie)).body;
+    expect(admin.scores.find((s: any) => s.teamId === teamIds[2] && s.jurorId === jurorId.ali).tags).toEqual([tags[0], tags[1]]);
+  });
+
+  it("nudges only jurors who have not scored the team on stage", async () => {
+    const setStage = (id: number | null) => request(base).patch("/api/admin/event").set("Origin", origin()).set("Cookie", adminCookie).send({ currentTeamId: id });
+    expect((await setStage(teamIds[2])).status).toBe(200);
+    const ali = await socket(jurorCookie.ali);
+    const aysel = await socket(jurorCookie.aysel);
+    let aliGot = false;
+    ali.on("nudge", () => { aliGot = true; });
+    const got = new Promise<any>(res => aysel.once("nudge", res));
+    const r = await post("/api/admin/nudge", adminCookie).send({});
+    expect(r.status).toBe(200);
+    expect(r.body.nudged).toBe(1);
+    expect(await got).toMatchObject({ teamId: teamIds[2] });
+    await new Promise(r => setTimeout(r, 200));
+    expect(aliGot).toBe(false);
+    expect((await post("/api/admin/nudge", jurorCookie.ali).send({})).status).toBe(403);
+    await setStage(null);
   });
 });
 
@@ -267,7 +386,7 @@ describe("admin and juror in one browser", () => {
     const me = await get("/api/auth/me", both);
     expect(me.body.sessions.map((s: { role: string }) => s.role).sort()).toEqual(["admin", "juror"]);
 
-    const extra = await login("ali", "parol-123");
+    const extra = await claim(await newQr(jurorId.ali), "Əli Məmmədov");
     const out = await post("/api/auth/logout", `${adminCookie}; ${extra}`).send({ role: "juror" });
     expect(out.status).toBe(200);
     expect((await get("/api/juror/state", extra)).status).toBe(401);
@@ -275,7 +394,8 @@ describe("admin and juror in one browser", () => {
   });
 
   it("sets SameSite=Lax so links opened from messengers keep the session", async () => {
-    const res = await post("/api/auth/login").send({ username: "ali", password: "parol-123" });
+    const r = await post(`/api/auth/invite/${(await newQr(jurorId.ali)).slice(3)}`).send({ displayName: "Əli Məmmədov" });
+    const res = r;
     expect(res.headers["set-cookie"][0]).toMatch(/^ij_juror=.*SameSite=Lax/i);
     expect(res.headers["set-cookie"][0]).toMatch(/HttpOnly/i);
   });
@@ -338,9 +458,9 @@ describe("results reveal", () => {
 describe("login rate limit", () => {
   it("locks a username+IP after 5 failed attempts, even for the right password", async () => {
     for (let i = 0; i < 5; i++) {
-      expect((await post("/api/auth/login").send({ username: "ali", password: "wrong" })).status).toBe(401);
+      expect((await post("/api/auth/login").send({ username: "admin", password: "wrong" })).status).toBe(401);
     }
-    const r = await post("/api/auth/login").send({ username: "ali", password: "parol-123" });
+    const r = await post("/api/auth/login").send({ username: "admin", password: "admin-pass-123" });
     expect(r.status).toBe(429);
     expect(r.body.error).toMatch(/dəqiqə/);
   });

@@ -39,6 +39,8 @@ export interface ScoreRow {
   teamId: number;
   values: ScoreValues;
   note: string;
+  /** Quick feedback chips the juror ticked (private, like the note). */
+  tags: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -78,6 +80,7 @@ export interface MyScore {
   teamId: number;
   values: ScoreValues;
   note: string;
+  tags: string[];
   updatedAt: number;
   total?: number; // only present when show_juror_total is on
 }
@@ -91,6 +94,7 @@ export interface JurorStatePayload {
   teams: AdminTeam[];
   entryMax: number;
   criteria: Criterion[];
+  feedbackTags: string[];
   myScores: MyScore[];
 }
 
@@ -98,6 +102,14 @@ export interface PresenceEntry {
   jurorId: number;
   online: boolean;
   lastSeen: number | null;
+}
+
+/** Live draft progress of one juror (admin only): how many criteria are filled, never the values. */
+export interface ProgressEntry {
+  jurorId: number;
+  teamId: number;
+  filled: number;
+  at: number;
 }
 
 export type TimerAction = "pitch" | "qa" | "toggle" | "pause" | "resume" | "reset" | "stop";

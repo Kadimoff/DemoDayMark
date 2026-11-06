@@ -5,7 +5,7 @@ const cfg = loadConfig();
 const { app, close } = await buildApp(cfg, { logger: true });
 
 await app.listen({ port: cfg.port, host: cfg.host });
-console.log(`Ignite Demo Day hazırdır: http://localhost:${cfg.port}  (proyektor taymeri: /timer)`);
+console.log(`DemoDay hazırdır: http://localhost:${cfg.port}  (proyektor taymeri: /timer)`);
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, async () => {

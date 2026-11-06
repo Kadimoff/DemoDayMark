@@ -89,6 +89,24 @@ const MIGRATIONS: string[] = [
   ALTER TABLE event ADD COLUMN entry_max REAL NOT NULL DEFAULT 50;
   UPDATE event SET reveal_enabled = 0, reveal_step = 0, reveal_snapshot = NULL;
   `,
+  // v4: QR invites for jurors, quick feedback tags; event.name now holds only the brand prefix
+  // ("Ignite" → shown as "Ignite DemoDay").
+  `
+  CREATE TABLE juror_invites (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash  TEXT NOT NULL UNIQUE,         -- sha256 of the token in the QR link
+    created_at  INTEGER NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    used_at     INTEGER,
+    revoked_at  INTEGER
+  );
+  CREATE INDEX juror_invites_user ON juror_invites(user_id);
+  ALTER TABLE scores ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE event ADD COLUMN feedback_tags_json TEXT;
+  UPDATE event SET name = trim(substr(name, 1, length(name) - 8)) WHERE lower(name) LIKE '%demo day';
+  UPDATE event SET name = trim(substr(name, 1, length(name) - 7)) WHERE lower(name) LIKE '%demoday';
+  `,
 ];
 
 export function openDb(file: string): DB {

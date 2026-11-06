@@ -1,10 +1,13 @@
-# Ignite Demo Day — münsif sistemi + pitch taymeri
+# DemoDay — münsif sistemi + pitch taymeri
+
+Məhsulun adı **DemoDay**-dir. Önündəki brend hissəsini (məs. "Ignite" → **Ignite DemoDay**) Quraşdırma → "Brend / prefiks" sahəsinə yazın. Boş qalsa, hər yerdə sadəcə **DemoDay** görünür.
 
 Real vaxtda münsif qiymətləndirməsi və səhnə taymeri. 8 komanda, 4–5 münsif, hər komanda üçün 3 dəq pitch + 2 dəq sual-cavab.
 
 | Ekran | Ünvan | Kim üçün |
 |---|---|---|
-| Giriş | `/login` | hamı |
+| Giriş | `/login` | koordinator (admin) |
+| Münsif QR girişi | `/j/<kod>` | münsif (QR skan edəndə açılır) |
 | Münsif paneli | `/juror` | münsiflər (telefon) |
 | Canlı panel | `/admin` | koordinator (noutbuk) |
 | Quraşdırma | `/admin/setup` | koordinator |
@@ -82,7 +85,28 @@ npm start                   # http://localhost:3000
 
 İnkişaf rejimi (avtomatik yenilənmə): `npm run dev`. Frontend `http://localhost:5173`-də açılır, API isə 3000-də işləyir.
 
-İlk açılışda admin hesabı `.env`-dəki `ADMIN_USERNAME` / `ADMIN_PASSWORD` dəyərlərindən yaradılır. Bununla yanaşı standart kriteriyalar və "Komanda 1–8" yer tutucuları da əlavə olunur. Münsif hesablarını **Quraşdırma** səhifəsindən siz yaradırsınız.
+İlk açılışda admin hesabı `.env`-dəki `ADMIN_USERNAME` / `ADMIN_PASSWORD` dəyərlərindən yaradılır. Bununla yanaşı standart kriteriyalar və "Komanda 1–8" yer tutucuları da əlavə olunur. Münsiflər QR kodla qoşulur (aşağıya baxın).
+
+## Münsif girişi: QR kod
+
+Münsiflər üçün istifadəçi adı və şifrə yoxdur.
+
+1. Canlı paneldə **"Münsif QR yarat"** düyməsini basın (və ya Quraşdırma → Münsiflər → **"Münsif əlavə et (QR)"**). Ekranda böyük QR açılır. Tam ekran düyməsi də var.
+2. Ekranı münsifə yaxınlaşdırın. Münsif telefonun kamerası ilə skan edir, adını və soyadını yazır və dərhal münsif panelinə düşür.
+3. Koordinatorun ekranında QR yerində "✓ <ad>" görünür. Ad canlı paneldə, matrisdə və hesabatlarda görünür. **"Növbəti münsif"** ilə ardıcıl QR paylaya bilərsiniz.
+
+- QR **bir dəfə** işləyir və 24 saat etibarlıdır. Şəklini çəkən başqa biri onunla daxil ola bilməz.
+- Münsifin telefonu dəyişsə, brauzeri təmizlənsə və ya əlaqə itsə: münsif kartındakı **QR / "Yeni QR"** düyməsi **eyni hesab** üçün yeni kod yaradır. Köhnə istifadə olunmamış QR etibarsız olur, münsifin bütün balları yerində qalır.
+- Panel `localhost` ünvanında açılıbsa, QR pəncərəsi xəbərdarlıq edir: münsif telefonları həmin ünvana çata bilməz. Paneli server ünvanı ilə açın.
+- Münsif şifrə ilə daxil ola bilməz (`/login` yalnız koordinator üçündür).
+
+## Münsif paneli və canlı izləmə
+
+- **Sürətli rəy çipləri:** münsif "Güclü texnologiya", "Rəqabət riski" kimi hazır etiketləri bir toxunuşla seçir. Siyahını Quraşdırma → "Sürətli rəy etiketləri" bölməsində dəyişirsiniz. Seçilənlər münsifin şəxsi qeydi kimi saxlanılır, admin matrisində, Excel-də (ayrıca sütun) və PDF-də görünür.
+- **Canlı gedişat:** münsif bal seçdikcə admin kartında "Doldurur… 4 / 6 meyar" görünür. Serverə yalnız doldurulmuş meyarların **sayı** gedir, bal dəyərləri göndərilənə qədər heç kimə getmir.
+- **Xəbərdar et:** canlı paneldəki "Səs verməyənləri xəbərdar et" düyməsi səhnədəki komandaya hələ səs verməmiş münsiflərin telefonunda banner göstərir və telefonu titrədir.
+- **Komanda lentləri:** münsif panelinin yuxarısında bütün komandalar üfüqi lent kimi düzülür (göndərildi ✓ / qaralama / səhnədə). "Əvvəlki komanda" və "Sıfırla" düymələri də var.
+- Canlı paneldə klaviatura qısayolları işləyir: **Space** başlat/fasilə, **Q/S** sual-cavab, **R** sıfırla, **N** növbəti komanda.
 
 ## Server (Docker) ilə deploy
 
@@ -140,7 +164,8 @@ Tətbiq serverdə Coolify layihəsi **Ignite Demo Day** → tətbiq **demoday-ma
 **Bir gün əvvəl**
 - [ ] `.env`: güclü `ADMIN_PASSWORD`, təsadüfi `SESSION_SECRET`, düzgün `ORIGIN`.
 - [ ] Quraşdırma: tədbirin adı və tarixi, 8 komandanın adı və layihəsi, sıra.
-- [ ] 5 münsif hesabı (ad, istifadəçi adı, şifrə). Giriş məlumatlarını kağızda hər münsifə ayrıca verin.
+- [ ] Quraşdırma → "Brend / prefiks" (məs. Ignite) və sürətli rəy etiketləri.
+- [ ] Münsiflər gələndə hər biri üçün "Münsif QR yarat" → münsif skan edib adını yazır.
 - [ ] Meyarlar və maksimum ballar düzgündür (cəmi 50), hər komandanın giriş balı yazılıb.
 - [ ] Tam prova (aşağıdakı ssenari), sonra **Canlı panel → Təhlükəli zona → Bütün qiymətləri sil**.
 - [ ] `npm run backup`.
@@ -215,7 +240,7 @@ test/        scoring.test.ts · privacy.test.ts
 | Girişdən sonra yenə login səhifəsi | HTTP üzərindən açılıb, amma cookie Secure-dur. HTTPS istifadə edin və ya `COOKIE_SECURE=false` yazın (yalnız lokal şəbəkə). |
 | "Bağlantı yoxdur" pill-i | Wi-Fi və ya proxy WebSocket-i ötürmür. nginx-də `Upgrade`/`Connection` başlıqlarını yoxlayın. Qaralamalar itmir. |
 | "Çox sayda uğursuz cəhd" | 5 dəqiqə gözləyin və ya serveri yenidən başladın (blok yaddaşda saxlanılır). |
-| Münsif şifrəsini unudub | Quraşdırma → həmin münsif → "Yeni şifrə" → "Təyin et". |
+| Münsif çıxıb / telefonu dəyişib / QR işləmir | Canlı panel və ya Quraşdırma → həmin münsif → "Yeni QR". Ballar qorunur. |
 | Proyektorda səs yoxdur | Səhifədə bir dəfə klikləyin və ya "Səs" düyməsinə basın (brauzer qaydası). |
 | `docker build` zamanı "Temporary failure resolving 'deb.debian.org'" | Docker konteynerində DNS işləmir. `docker build --network=host -t ignite-jury .` ilə build edin və ya Docker daemon-un DNS ayarlarını düzəldin. |
 | Admin şifrəsini unutmusunuz | `data/` qovluğunun yedəyini alın, `users` cədvəlindən admin sətrini silin, serveri `.env`-dəki yeni `ADMIN_PASSWORD` ilə yenidən başladın. |

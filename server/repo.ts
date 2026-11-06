@@ -1,5 +1,6 @@
 // Data access. Every function returns plain shared/types objects; no route touches SQL directly.
 import type { DB } from "./db.js";
+import { brandName, DEFAULT_FEEDBACK_TAGS } from "../shared/brand.js";
 import { normalizeSnapshot, type RevealSnapshot } from "../shared/reveal.js";
 import type { AdminTeam, Criterion, Juror, ScoreRow, StagePayload, TimerState } from "../shared/types.js";
 
@@ -17,9 +18,11 @@ interface EventRow {
   show_juror_total: number;
   include_entry: number;
   entry_max: number;
+  feedback_tags_json: string | null;
 }
 
 export interface EventState {
+  /** Brand prefix only ("Ignite"); the display name is brandName(name) → "Ignite DemoDay". */
   name: string;
   date: string;
   currentTeamId: number | null;
@@ -30,6 +33,8 @@ export interface EventState {
   includeEntry: boolean;
   /** Scale of entry scores (e.g. 50). */
   entryMax: number;
+  /** Quick feedback chips jurors can tick. */
+  feedbackTags: string[];
 }
 
 export interface UserRow {
@@ -64,6 +69,7 @@ export class Repo {
       showJurorTotal: !!r.show_juror_total,
       includeEntry: !!r.include_entry,
       entryMax: r.entry_max,
+      feedbackTags: parseTags(r.feedback_tags_json) ?? DEFAULT_FEEDBACK_TAGS,
     };
   }
 
@@ -71,10 +77,11 @@ export class Repo {
     const cur = this.getEvent();
     const n = { ...cur, ...p, timer: { ...cur.timer, ...(p.timer ?? {}) } };
     this.db.prepare(`UPDATE event SET name=?, date=?, current_team_id=?, timer_visible=?, timer_running=?,
-      timer_offset_sec=?, timer_anchor_at=?, pitch_sec=?, qa_sec=?, locked=?, show_juror_total=?, include_entry=?, entry_max=?
-      WHERE id = 1`)
+      timer_offset_sec=?, timer_anchor_at=?, pitch_sec=?, qa_sec=?, locked=?, show_juror_total=?, include_entry=?, entry_max=?,
+      feedback_tags_json=? WHERE id = 1`)
       .run(n.name, n.date, n.currentTeamId, +n.timer.visible, +n.timer.running, n.timer.offsetSec,
-        n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal, +n.includeEntry, n.entryMax);
+        n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal, +n.includeEntry, n.entryMax,
+        JSON.stringify(n.feedbackTags));
     return this.getEvent();
   }
 
@@ -97,7 +104,7 @@ export class Repo {
     const i = teams.findIndex(t => t.id === ev.currentTeamId);
     const t = i >= 0 ? teams[i] : null;
     return {
-      eventName: ev.name,
+      eventName: brandName(ev.name),
       eventDate: ev.date,
       team: t ? { id: t.id, name: t.name, project: t.project, index: i + 1, total: teams.length } : null,
       timer: ev.timer,
@@ -178,6 +185,31 @@ export class Repo {
   }
   deleteUser(id: number) { return this.db.prepare("DELETE FROM users WHERE id=? AND role='juror'").run(id).changes > 0; }
 
+  // ---------- juror QR invites ----------
+  /** Issues a new invite for the juror and revokes every earlier unused one. */
+  createInvite(userId: number, tokenHash: string, ttlMs: number) {
+    const now = Date.now();
+    this.db.transaction(() => {
+      this.db.prepare("UPDATE juror_invites SET revoked_at=? WHERE user_id=? AND used_at IS NULL AND revoked_at IS NULL").run(now, userId);
+      this.db.prepare("INSERT INTO juror_invites (user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)")
+        .run(userId, tokenHash, now, now + ttlMs);
+    })();
+    return { expiresAt: now + ttlMs };
+  }
+  invite(tokenHash: string) {
+    return (this.db.prepare("SELECT * FROM juror_invites WHERE token_hash=?").get(tokenHash) as
+      { id: number; user_id: number; created_at: number; expires_at: number; used_at: number | null; revoked_at: number | null } | undefined) ?? null;
+  }
+  /** Marks the invite used if it still is usable; false when someone else got there first. */
+  useInvite(id: number) {
+    return this.db.prepare("UPDATE juror_invites SET used_at=? WHERE id=? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?")
+      .run(Date.now(), id, Date.now()).changes > 0;
+  }
+  /** Juror ids that have scanned at least one QR (i.e. a person has claimed the account). */
+  claimedJurors(): Set<number> {
+    return new Set((this.db.prepare("SELECT DISTINCT user_id FROM juror_invites WHERE used_at IS NOT NULL").all() as any[]).map(r => r.user_id));
+  }
+
   // ---------- sessions ----------
   createSession(id: string, userId: number, ua: string, ip: string) {
     const now = Date.now();
@@ -202,6 +234,7 @@ export class Repo {
   // ---------- scores ----------
   private mapScore = (r: any): ScoreRow => ({
     jurorId: r.juror_id, teamId: r.team_id, values: JSON.parse(r.values_json), note: r.note,
+    tags: parseTags(r.tags_json) ?? [],
     createdAt: r.created_at, updatedAt: r.updated_at,
   });
   scores(): ScoreRow[] { return (this.db.prepare("SELECT * FROM scores ORDER BY id").all() as any[]).map(this.mapScore); }
@@ -210,14 +243,14 @@ export class Repo {
   }
   scoreCountForTeam(teamId: number) { return (this.db.prepare("SELECT COUNT(*) n FROM scores WHERE team_id=?").get(teamId) as any).n as number; }
   scoreCount() { return (this.db.prepare("SELECT COUNT(*) n FROM scores").get() as any).n as number; }
-  upsertScore(jurorId: number, teamId: number, values: Record<string, number>, total: number | null, note: string) {
+  upsertScore(jurorId: number, teamId: number, values: Record<string, number>, total: number | null, note: string, tags: string[] = []) {
     const now = Date.now();
     const prev = this.db.prepare("SELECT id FROM scores WHERE juror_id=? AND team_id=?").get(jurorId, teamId);
-    this.db.prepare(`INSERT INTO scores (juror_id, team_id, values_json, total, note, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+    this.db.prepare(`INSERT INTO scores (juror_id, team_id, values_json, total, note, tags_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (juror_id, team_id) DO UPDATE SET values_json=excluded.values_json, total=excluded.total,
-        note=excluded.note, updated_at=excluded.updated_at`)
-      .run(jurorId, teamId, JSON.stringify(values), total, note, now, now);
+        note=excluded.note, tags_json=excluded.tags_json, updated_at=excluded.updated_at`)
+      .run(jurorId, teamId, JSON.stringify(values), total, note, JSON.stringify(tags), now, now);
     const row = this.db.prepare("SELECT * FROM scores WHERE juror_id=? AND team_id=?").get(jurorId, teamId);
     return { score: this.mapScore(row), created: !prev };
   }
@@ -233,4 +266,12 @@ export class Repo {
       a.created_at createdAt FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id ORDER BY a.id DESC LIMIT ?`)
       .all(limit) as any[]).map(r => ({ ...r, payload: JSON.parse(r.payload) }));
   }
+}
+
+function parseTags(json: string | null | undefined): string[] | null {
+  if (json == null) return null;
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+  } catch { return null; }
 }

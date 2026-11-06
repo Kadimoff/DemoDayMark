@@ -16,6 +16,7 @@ const cleanUrls = (): Plugin => ({
     server.middlewares.use((req, _res, next) => {
       const url = (req.url ?? "").split("?")[0].replace(/\/$/, "") || "/";
       if (PAGES[url]) req.url = PAGES[url];
+      else if (/^\/j\/[^/]+$/.test(url)) req.url = "/join.html";
       next();
     });
   },
@@ -46,6 +47,7 @@ export default defineConfig({
         setup: "web/setup.html",
         timer: "web/timer.html",
         reveal: "web/reveal.html",
+        join: "web/join.html",
       },
     },
   },

@@ -8,6 +8,7 @@ import { jurorState } from "../views.js";
 const scoreBody = z.object({
   values: z.record(z.string(), z.number().int("Ballar tam ədəd olmalıdır.").min(MIN_POINTS, `Bal ən azı ${MIN_POINTS} olmalıdır.`).max(100)),
   note: z.string().max(2000, "Şərh 2000 simvoldan uzun ola bilməz.").optional().default(""),
+  tags: z.array(z.string().max(80)).max(30).optional().default([]),
 });
 
 export function jurorRoutes(app: FastifyInstance, { repo, rt }: Ctx) {
@@ -32,14 +33,16 @@ export function jurorRoutes(app: FastifyInstance, { repo, rt }: Ctx) {
         if (v > c.maxScore) return reply.code(400).send({ error: `“${c.name}” üçün bal ${MIN_POINTS}–${c.maxScore} arası olmalıdır.` });
         values[c.key] = v;
       }
+      // Only chips from the current list; kept in the list's order.
+      const tags = ev.feedbackTags.filter(t => body.tags.includes(t));
       const total = jurorTotal(values, criteria);
       const note = body.note.trim();
-      const { score, created } = repo.upsertScore(req.user!.id, team.id, values, total, note);
-      repo.audit(req.user!.id, created ? "score.submit" : "score.update", { teamId: team.id, values, total, note });
+      const { score, created } = repo.upsertScore(req.user!.id, team.id, values, total, note, tags);
+      repo.audit(req.user!.id, created ? "score.submit" : "score.update", { teamId: team.id, values, total, note, tags });
       rt.emitScore(score, total, ev.showJurorTotal);
       rt.emitResults();
       return {
-        teamId: score.teamId, values: score.values, note: score.note, updatedAt: score.updatedAt,
+        teamId: score.teamId, values: score.values, note: score.note, tags: score.tags, updatedAt: score.updatedAt,
         ...(ev.showJurorTotal ? { total } : {}),
       };
     });

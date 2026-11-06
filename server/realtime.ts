@@ -6,7 +6,7 @@
 //   user:<id>, session:<sid>  used only to force-disconnect
 import type { FastifyInstance } from "fastify";
 import { Server, type Socket } from "socket.io";
-import type { PresenceEntry, ScoreRow } from "../shared/types.js";
+import type { PresenceEntry, ProgressEntry, ScoreRow } from "../shared/types.js";
 import { originAllowed, resolveUser, type AuthUser } from "./auth.js";
 import type { Config } from "./config.js";
 import type { Repo } from "./repo.js";
@@ -16,6 +16,8 @@ export class Realtime {
   readonly io: Server;
   private online = new Map<number, Set<string>>();
   private lastSeen = new Map<number, number>();
+  /** "<jurorId>:<teamId>" → draft progress (count of filled criteria only). In memory: it is live telemetry. */
+  private drafts = new Map<string, ProgressEntry>();
 
   constructor(app: FastifyInstance, private repo: Repo, private cfg: Config) {
     this.io = new Server(app.server, {
@@ -57,6 +59,19 @@ export class Realtime {
     this.online.set(user.id, set);
     this.lastSeen.set(user.id, Date.now());
     this.emitPresence();
+    // Live draft progress: only "how many criteria are filled" ever reaches the admin, never the points.
+    socket.on("draft:progress", (p: unknown) => {
+      const { teamId, filled } = (p ?? {}) as { teamId?: unknown; filled?: unknown };
+      if (!Number.isInteger(teamId) || !Number.isInteger(filled)) return;
+      const max = this.repo.criteria().length;
+      const f = Math.max(0, Math.min(max, filled as number));
+      const k = `${user.id}:${teamId}`;
+      const prev = this.drafts.get(k);
+      if (prev && prev.filled === f) return;
+      if (!this.repo.team(teamId as number)) return;
+      this.drafts.set(k, { jurorId: user.id, teamId: teamId as number, filled: f, at: Date.now() });
+      this.emitProgress();
+    });
     socket.on("disconnect", () => {
       set.delete(socket.id);
       this.lastSeen.set(user.id, Date.now());
@@ -75,6 +90,24 @@ export class Realtime {
 
   emitPresence() { this.io.to("admin").emit("presence:changed", this.presence()); }
 
+  progress(): ProgressEntry[] { return [...this.drafts.values()]; }
+  emitProgress() { this.io.to("admin").emit("progress:changed", this.progress()); }
+  clearProgress(jurorId: number, teamId?: number) {
+    for (const [k, v] of this.drafts) if (v.jurorId === jurorId && (teamId == null || v.teamId === teamId)) this.drafts.delete(k);
+    this.emitProgress();
+  }
+
+  /** A juror scanned their QR and typed their name: the admin's open QR dialog closes with that name. */
+  emitJurorJoined(jurorId: number, displayName: string) {
+    this.io.to("admin").emit("juror:joined", { jurorId, displayName });
+    this.emitPresence();
+  }
+
+  /** Coordinator's reminder, delivered only to the given jurors' own rooms. */
+  nudge(jurorIds: number[], payload: { teamId: number; teamName: string; index: number }) {
+    for (const id of jurorIds) this.io.to(`juror:${id}`).emit("nudge", payload);
+  }
+
   emitStage() { this.io.to("public").emit("stage:changed", this.repo.stage()); }
 
   emitTimer() {
@@ -91,8 +124,9 @@ export class Realtime {
 
   emitScore(score: ScoreRow, total: number | null, showJurorTotal: boolean) {
     this.io.to("admin").emit("score:upserted", { ...score, total });
+    this.clearProgress(score.jurorId, score.teamId);
     this.io.to(`juror:${score.jurorId}`).emit("my-score:saved", {
-      teamId: score.teamId, values: score.values, note: score.note, updatedAt: score.updatedAt,
+      teamId: score.teamId, values: score.values, note: score.note, tags: score.tags, updatedAt: score.updatedAt,
       ...(showJurorTotal && total != null ? { total } : {}),
     });
   }

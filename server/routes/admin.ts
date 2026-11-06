@@ -2,21 +2,23 @@ import { randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { applyTimerAction } from "../../shared/timer.js";
-import { requireRole } from "../auth.js";
+import { newToken, requireRole, tokenId } from "../auth.js";
 import { hashPassword } from "../baseline.js";
 import { idParam, parseBody, type Ctx } from "../context.js";
 import { buildPdf } from "../export/pdf.js";
 import { buildXlsx, exportFileName } from "../export/xlsx.js";
 import { adminResults, revealAdminView, revealSnapshot } from "../views.js";
 import { revealSteps } from "../../shared/reveal.js";
+import { isPlaceholderName, placeholderName } from "../../shared/brand.js";
+
+/** A juror QR is valid this long, or until it is scanned / replaced. */
+export const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const name = (max = 120) => z.string().trim().min(1, "Ad boş ola bilməz.").max(max);
-const password = z.string().min(6, "Şifrə ən azı 6 simvol olmalıdır.").max(200);
-const username = z.string().trim().min(3, "İstifadəçi adı ən azı 3 simvol olmalıdır.").max(40)
-  .regex(/^[a-zA-Z0-9._-]+$/, "İstifadəçi adında yalnız latın hərfləri, rəqəmlər, nöqtə, tire və alt xətt ola bilər.");
 
 const eventBody = z.object({
-  name: name().optional(),
+  name: z.string().trim().max(40, "Brend adı 40 simvoldan uzun ola bilməz.").optional(),
+  feedbackTags: z.array(z.string().trim().min(1).max(60, "Rəy etiketi 60 simvoldan uzun ola bilməz.")).max(20, "Ən çox 20 rəy etiketi ola bilər.").optional(),
   date: z.string().trim().max(40).optional(),
   currentTeamId: z.number().int().positive().nullable().optional(),
   locked: z.boolean().optional(),
@@ -30,8 +32,8 @@ const eventBody = z.object({
 const entryScore = z.number().min(0, "Giriş balı mənfi ola bilməz.").max(1000).nullable();
 const teamBody = z.object({ name: name(), project: z.string().trim().max(160).default(""), entryScore: entryScore.optional() });
 const teamPatch = z.object({ name: name().optional(), project: z.string().trim().max(160).optional(), active: z.boolean().optional(), entryScore: entryScore.optional() });
-const jurorBody = z.object({ displayName: name(80), username, password });
-const jurorPatch = z.object({ displayName: name(80).optional(), username: username.optional(), active: z.boolean().optional(), password: password.optional() });
+const jurorBody = z.object({ displayName: name(80).optional() });
+const jurorPatch = z.object({ displayName: name(80).optional(), active: z.boolean().optional() });
 const maxScore = z.number().int("Maksimum bal tam ədəd olmalıdır.").min(1, "Maksimum bal ən azı 1 olmalıdır.").max(100);
 const critBody = z.object({ name: name(), description: z.string().trim().max(400).default(""), maxScore });
 const critPatch = z.object({ name: name().optional(), description: z.string().trim().max(400).optional(), maxScore: maxScore.optional() });
@@ -57,6 +59,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       event: repo.getEvent(),
       stage: repo.stage(),
       presence: rt.presence(),
+      progress: rt.progress(),
       sessions: repo.sessions().map(s => ({ ...s, id: s.id.slice(0, 16) })),
       ...adminResults(repo, cfg),
     }));
@@ -94,14 +97,15 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         showJurorTotal: b.showJurorTotal ?? cur.showJurorTotal,
         includeEntry: b.includeEntry ?? cur.includeEntry,
         entryMax: b.entryMax ?? cur.entryMax,
+        feedbackTags: b.feedbackTags ? [...new Set(b.feedbackTags)] : cur.feedbackTags,
         timer,
       });
       if (b.locked !== undefined && b.locked !== cur.locked) {
         repo.audit(actor, b.locked ? "event.lock" : "event.unlock");
         rt.emitLocked(ev.locked);
       }
-      if (b.name !== undefined || b.date !== undefined || b.showJurorTotal !== undefined) {
-        repo.audit(actor, "event.settings", { name: b.name, date: b.date, showJurorTotal: b.showJurorTotal });
+      if (b.name !== undefined || b.date !== undefined || b.showJurorTotal !== undefined || b.feedbackTags !== undefined) {
+        repo.audit(actor, "event.settings", { name: b.name, date: b.date, showJurorTotal: b.showJurorTotal, feedbackTags: b.feedbackTags });
         rt.emitConfig();
         stageChanged = true;
       }
@@ -175,39 +179,68 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       return repo.teams();
     });
 
-    // ---------- jurors ----------
-    r.get("/api/admin/jurors", async () => {
+    // ---------- jurors (QR sign-in) ----------
+    const jurorView = (id: number) => {
+      const u = repo.userById(id)!;
+      const claimed = repo.claimedJurors();
       const sessions = repo.sessions();
-      return repo.jurors().map(j => ({ ...j, sessionCount: sessions.filter(s => s.userId === j.id).length }));
-    });
+      return { id: u.id, username: u.username, displayName: u.display_name, active: !!u.active,
+        claimed: claimed.has(u.id) || !isPlaceholderName(u.display_name), sessionCount: sessions.filter(s => s.userId === u.id).length };
+    };
+    /** New single-use QR token for the juror; every earlier unused one stops working. */
+    const issueInvite = (jurorId: number, actor: number) => {
+      const token = newToken();
+      const { expiresAt } = repo.createInvite(jurorId, tokenId(token), INVITE_TTL_MS);
+      repo.audit(actor, "juror.invite", { id: jurorId });
+      return { path: `/j/${token}`, expiresAt };
+    };
+
+    r.get("/api/admin/jurors", async () => repo.jurors().map(j => jurorView(j.id)));
     r.post("/api/admin/jurors", async (req, reply) => {
       const b = parseBody(jurorBody, req.body, reply); if (!b) return;
-      if (repo.userByUsername(b.username)) return reply.code(409).send({ error: "Bu istifadəçi adı artıq mövcuddur." });
-      const u = repo.createUser("juror", b.username, b.displayName, await hashPassword(b.password));
-      repo.audit(req.user!.id, "juror.create", { id: u.id, username: u.username });
+      const used = new Set(repo.jurors().map(j => j.displayName));
+      let n = repo.jurors().length + 1;
+      while (used.has(placeholderName(n))) n++;
+      // Nobody signs in with these: the username is internal and the password hash is of a discarded random token.
+      const u = repo.createUser("juror", `juror-${randomBytes(5).toString("hex")}`, b.displayName ?? placeholderName(n), await hashPassword(newToken()));
+      repo.audit(req.user!.id, "juror.create", { id: u.id });
+      const invite = issueInvite(u.id, req.user!.id);
       configChanged();
       rt.emitPresence();
-      return { id: u.id, username: u.username, displayName: u.display_name, active: true, sessionCount: 0 };
+      return { juror: jurorView(u.id), invite };
+    });
+    r.post("/api/admin/jurors/:id/invite", async (req, reply) => {
+      const jid = id(req.params, reply); if (!jid) return;
+      const u = repo.userById(jid);
+      if (!u || u.role !== "juror") return reply.code(404).send({ error: "Münsif tapılmadı." });
+      if (!u.active) return reply.code(409).send({ error: "Münsif deaktivdir. Əvvəlcə aktiv edin." });
+      return { juror: jurorView(jid), invite: issueInvite(jid, req.user!.id) };
     });
     r.patch("/api/admin/jurors/:id", async (req, reply) => {
       const jid = id(req.params, reply); if (!jid) return;
       const b = parseBody(jurorPatch, req.body, reply); if (!b) return;
       const u = repo.userById(jid);
       if (!u || u.role !== "juror") return reply.code(404).send({ error: "Münsif tapılmadı." });
-      if (b.username && b.username.toLowerCase() !== u.username.toLowerCase() && repo.userByUsername(b.username)) {
-        return reply.code(409).send({ error: "Bu istifadəçi adı artıq mövcuddur." });
-      }
-      const n = repo.updateUser(jid, {
-        username: b.username, displayName: b.displayName, active: b.active,
-        passwordHash: b.password ? await hashPassword(b.password) : undefined,
-      })!;
-      // A new password or deactivation ends every open session of that juror.
-      if (b.password || b.active === false) { repo.deleteUserSessions(jid); rt.kickUser(jid); }
-      if (b.password) repo.audit(req.user!.id, "juror.password", { id: jid });
-      repo.audit(req.user!.id, "juror.update", { id: jid, username: b.username, displayName: b.displayName, active: b.active });
+      repo.updateUser(jid, { displayName: b.displayName, active: b.active });
+      // Deactivation ends every open session of that juror.
+      if (b.active === false) { repo.deleteUserSessions(jid); rt.kickUser(jid); rt.clearProgress(jid); }
+      repo.audit(req.user!.id, "juror.update", { id: jid, displayName: b.displayName, active: b.active });
       configChanged();
       rt.emitPresence();
-      return { id: n.id, username: n.username, displayName: n.display_name, active: !!n.active };
+      return jurorView(jid);
+    });
+    // Reminds jurors who have not scored the team on stage yet.
+    r.post("/api/admin/nudge", async (req, reply) => {
+      const ev = repo.getEvent();
+      const team = ev.currentTeamId ? repo.team(ev.currentTeamId) : null;
+      if (!team) return reply.code(409).send({ error: "Səhnədə komanda yoxdur." });
+      if (ev.locked) return reply.code(409).send({ error: "Qiymətləndirmə bağlıdır." });
+      const done = new Set(repo.scores().filter(s => s.teamId === team.id).map(s => s.jurorId));
+      const ids = repo.jurors().filter(j => j.active && !done.has(j.id)).map(j => j.id);
+      const stage = repo.stage();
+      rt.nudge(ids, { teamId: team.id, teamName: team.name, index: stage.team?.index ?? 0 });
+      repo.audit(req.user!.id, "juror.nudge", { teamId: team.id, jurors: ids });
+      return { nudged: ids.length };
     });
     r.delete<{ Querystring: { force?: string } }>("/api/admin/jurors/:id", async (req, reply) => {
       const jid = id(req.params, reply); if (!jid) return;
@@ -348,14 +381,14 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     // ---------- exports / audit ----------
     r.get("/api/admin/export.xlsx", async (_req, reply) => {
       const buf = await buildXlsx(repo, cfg);
-      const file = exportFileName(repo.getEvent().date, "netice.xlsx");
+      const file = exportFileName(repo.getEvent().name, repo.getEvent().date, "netice.xlsx");
       reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       reply.header("Content-Disposition", `attachment; filename="${file}"; filename*=UTF-8''${encodeURIComponent(file)}`);
       return reply.send(buf);
     });
     r.get("/api/admin/export.pdf", async (_req, reply) => {
       const buf = await buildPdf(repo, cfg);
-      const file = exportFileName(repo.getEvent().date, "protokol.pdf");
+      const file = exportFileName(repo.getEvent().name, repo.getEvent().date, "protokol.pdf");
       reply.header("Content-Type", "application/pdf");
       reply.header("Content-Disposition", `attachment; filename="${file}"; filename*=UTF-8''${encodeURIComponent(file)}`);
       return reply.send(buf);

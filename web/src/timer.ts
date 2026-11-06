@@ -76,7 +76,7 @@ function finalAlarm() {
 // ---------- rendering ----------
 function setTeam() {
   const t = stage?.team;
-  el.event.innerHTML = `${esc(stage?.eventName || "Ignite Demo Day")}${t ? `<span class="ix">${t.index}/${t.total}</span>` : ""}`;
+  el.event.innerHTML = `${esc(stage?.eventName || "DemoDay")}${t ? `<span class="ix">${t.index}/${t.total}</span>` : ""}`;
   const key = t ? `${t.id}|${t.name}|${t.project}|${t.index}` : "";
   if (key === lastTeamKey) return;
   el.nameTeam.innerHTML = t ? `<span class="ix">#${t.index}</span>${esc(t.name)}` : "Komanda seçilməyib";
@@ -88,11 +88,12 @@ function setTeam() {
     el.name.classList.add("swap");
   }
   lastTeamKey = key;
-  document.title = t ? `${t.name} · Pitch taymeri` : "Pitch taymeri · Ignite Demo Day";
+  document.title = t ? `${t.name} · Pitch taymeri` : `Pitch taymeri · ${stage?.eventName || "DemoDay"}`;
 }
 
 function visuals(kind: PhaseKind, timer: TimerState, ready: boolean) {
-  const sig = `${kind}|${timer.pitchSec}|${timer.qaSec}|${ready}`;
+  const brand = (stage?.eventName || "DemoDay").toLocaleUpperCase("az");
+  const sig = `${kind}|${timer.pitchSec}|${timer.qaSec}|${ready}|${brand}`;
   if (sig === lastVisual) return;
   lastVisual = sig;
   const P = timer.pitchSec, Q = timer.qaSec;
@@ -104,8 +105,8 @@ function visuals(kind: PhaseKind, timer: TimerState, ready: boolean) {
   el.pillP.className = phase === "pitch" ? "on" : "past";
   el.pillQ.className = phase === "qa" ? "on" : phase === "done" ? "past" : "";
   if (kind === "idle" || (kind === "pitch" && ready)) {
-    el.banner.textContent = kind === "idle" ? "GÖZLƏMƏDƏ • IGNITE DEMO DAY" : `HAZIR • TƏQDİMAT ${minutes(P)}`;
-    el.rim.textContent = ` • IGNITE DEMO DAY • ${minutes(P)} TƏQDİMAT + ${minutes(Q)} SUAL-CAVAB • IGNITE DEMO DAY • UĞURLAR! `;
+    el.banner.textContent = kind === "idle" ? `GÖZLƏMƏDƏ • ${brand}` : `HAZIR • TƏQDİMAT ${minutes(P)}`;
+    el.rim.textContent = ` • ${brand} • ${minutes(P)} TƏQDİMAT + ${minutes(Q)} SUAL-CAVAB • ${brand} • UĞURLAR! `;
     el.badge.textContent = kind === "idle" ? "Gözləmədə" : "Hazır • Təqdimat";
     el.sub.textContent = `Sonra: +${minShort(Q)} sual-cavab`;
   } else if (kind === "pitch") {

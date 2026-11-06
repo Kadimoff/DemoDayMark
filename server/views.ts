@@ -1,5 +1,6 @@
 // Response builders. The juror view is the privacy boundary: it is assembled from the
 // juror's own rows only and never touches computeResults().
+import { brandName } from "../shared/brand.js";
 import { revealPublic, revealSteps, type RevealSnapshot } from "../shared/reveal.js";
 import { computeResults, jurorTotal } from "../shared/scoring.js";
 import type { JurorStatePayload } from "../shared/types.js";
@@ -19,10 +20,12 @@ export function jurorState(repo: Repo, jurorId: number): JurorStatePayload {
     teams: repo.teams().filter(t => t.active),
     entryMax: ev.entryMax,
     criteria,
+    feedbackTags: ev.feedbackTags,
     myScores: repo.scoresOf(jurorId).map(s => ({
       teamId: s.teamId,
       values: s.values,
       note: s.note,
+      tags: s.tags,
       updatedAt: s.updatedAt,
       ...(ev.showJurorTotal ? { total: jurorTotal(s.values, criteria) ?? undefined } : {}),
     })),
@@ -67,7 +70,7 @@ export function revealSnapshot(repo: Repo, cfg: Config): RevealSnapshot {
 
 export const revealPublicView = (repo: Repo) => {
   const r = repo.getReveal();
-  return revealPublic(r.snapshot, r.step, r.enabled, repo.getEvent().name);
+  return revealPublic(r.snapshot, r.step, r.enabled, brandName(repo.getEvent().name));
 };
 
 export function revealAdminView(repo: Repo, cfg: Config) {

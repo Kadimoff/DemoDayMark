@@ -99,6 +99,12 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
       return reply.sendFile(page.file);
     });
   }
+  // QR landing page: public; the token itself is checked by /api/auth/invite/:token.
+  app.get("/j/:token", async (_req, reply) => {
+    if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
+    reply.header("Cache-Control", "no-store");
+    return reply.sendFile("join.html");
+  });
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith("/api/")) return reply.code(404).send({ error: "Tapılmadı." });
     return reply.code(404).type("text/plain; charset=utf-8").send("404 · Səhifə tapılmadı");

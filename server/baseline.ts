@@ -4,7 +4,7 @@ import { hash, type Options } from "@node-rs/argon2";
 import type { Config } from "./config.js";
 import type { Repo } from "./repo.js";
 
-// Ignite Demo Day rubric: points per criterion, 50 in total (entry scores add another 50).
+// Default Demo Day rubric: points per criterion, 50 in total (entry scores add another 50).
 export const DEFAULT_CRITERIA = [
   { key: "teqdimat", name: "Təqdimat qabiliyyəti", maxScore: 5,
     description: "1. Təqdimatçının layihəni, görülən və görüləcək işləri təqdim etmə bacarığı\n2. Verilən suallara dolğun cavab vermə" },
@@ -31,7 +31,8 @@ export async function ensureBaseline(repo: Repo, cfg: Config, log: (m: string) =
     const d = new Date();
     const date = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
     db.prepare("INSERT INTO event (id, name, date, show_juror_total) VALUES (1, ?, ?, ?)")
-      .run("Ignite Demo Day", date, +cfg.showJurorTotal);
+      .run("", date, +cfg.showJurorTotal); // brand prefix, filled in from Setup
+
     log("event row created");
   }
   if (!db.prepare("SELECT 1 FROM users WHERE role = 'admin'").get()) {

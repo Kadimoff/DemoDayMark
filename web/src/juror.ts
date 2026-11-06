@@ -1,19 +1,20 @@
 import "./styles.css";
-import { band, demoMax, isComplete, jurorTotal, MIN_POINTS } from "../../shared/scoring";
-import type { Criterion } from "../../shared/types";
-import type { JurorStatePayload, MyScore, ScoreValues, StagePayload, TimerState } from "../../shared/types";
+import { demoMax, isComplete, jurorTotal, MIN_POINTS } from "../../shared/scoring";
+import { fmtClock, type TimerView } from "../../shared/timer";
+import type { AdminTeam, Criterion, JurorStatePayload, MyScore, ScoreValues, StagePayload, TimerState } from "../../shared/types";
 import { api, ApiError } from "./lib/api";
-import { $, esc, hhmm, icon, toast } from "./lib/dom";
+import { $, esc, hhmm, icon, initials, toast } from "./lib/dom";
 import { live } from "./lib/socket";
-import { StageStrip } from "./lib/stage";
-import { topbar } from "./lib/topbar";
+import { PHASE_LABEL, StageStrip } from "./lib/stage";
 
-interface Draft { values: ScoreValues; note: string; dirty: boolean; base: number; pending?: boolean }
+interface Draft { values: ScoreValues; note: string; tags: string[]; dirty: boolean; base: number; pending?: boolean }
+interface Nudge { teamId: number; teamName: string; index: number }
 
-const bar = topbar({ role: "juror" });
-const strip = new StageStrip($("#stage"));
+const NOTE_MAX = 1000;
+const head = $("#jhead");
 const main = $("#main");
 const dock = $("#dock");
+const strip = new StageStrip(null);
 
 let S: JurorStatePayload | null = null;
 const mine = new Map<number, MyScore>();
@@ -24,13 +25,15 @@ let formKey = "";
 let sending = false;
 let justSent: number | null = null;
 let failure: { teamId: number; msg: string; network: boolean } | null = null;
+let online = false;
+let nudge: Nudge | null = null;
 
 // ---------- drafts survive reloads and Wi-Fi drops ----------
 const lsKey = (teamId: number) => `ij.draft.${S?.me.id}.${teamId}`;
 function persist(teamId: number) {
   const d = drafts.get(teamId);
   try {
-    if (d?.dirty) localStorage.setItem(lsKey(teamId), JSON.stringify({ values: d.values, note: d.note, base: d.base, pending: !!d.pending }));
+    if (d?.dirty) localStorage.setItem(lsKey(teamId), JSON.stringify({ values: d.values, note: d.note, tags: d.tags, base: d.base, pending: !!d.pending }));
     else localStorage.removeItem(lsKey(teamId));
   } catch { /* storage unavailable */ }
 }
@@ -45,7 +48,7 @@ function restoreDrafts() {
       const saved = mine.get(t.id);
       // A newer server copy (e.g. sent from another device) wins over an old local draft.
       if (saved && saved.updatedAt > d.base) { localStorage.removeItem(lsKey(t.id)); continue; }
-      drafts.set(t.id, { values: d.values ?? {}, note: d.note ?? "", base: d.base ?? 0, dirty: true, pending: d.pending });
+      drafts.set(t.id, { values: d.values ?? {}, note: d.note ?? "", tags: d.tags ?? [], base: d.base ?? 0, dirty: true, pending: d.pending });
     } catch { /* corrupt entry */ }
   }
 }
@@ -53,10 +56,22 @@ function draftFor(teamId: number): Draft {
   const saved = mine.get(teamId);
   let d = drafts.get(teamId);
   if (!d || (!d.dirty && (saved?.updatedAt ?? 0) !== d.base)) {
-    d = { values: { ...(saved?.values ?? {}) }, note: saved?.note ?? "", dirty: false, base: saved?.updatedAt ?? 0 };
+    d = { values: { ...(saved?.values ?? {}) }, note: saved?.note ?? "", tags: [...(saved?.tags ?? [])], dirty: false, base: saved?.updatedAt ?? 0 };
     drafts.set(teamId, d);
   }
   return d;
+}
+const validValue = (c: Criterion, v: number | undefined) => Number.isInteger(v) && v! >= MIN_POINTS && v! <= c.maxScore;
+const filledCount = (d: Draft) => S ? S.criteria.filter(c => validValue(c, d.values[c.key])).length : 0;
+
+// ---------- live draft progress for the coordinator (count only, never the points) ----------
+let progressTimer = 0;
+function reportProgress(teamId: number) {
+  clearTimeout(progressTimer);
+  progressTimer = window.setTimeout(() => {
+    const d = drafts.get(teamId);
+    if (d) sock.emit("draft:progress", { teamId, filled: filledCount(d) });
+  }, 250);
 }
 
 // ---------- data ----------
@@ -69,7 +84,7 @@ async function load() {
   }
   mine.clear();
   S.myScores.forEach(s => mine.set(s.teamId, s));
-  bar.setEventName(S.stage.eventName);
+  document.title = `Münsif paneli · ${S.stage.eventName}`;
   restoreDrafts();
   onStage(S.stage);
   formKey = "";
@@ -80,7 +95,6 @@ function onStage(stage: StagePayload) {
   strip.set(stage);
   if (!S) return;
   S.stage = stage;
-  bar.setEventName(stage.eventName);
   const cur = stage.team?.id ?? null;
   if (cur !== lastStageTeam) {
     const first = lastStageTeam === undefined;
@@ -90,83 +104,203 @@ function onStage(stage: StagePayload) {
       if (selTeam != null && drafts.get(selTeam)?.dirty) {
         if (!first) toast(`Səhnədə: ${stage.team!.name}. Göndərilməmiş dəyişikliyiniz saxlanılıb.`);
       } else {
-        selTeam = cur;
-        failure = null;
-        formKey = "";
+        select(cur, false);
       }
     }
   }
+  formKey = "";
   render();
 }
 
-// ---------- render ----------
-const BAND_LABELS = ["zəif", "orta", "güclü", "əla"];
-/** zəif / orta / güclü / əla under a 1..max scale, each label as wide as its buttons. */
-function bandsFor(c: Criterion) {
-  const counts = [0, 0, 0, 0];
-  for (let v = MIN_POINTS; v <= c.maxScore; v++) counts[band(v, c.maxScore)]++;
-  const cols = counts.filter(Boolean).map(n => `${n}fr`).join(" ");
-  return `<div class="bands" style="grid-template-columns:${cols}" aria-hidden="true">${counts.map((n, i) => (n ? `<span class="b${i}">${BAND_LABELS[i]}</span>` : "")).join("")}</div>`;
+function select(teamId: number, scroll = true) {
+  selTeam = teamId;
+  failure = null;
+  formKey = "";
+  if (scroll) window.scrollTo({ top: 0, behavior: "smooth" });
 }
-function render() {
-  if (!S) return;
-  if (!S.teams.length) { main.innerHTML = `<p class="empty">Komanda siyahısı hələ boşdur.</p>`; dock.hidden = true; return; }
-  if (selTeam == null || !S.teams.some(t => t.id === selTeam)) selTeam = S.stage.team?.id ?? S.teams[0].id;
-  const team = S.teams.find(t => t.id === selTeam)!;
-  const idx = S.teams.indexOf(team) + 1;
-  const d = draftFor(team.id);
-  const locked = S.locked;
 
+// ---------- header ----------
+function renderHead() {
+  if (!S) return;
+  const onStage = S.stage.team;
   const chips = S.teams.map((t, i) => {
     const saved = mine.get(t.id);
     const done = !!saved && isComplete(saved.values, S!.criteria);
     const dirty = drafts.get(t.id)?.dirty;
-    return `<button class="chip" data-team="${t.id}" aria-pressed="${t.id === team.id}">
-      <span class="n">${i + 1}</span>${esc(t.name)}
-      ${t.id === S!.stage.team?.id ? `<span class="live">Səhnədə</span>` : ""}
-      ${dirty ? `<span class="draft" title="Göndərilməmiş dəyişiklik"></span>` : done ? `<span class="done" aria-label="göndərilib">${icon("check")}</span>` : ""}
+    const isStage = t.id === onStage?.id;
+    return `<button class="chip" data-team="${t.id}" aria-pressed="${t.id === selTeam}" aria-label="${esc(t.name)}${isStage ? ", səhnədə" : ""}${done ? ", göndərilib" : ""}">
+      ${isStage ? `<span class="livedot" aria-hidden="true"></span>` : ""}#${String(i + 1).padStart(2, "0")} <b>${esc(t.name)}</b>
+      ${dirty ? `<span class="draft" title="Göndərilməmiş dəyişiklik"></span>` : done ? `<span class="done">${icon("check")}</span>` : ""}
     </button>`;
   }).join("");
+  const sig = `${S.me.displayName}|${onStage?.id}|${online}`;
+  if (head.dataset.sig !== sig) {
+    head.dataset.sig = sig;
+    head.innerHTML = `<div class="wrap narrow">
+      <div class="r1">
+        <div class="ttl">
+          <div class="t"><b>Canlı qiymətləndirmə</b>${onStage ? `<span class="pill live">Səhnədə</span>` : ""}</div>
+          <small>Münsif: ${esc(S.me.displayName)}</small>
+        </div>
+        <div class="tools">
+          <span class="conn ${online ? "online" : "offline"}" id="conn">${online ? "Canlı" : "Oflayn"}</span>
+          <span class="avatar" title="${esc(S.me.displayName)}" aria-hidden="true">${esc(initials(S.me.displayName))}</span>
+        </div>
+      </div>
+      <div class="chips" id="chips" role="group" aria-label="Komandalar"></div>
+    </div>`;
+  }
+  const box = $("#chips");
+  box.innerHTML = chips;
+  box.querySelector<HTMLElement>('[aria-pressed="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+// ---------- main ----------
+function teamOf(id: number | null): AdminTeam | null { return S?.teams.find(t => t.id === id) ?? null; }
+const fmtEntry = (v: number) => (Math.round(v * 100) / 100).toFixed(1);
+
+function render() {
+  if (!S) return;
+  renderHead();
+  if (!S.teams.length) { main.innerHTML = `<p class="empty">Komanda siyahısı hələ boşdur.</p>`; dock.hidden = true; return; }
+  if (selTeam == null || !S.teams.some(t => t.id === selTeam)) selTeam = S.stage.team?.id ?? S.teams[0].id;
+  const team = teamOf(selTeam)!;
+  const idx = S.teams.indexOf(team);
+  const d = draftFor(team.id);
+  const locked = S.locked;
+  const onStage = S.stage.team?.id === team.id;
 
   const critSig = S.criteria.map(c => `${c.key}:${c.maxScore}:${c.name}:${c.description}`).join("|");
-  const key = [team.id, team.name, team.project, team.entryScore, S.entryMax, critSig, d.base, locked, S.me.displayName].join("§");
+  const key = [team.id, team.name, team.project, team.entryScore, S.entryMax, critSig, d.base, locked, S.feedbackTags.join("|"),
+    S.stage.team?.id, S.stage.team?.name, S.showJurorTotal].join("§");
   if (key !== formKey) {
     formKey = key;
+    const other = S.stage.team && !onStage ? S.stage.team : null;
     main.innerHTML = `
-      <div class="row between" style="margin-bottom:12px">
-        <div class="row" style="gap:8px"><h3>Münsif</h3><b>${esc(S.me.displayName)}</b></div>
-        <span class="sub" style="margin:0">Hər meyar üzrə ${MIN_POINTS}-dən maksimum bala qədər · cəmi ${demoMax(S.criteria)} bal</span>
+      <div id="nudgeBox"></div>
+      ${locked ? `<div class="banner lock">${icon("lock")}<span>Qiymətləndirmə koordinator tərəfindən bağlanıb. Ballarınıza yalnız baxa bilərsiniz.</span></div>` : ""}
+      <section class="bento fade" aria-label="Komanda">
+        <div class="top-r">
+          ${onStage ? `<span class="pill live">Səhnədə · Canlı</span>`
+            : other ? `<button class="pill" data-team="${other.id}" style="cursor:pointer">Səhnədə: #${other.index} ${esc(other.name)} ${icon("next")}</button>`
+            : `<span class="pill">Səhnə boşdur</span>`}
+          <span class="pill">${icon("users")}${idx + 1} / ${S.teams.length} komanda</span>
+        </div>
+        <div class="id">
+          <div class="nm">
+            <div class="t"><span class="tagno">#${String(idx + 1).padStart(2, "0")}</span><h1>${esc(team.name)}</h1></div>
+            ${team.project ? `<p>${esc(team.project)}</p>` : ""}
+          </div>
+          <span class="teamicon" aria-hidden="true">${esc(initials(team.name))}</span>
+        </div>
+        <div class="minis">
+          <div class="mini" id="tmini"></div>
+          <div class="mini">
+            <div class="lb"><span>Giriş balı</span>${icon("medal")}</div>
+            <div class="v"><b>${team.entryScore != null ? fmtEntry(team.entryScore) : "—"}</b><span>/ ${fmtEntry(S.entryMax)}</span></div>
+            <small>${team.entryScore != null ? `${icon("check")}Münsif üçün açıq` : "Yazılmayıb"}</small>
+          </div>
+        </div>
+        <div class="privacy"><span>${icon("shield")}Digər münsiflərin balları gizlidir</span><span id="syncln" class="${online ? "ok-t" : "warn-t"}">● ${online ? "Sinxron aktiv" : "Oflayn"}</span></div>
+      </section>
+      <section class="totalcard" id="total" aria-live="polite"></section>
+      ${S.criteria.map((c, i) => `
+      <section class="crit${validValue(c, d.values[c.key]) ? " done" : ""}" data-crit="${esc(c.key)}">
+        <div class="ch">
+          <div class="t"><span class="num">${i + 1}</span><b id="cl-${esc(c.key)}">${esc(c.name)}</b></div>
+          <span class="w"><span>Maks:</span> ${c.maxScore}</span>
+        </div>
+        ${c.description ? `<p>${esc(c.description)}</p>` : ""}
+        <div class="scale" role="group" aria-labelledby="cl-${esc(c.key)}">${Array.from({ length: c.maxScore - MIN_POINTS + 1 }, (_, k) => k + MIN_POINTS).map(v =>
+          `<button type="button" data-c="${esc(c.key)}" data-v="${v}" aria-pressed="${d.values[c.key] === v}" aria-label="${esc(c.name)}: ${v} / ${c.maxScore}" ${locked ? "disabled" : ""}>${v}</button>`).join("")}</div>
+      </section>`).join("")}
+      ${S.feedbackTags.length ? `
+      <section class="qchips" aria-labelledby="qcl">
+        <span class="caps" id="qcl">Sürətli rəyləriniz (çoxseçimli)</span>
+        <div class="list" id="qlist"></div>
+      </section>` : ""}
+      <section class="notes">
+        <div class="ch"><label for="note">${icon("lock")}<span>Münsif qeydləri (yalnız sizin üçündür)</span></label><span class="opt">Könüllü</span></div>
+        <textarea id="note" maxlength="${NOTE_MAX}" placeholder="Komandanın təqdimatı və ya sual-cavab mərhələsi haqqında şəxsi mülahizələriniz…" ${locked ? "disabled" : ""}>${esc(d.note)}</textarea>
+        <div class="foot"><span>${icon("check")}Bu cihazda avtomatik saxlanılır</span><span id="ncount">${d.note.length} / ${NOTE_MAX} simvol</span></div>
+      </section>
+      <div class="jacts">
+        <button class="btn" id="reset" ${locked ? "disabled" : ""}>${icon("undo")}Sıfırla</button>
+        <button class="btn" id="prev" ${idx > 0 ? "" : "disabled"}>${icon("back")}Əvvəlki komanda</button>
       </div>
-      <div class="chips" id="chips" role="group" aria-label="Komandalar">${chips}</div>
-      ${locked ? `<div class="banner lock" style="margin-top:12px">${icon("lock")}<span>Qiymətləndirmə koordinator tərəfindən bağlanıb. Ballarınıza yalnız baxa bilərsiniz.</span></div>` : ""}
-      <div class="card fade" style="margin-top:12px">
-        <div class="pad teamhead">
-          <div style="min-width:0">
-            <h3>Komanda ${idx} / ${S.teams.length}</h3>
-            <h2>${esc(team.name)}</h2>
-            ${team.project ? `<p class="sub">${esc(team.project)}</p>` : ""}
-            ${team.entryScore != null ? `<p class="entry">Giriş balı <b class="mono">${(Math.round(team.entryScore * 100) / 100).toString()}</b> <span>/ ${S.entryMax}</span></p>` : ""}
-          </div>
-          <div id="fstat"></div>
-        </div>
-        <div>${S.criteria.map(c => `
-          <div class="crit">
-            <div class="ch"><b id="cl-${esc(c.key)}">${esc(c.name)}</b><span class="w">maks. ${c.maxScore}</span></div>
-            ${c.description ? `<p>${esc(c.description)}</p>` : ""}
-            <div class="scale" style="--n:${c.maxScore}" role="group" aria-labelledby="cl-${esc(c.key)}">${Array.from({ length: c.maxScore - MIN_POINTS + 1 }, (_, k) => k + MIN_POINTS).map(v =>
-              `<button type="button" data-c="${esc(c.key)}" data-v="${v}" aria-pressed="${d.values[c.key] === v}" aria-label="${esc(c.name)}: ${v} / ${c.maxScore}" ${locked ? "disabled" : ""}>${v}</button>`).join("")}</div>
-            ${bandsFor(c)}
-          </div>`).join("")}
-          <div class="crit">
-            <div class="ch"><b><label for="note">Şərh</label></b><span class="w">istəyə bağlı</span></div>
-            <textarea id="note" maxlength="2000" placeholder="Komandaya rəy, güclü tərəflər, risklər…" ${locked ? "disabled" : ""}>${esc(d.note)}</textarea>
-          </div>
-        </div>
-      </div>`;
-  } else {
-    $("#chips").innerHTML = chips;
+      <p class="openline${locked ? " lock" : ""}">${locked ? "Qiymətləndirmə bağlıdır" : "Səsvermə açıqdır · dəyişiklik edilə bilər"}</p>`;
+    strip.tick();
   }
+  renderNudge();
+  renderTags();
+  renderTotal();
   renderDock();
+}
+
+function renderTimer(v: TimerView, s: StagePayload) {
+  const box = document.getElementById("tmini");
+  if (!box || !S) return;
+  const onStage = s.team && s.team.id === selTeam;
+  if (!onStage || v.kind === "idle") {
+    const sig = `off|${onStage}`;
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    box.innerHTML = `<div class="lb"><span>${onStage ? "Taymer" : "Səhnə"}</span>${icon("timer")}</div>
+      <div class="v idle"><b>${onStage ? "Hazırlanır" : "Növbədə deyil"}</b></div>
+      <small style="color:var(--muted)">${onStage ? "Taymer başlamayıb" : "Bu komanda səhnədə deyil"}</small>`;
+    return;
+  }
+  if (box.dataset.sig !== "on") {
+    box.dataset.sig = "on";
+    box.innerHTML = `<div class="lb"><span id="tk"></span>${icon("timer")}</div>
+      <div class="v" id="tv"><b id="tt"></b><span id="tq"></span></div>
+      <div class="progress"><i id="tb"></i></div>`;
+  }
+  const paused = !v.running && v.kind !== "done";
+  $("#tk").textContent = v.ready ? "Hazır" : `${PHASE_LABEL[v.kind]}${paused ? " · fasilə" : ""}`;
+  $("#tt").textContent = fmtClock(v.remaining);
+  $("#tq").textContent = v.kind === "done" ? "" : "qalıb";
+  $("#tv").className = `v${v.kind === "done" ? " over" : v.remaining <= 30 && !v.ready ? " warn" : ""}`;
+  $("#tb").style.width = `${Math.max(0, Math.min(100, (v.remainingExact / v.phaseTotal) * 100))}%`;
+}
+strip.onTick(renderTimer);
+
+function renderTotal() {
+  const box = document.getElementById("total");
+  if (!box || !S || selTeam == null) return;
+  const d = draftFor(selTeam);
+  const all = S.criteria.length;
+  const filled = filledCount(d);
+  if (S.showJurorTotal) {
+    const t = jurorTotal(d.values, S.criteria);
+    box.innerHTML = `<div class="k"><b>Cari münsif xalı</b><small>${all} meyarın cəmi</small></div>
+      <div class="v"><b>${t ?? S.criteria.reduce((a, c) => a + (validValue(c, d.values[c.key]) ? d.values[c.key] : 0), 0)}</b><span>/ ${demoMax(S.criteria)} bal</span></div>`;
+  } else {
+    box.innerHTML = `<div class="k"><b>Doldurulub</b><small>Bütün meyarlara bal verin</small></div>
+      <div class="v"><b>${filled}</b><span>/ ${all} meyar</span></div>`;
+  }
+  main.querySelectorAll<HTMLElement>("[data-crit]").forEach(el => {
+    const c = S!.criteria.find(x => x.key === el.dataset.crit);
+    el.classList.toggle("done", !!c && validValue(c, d.values[c.key]));
+  });
+}
+
+function renderTags() {
+  const box = document.getElementById("qlist");
+  if (!box || !S || selTeam == null) return;
+  const d = draftFor(selTeam);
+  box.innerHTML = S.feedbackTags.map(t => {
+    const on = d.tags.includes(t);
+    return `<button type="button" class="qchip" data-tag="${esc(t)}" aria-pressed="${on}" ${S!.locked ? "disabled" : ""}>${icon(on ? "check" : "plus")}${esc(t)}</button>`;
+  }).join("");
+}
+
+function renderNudge() {
+  const box = document.getElementById("nudgeBox");
+  if (!box) return;
+  if (!nudge || mine.has(nudge.teamId)) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="nudge" role="alert">${icon("bell")}<div><b>Koordinator xatırladır</b>#${nudge.index} ${esc(nudge.teamName)} üçün qiymətinizi göndərin.</div>
+    <button type="button" id="nudgeX" aria-label="Bağla">${icon("close")}</button></div>`;
 }
 
 function renderDock() {
@@ -174,36 +308,30 @@ function renderDock() {
   const d = draftFor(selTeam);
   const saved = mine.get(selTeam);
   const all = S.criteria.length;
-  const filled = S.criteria.filter(c => { const v = d.values[c.key]; return Number.isInteger(v) && v >= MIN_POINTS && v <= c.maxScore; }).length;
+  const filled = filledCount(d);
   const complete = filled === all;
-  let st: string, pill: string;
-  if (S.locked) { st = "Qiymətləndirmə bağlanıb."; pill = `<span class="pill warn">Bağlıdır</span>`; }
+  let cls: string, title: string, line: string;
+  if (S.locked) { cls = "warn"; title = `${icon("lock")}Bağlıdır`; line = "Ballara yalnız baxa bilərsiniz."; }
   else if (failure && failure.teamId === selTeam) {
-    st = failure.network ? "Göndərilmədi. Qaralama bu cihazda saxlanılıb." : esc(failure.msg);
-    pill = `<span class="pill danger">Göndərilmədi</span>`;
+    cls = "err"; title = `${icon("warn")}Göndərilmədi`;
+    line = failure.network ? "Bağlantı yoxdur. Qaralama bu cihazda saxlanılıb." : esc(failure.msg);
   }
-  else if (d.dirty) { st = `${filled}/${all} meyar · yadda saxlanmayıb`; pill = `<span class="pill hot">Dəyişiklik var</span>`; }
-  else if (saved && isComplete(saved.values, S.criteria)) { st = `Göndərilib · ${hhmm(saved.updatedAt)}. Dəyişmək üçün balı yenidən seçin.`; pill = `<span class="pill ok">Göndərilib</span>`; }
-  else if (saved) { st = "Meyarlar dəyişib — bütün meyarlara yenidən bal verin."; pill = `<span class="pill warn">Yenidən qiymətləndirin</span>`; }
-  else { st = `${filled}/${all} meyar doldurulub`; pill = `<span class="pill">Qiymətləndirilməyib</span>`; }
-  const fs = document.getElementById("fstat");
-  if (fs) fs.innerHTML = pill;
+  else if (d.dirty) { cls = "warn"; title = `${icon("cloud")}Qaralama saxlanıldı`; line = `${filled}/${all} meyar · hələ göndərilməyib`; }
+  else if (saved && isComplete(saved.values, S.criteria)) { cls = "ok"; title = `${icon("check")}Göndərilib`; line = `Son sinx: ${hhmm(saved.updatedAt)}`; }
+  else if (saved) { cls = "warn"; title = `${icon("warn")}Yenidən qiymətləndirin`; line = "Meyarlar dəyişib, bütün meyarlara yenidən bal verin."; }
+  else { cls = "mute"; title = "Qiymətləndirilməyib"; line = `${filled}/${all} meyar doldurulub`; }
 
-  const total = S.showJurorTotal ? jurorTotal(d.values, S.criteria) : null;
-  const left = S.showJurorTotal
-    ? `<b>${total != null ? total : "—"}</b><span>/ ${demoMax(S.criteria)}</span>`
-    : `<b>${filled}/${all}</b><span>meyar</span>`;
   const can = !S.locked && !sending && complete && (d.dirty || !!(failure && failure.teamId === selTeam));
-  let label = saved ? "Yenilə" : "Göndər";
-  let cls = "btn primary";
+  let label = `${saved ? "Yenilə və göndər" : "Təsdiqlə və göndər"} ${icon("send")}`;
+  let bcls = "btn primary";
   if (sending) label = "Göndərilir…";
-  else if (justSent === selTeam) { label = `Göndərildi ${icon("check")}`; cls += " sent"; }
+  else if (justSent === selTeam) { label = `Göndərildi ${icon("check")}`; bcls += " sent"; }
   else if (failure && failure.teamId === selTeam && failure.network) label = `${icon("retry")} Yenidən cəhd et`;
+  else if (saved && !d.dirty && isComplete(saved.values, S.criteria)) label = `Göndərilib ${icon("check")}`;
   dock.hidden = false;
-  dock.innerHTML = `<div class="wrap">
-    <div class="tot">${left}</div>
-    <div class="st" role="status">${st}</div>
-    <div class="acts"><button class="${cls}" id="submit" ${can ? "" : "disabled"}>${label}</button></div>
+  dock.innerHTML = `<div class="wrap narrow">
+    <div class="st ${cls}" role="status"><b>${title}</b><small>${line}</small></div>
+    <button class="${bcls}" id="submit" ${can ? "" : "disabled"}>${label}</button>
   </div>`;
 }
 
@@ -218,13 +346,14 @@ async function submit(teamId: number, quiet = false) {
   failure = null;
   renderDock();
   try {
-    const saved = await api<MyScore>(`/api/juror/scores/${teamId}`, { method: "PUT", body: { values, note: d.note.slice(0, 2000) } });
+    const saved = await api<MyScore>(`/api/juror/scores/${teamId}`, { method: "PUT", body: { values, note: d.note.slice(0, 2000), tags: d.tags } });
     mine.set(teamId, saved);
-    drafts.set(teamId, { values: { ...saved.values }, note: saved.note, dirty: false, base: saved.updatedAt });
+    drafts.set(teamId, { values: { ...saved.values }, note: saved.note, tags: [...(saved.tags ?? [])], dirty: false, base: saved.updatedAt });
     persist(teamId);
     justSent = teamId;
     setTimeout(() => { if (justSent === teamId) { justSent = null; renderDock(); } }, 1800);
     if (!quiet) toast("Qiymət göndərildi");
+    if (nudge?.teamId === teamId) nudge = null;
     formKey = "";
   } catch (e) {
     const err = e as ApiError;
@@ -233,7 +362,7 @@ async function submit(teamId: number, quiet = false) {
       failure = { teamId, msg: err.message, network: err.network };
       d.pending = err.network;
       persist(teamId);
-      if (!quiet) toast(err.network ? "Bağlantı yoxdur. Qaralama saxlanıldı — yenidən cəhd edin." : err.message, "err");
+      if (!quiet) toast(err.network ? "Bağlantı yoxdur. Qaralama saxlanıldı, yenidən cəhd edin." : err.message, "err");
     }
   } finally {
     sending = false;
@@ -251,35 +380,71 @@ async function retryPending() {
   }
 }
 
+function touched(teamId: number) {
+  const d = draftFor(teamId);
+  d.dirty = true;
+  if (failure?.teamId === teamId) failure = null;
+  persist(teamId);
+  reportProgress(teamId);
+}
+
 // ---------- events ----------
-main.addEventListener("click", e => {
+function onClick(e: Event) {
   const t = e.target as HTMLElement;
-  const chip = t.closest<HTMLElement>(".chip");
-  if (chip) {
-    selTeam = Number(chip.dataset.team);
-    formKey = "";
-    render();
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    return;
-  }
+  if (!S) return;
+  const chip = t.closest<HTMLElement>("[data-team]");
+  if (chip) { select(Number(chip.dataset.team)); render(); return; }
+  if (selTeam == null) return;
   const b = t.closest<HTMLButtonElement>(".scale button");
-  if (b && !b.disabled && selTeam != null) {
+  if (b && !b.disabled) {
     const d = draftFor(selTeam);
     d.values[b.dataset.c!] = Number(b.dataset.v);
-    d.dirty = true;
     b.parentElement!.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
-    if (failure?.teamId === selTeam) failure = null;
-    persist(selTeam);
-    render();
+    touched(selTeam);
+    renderHead();
+    renderTotal();
+    renderDock();
+    return;
   }
-});
+  const q = t.closest<HTMLButtonElement>(".qchip");
+  if (q && !q.disabled) {
+    const d = draftFor(selTeam);
+    const tag = q.dataset.tag!;
+    d.tags = d.tags.includes(tag) ? d.tags.filter(x => x !== tag) : [...d.tags, tag];
+    touched(selTeam);
+    renderTags();
+    renderHead();
+    renderDock();
+    return;
+  }
+  if (t.closest("#reset")) {
+    const d = drafts.get(selTeam);
+    if (!d?.dirty) { toast("Dəyişiklik yoxdur"); return; }
+    drafts.delete(selTeam);
+    persist(selTeam);
+    if (failure?.teamId === selTeam) failure = null;
+    formKey = "";
+    render();
+    reportProgress(selTeam);
+    toast(mine.has(selTeam) ? "Göndərilmiş ballara qaytarıldı" : "Ballar təmizləndi");
+    return;
+  }
+  if (t.closest("#prev")) {
+    const i = S.teams.findIndex(x => x.id === selTeam);
+    if (i > 0) { select(S.teams[i - 1].id); render(); }
+    return;
+  }
+  if (t.closest("#nudgeX")) { nudge = null; renderNudge(); }
+}
+main.addEventListener("click", onClick);
+head.addEventListener("click", onClick);
 main.addEventListener("input", e => {
   const el = e.target as HTMLTextAreaElement;
   if (el.id !== "note" || selTeam == null) return;
   const d = draftFor(selTeam);
   d.note = el.value;
-  d.dirty = true;
-  persist(selTeam);
+  touched(selTeam);
+  $("#ncount").textContent = `${el.value.length} / ${NOTE_MAX} simvol`;
   renderDock();
 });
 dock.addEventListener("click", e => {
@@ -287,7 +452,7 @@ dock.addEventListener("click", e => {
 });
 window.addEventListener("online", () => retryPending());
 
-live({
+const sock = live({
   role: "juror",
   on: {
     "stage:changed": (s: StagePayload) => onStage(s),
@@ -306,10 +471,22 @@ live({
       if (d && !d.dirty) drafts.delete(s.teamId);
       render();
     },
+    nudge: (p: Nudge) => {
+      nudge = p;
+      try { navigator.vibrate?.([220, 120, 220]); } catch { /* unsupported */ }
+      if (selTeam !== p.teamId && !(selTeam != null && drafts.get(selTeam)?.dirty)) select(p.teamId);
+      render();
+    },
     "config:changed": () => load(),
   },
   resync: async () => { await load(); retryPending(); },
-  status: online => bar.setOnline(online),
+  status: o => {
+    online = o;
+    if (!S) return;
+    renderHead();
+    const ln = document.getElementById("syncln");
+    if (ln) { ln.className = o ? "ok-t" : "warn-t"; ln.textContent = `● ${o ? "Sinxron aktiv" : "Oflayn"}`; }
+  },
 });
 
 // ---------- keep the screen awake while scoring ----------

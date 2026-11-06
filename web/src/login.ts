@@ -1,10 +1,12 @@
 import "./styles.css";
 import { api, ApiError } from "./lib/api";
 import { $, esc } from "./lib/dom";
-import { initTheme, themeSwitch } from "./lib/theme";
+import { brandHtml } from "./lib/topbar";
 
-initTheme();
-themeSwitch($("#themeSw"));
+api<{ eventName: string }>("/api/stage").then(s => {
+  $("#brand").innerHTML = brandHtml(s.eventName);
+  document.title = `Daxil ol · ${s.eventName}`;
+}).catch(() => { /* offline */ });
 
 // This browser may already hold an admin and/or juror session: offer a way back instead of a re-login.
 api<{ sessions: Array<{ role: "admin" | "juror"; displayName: string }> }>("/api/auth/me").then(me => {
@@ -12,7 +14,7 @@ api<{ sessions: Array<{ role: "admin" | "juror"; displayName: string }> }>("/api
   const box = $("#already");
   box.innerHTML = `<b>Bu brauzerdə artıq daxil olmusunuz:</b><div class="row" style="margin-top:8px">${me.sessions.map(s =>
     `<a class="btn sm" href="${s.role === "admin" ? "/admin" : "/juror"}">${esc(s.displayName)} · ${s.role === "admin" ? "Canlı panel" : "Münsif paneli"} →</a>`).join("")}</div>
-    <p class="sub" style="margin:8px 0 0">Başqa hesabla daxil olmaq üçün aşağıdakı formdan istifadə edin.</p>`;
+    <p class="sub" style="margin:8px 0 0">Koordinator kimi daxil olmaq üçün aşağıdakı formdan istifadə edin.</p>`;
   box.hidden = false;
 }).catch(() => { /* not logged in */ });
 

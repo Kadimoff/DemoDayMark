@@ -1,4 +1,5 @@
-// "Səhnədə" strip: team on stage + the shared pitch timer. Used by juror and admin panels.
+// Team on stage + the shared pitch timer, ticking 4×/s. With a root element it renders the compact
+// "Səhnədə" strip; without one it only drives onTick() listeners (juror and admin panels draw their own cards).
 import { fmtClock, timerView, type TimerView } from "../../../shared/timer";
 import type { StagePayload, TimerState } from "../../../shared/types";
 import { now, syncClock } from "./clock";
@@ -11,9 +12,11 @@ export class StageStrip {
   private lastTeamKey = "";
   private lastKind = "";
   private listeners: Array<(v: TimerView, s: StagePayload) => void> = [];
-  private els: { who: HTMLElement; timer: HTMLElement; k: HTMLElement; t: HTMLElement; bar: HTMLElement; sr: HTMLElement };
+  private els: { who: HTMLElement; timer: HTMLElement; k: HTMLElement; t: HTMLElement; bar: HTMLElement; sr: HTMLElement } | null = null;
 
-  constructor(root: HTMLElement, wide = false) {
+  constructor(root: HTMLElement | null, wide = false) {
+    setInterval(() => this.tick(), 250);
+    if (!root) return;
     root.className = "stage";
     root.innerHTML = `<div class="wrap${wide ? " wide" : ""}">
       <div style="min-width:0">
@@ -31,7 +34,6 @@ export class StageStrip {
       who: root.querySelector(".who")!, timer: root.querySelector(".timer")!, k: root.querySelector(".k")!,
       t: root.querySelector(".t")!, bar: root.querySelector(".bar i")!, sr: root.querySelector(".sr-only")!,
     };
-    setInterval(() => this.tick(), 250);
   }
 
   onTick(fn: (v: TimerView, s: StagePayload) => void) { this.listeners.push(fn); }
@@ -42,7 +44,7 @@ export class StageStrip {
     this.stage = stage;
     const t = stage.team;
     const key = t ? `${t.id}|${t.name}|${t.project}|${t.index}` : "";
-    if (key !== this.lastTeamKey) {
+    if (key !== this.lastTeamKey && this.els) {
       this.els.who.innerHTML = t
         ? `<span class="ix">#${t.index}</span>${esc(t.name)}${t.project ? `<small>${esc(t.project)}</small>` : ""}`
         : "Komanda seçilməyib";
@@ -67,6 +69,7 @@ export class StageStrip {
     const s = this.stage;
     if (!s) return;
     const v = timerView(s.timer, now());
+    if (!this.els) { for (const fn of this.listeners) fn(v, s); return; }
     const box = this.els.timer;
     box.hidden = v.kind === "idle";
     if (v.kind !== "idle") {

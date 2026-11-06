@@ -312,7 +312,7 @@ function apply(next: RevealPublic) {
   ceremony++;
   stopWinner();
   fxFront.embers(0, []);
-  el.ev.textContent = next.eventName || "Demo Day";
+  el.ev.textContent = next.eventName || "DemoDay";
   if (!next.enabled) { waiting(); renderButtons(); return; }
   if (boardTotal !== next.total) buildBoard(next.total);
   el.title.textContent = next.done ? "Qaliblər" : "Nəticələr";

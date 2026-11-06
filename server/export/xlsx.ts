@@ -1,11 +1,12 @@
 import ExcelJS from "exceljs";
+import { brandName, brandSlug } from "../../shared/brand.js";
 import type { Config } from "../config.js";
 import type { Repo } from "../repo.js";
 import { adminResults } from "../views.js";
 
-export function exportFileName(date: string, suffix: string) {
+export function exportFileName(prefix: string, date: string, suffix: string) {
   const d = date.trim().replace(/[^0-9A-Za-z.-]+/g, "-").replace(/^-|-$/g, "") || new Date().toISOString().slice(0, 10);
-  return `Ignite_DemoDay_${d}_${suffix}`;
+  return `${brandSlug(prefix)}_${d}_${suffix}`;
 }
 
 const fmtTime = (ms: number) => {
@@ -27,7 +28,7 @@ export async function buildXlsx(repo: Repo, cfg: Config): Promise<Buffer> {
   const ev = repo.getEvent();
   const { results, jurors, criteria, teams, scores } = adminResults(repo, cfg);
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Ignite Demo Day";
+  wb.creator = brandName(ev.name);
   wb.created = new Date();
   const num = "0.00";
 
@@ -58,15 +59,16 @@ export async function buildXlsx(repo: Repo, cfg: Config): Promise<Buffer> {
 
   // 3. Bütün qiymətlər
   const s3 = wb.addWorksheet("Bütün qiymətlər");
-  s3.addRow(["Münsif", "Komanda", ...criteria.map(critHead), `Cəmi (${D})`, "Şərh", "Vaxt"]);
+  s3.addRow(["Münsif", "Komanda", ...criteria.map(critHead), `Cəmi (${D})`, "Sürətli rəylər", "Şərh", "Vaxt"]);
   const teamName = new Map(teams.map(t => [t.id, t.name]));
   const jurorName = new Map(jurors.map(j => [j.id, j.displayName]));
   for (const s of scores) {
     s3.addRow([jurorName.get(s.jurorId) ?? "?", teamName.get(s.teamId) ?? "?", ...criteria.map(c => s.values[c.key] ?? null),
-      s.total, s.note, fmtTime(s.updatedAt)]);
+      s.total, s.tags.join(", "), s.note, fmtTime(s.updatedAt)]);
   }
-  styleSheet(s3, 1, [22, 24, ...criteria.map(() => 14), 12, 60, 18]);
+  styleSheet(s3, 1, [22, 24, ...criteria.map(() => 14), 12, 34, 60, 18]);
   s3.getColumn(criteria.length + 4).alignment = { wrapText: true, vertical: "top" };
+  s3.getColumn(criteria.length + 5).alignment = { wrapText: true, vertical: "top" };
 
   // 4. Meyarlar və formula
   const s4 = wb.addWorksheet("Meyarlar");
@@ -81,7 +83,7 @@ export async function buildXlsx(repo: Repo, cfg: Config): Promise<Buffer> {
     : `Yekun bal = Demo Day balı (giriş balı yekuna daxil edilmir).`]);
   s4.addRow(["", `Bərabərlikdə əvvəlcə Demo Day balı, sonra meyarların orta balı həlledicidir (${results.tieBreakKeys.map(k => criteria.find(c => c.key === k)?.name).join(" → ")}).`]);
   s4.addRow([]);
-  s4.addRow(["Tədbir", `${ev.name} · ${ev.date}`]);
+  s4.addRow(["Tədbir", `${brandName(ev.name)} · ${ev.date}`]);
   styleSheet(s4, 1, [28, 90, 14]);
   s4.getColumn(2).alignment = { wrapText: true, vertical: "top" };
 

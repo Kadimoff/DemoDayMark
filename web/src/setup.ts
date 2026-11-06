@@ -1,19 +1,22 @@
 import "./styles.css";
+import { brandName, isPlaceholderName } from "../../shared/brand";
 import { fmtClock } from "../../shared/timer";
-import type { AdminTeam, Criterion, Juror, ScoreRow, TimerState } from "../../shared/types";
+import type { AdminTeam, Criterion, Juror, ScoreRow, StagePayload, TimerState } from "../../shared/types";
 import { api, ApiError } from "./lib/api";
-import { $, esc, icon, toast } from "./lib/dom";
-import { topbar } from "./lib/topbar";
+import { $, esc, icon, initials, toast } from "./lib/dom";
+import { createJuror, jurorJoined, onQrChange, reissue } from "./lib/qr";
+import { live } from "./lib/socket";
+import { brandHtml, topbar } from "./lib/topbar";
 
 interface EventState {
   name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean;
-  includeEntry: boolean; entryMax: number;
+  includeEntry: boolean; entryMax: number; feedbackTags: string[];
 }
-interface SetupState { event: EventState; teams: AdminTeam[]; criteria: Criterion[]; scores: ScoreRow[] }
+interface SetupState { event: EventState; stage: StagePayload; teams: AdminTeam[]; criteria: Criterion[]; scores: ScoreRow[] }
 
 /** 41.666… → "41.67"; null → "" (input value). */
 const entryValue = (v: number | null) => (v == null ? "" : String(Math.round(v * 100) / 100));
-type JurorRow = Juror & { sessionCount: number };
+type JurorRow = Juror & { sessionCount: number; claimed: boolean };
 
 const bar = topbar({
   role: "admin",
@@ -21,8 +24,9 @@ const bar = topbar({
     { href: "/admin", label: "Canlı panel" },
     { href: "/admin/setup", label: "Quraşdırma", current: true },
     { href: "/timer", label: "Taymer", external: true },
-    { href: "/reveal", label: "Açıqlama", external: true },
+    { href: "/reveal", label: "Nəticə açıqlaması", external: true },
   ],
+  wide: true,
 });
 const main = $("#main");
 
@@ -36,11 +40,9 @@ async function load() {
     const [st, js] = await Promise.all([api<SetupState>("/api/admin/state"), api<JurorRow[]>("/api/admin/jurors")]);
     S = st;
     jurors = js;
-    bar.setOnline(true);
-    bar.setEventName(st.event.name);
+    bar.setEventName(st.stage.eventName);
     render();
   } catch (e) {
-    bar.setOnline(false);
     main.innerHTML = `<div class="banner err">${esc((e as Error).message)}</div>`;
   }
 }
@@ -50,14 +52,6 @@ const parseClock = (v: string) => {
   if (!m) return null;
   return m[2] != null ? Number(m[1]) * 60 + Number(m[2]) : Number(m[1]) * 60;
 };
-
-/** Short readable password suggestion, e.g. "kora-tumi-47". */
-function suggestPassword() {
-  const c = "bdfgklmnprstvz", v = "aeiou";
-  const r = (s: string) => s[crypto.getRandomValues(new Uint32Array(1))[0] % s.length];
-  const syl = () => r(c) + r(v) + r(c) + r(v);
-  return `${syl()}-${syl()}-${String(crypto.getRandomValues(new Uint32Array(1))[0] % 90 + 10)}`;
-}
 
 const scoreCount = (teamId: number) => S?.scores.filter(s => s.teamId === teamId).length ?? 0;
 const confirmRow = (kind: string, id: number) =>
@@ -74,13 +68,15 @@ function render() {
   const msum = S.criteria.reduce((a, c) => a + c.maxScore, 0);
   main.innerHTML = `
     <div class="stack">
-      <div><h2>Quraşdırma</h2><p class="sub">Hər sahə xanadan çıxanda yadda saxlanılır və bütün ekranlarda dərhal yenilənir.</p></div>
+      <div><h1>Quraşdırma</h1><p class="sub">Hər sahə xanadan çıxanda yadda saxlanılır və bütün ekranlarda dərhal yenilənir.</p></div>
 
       <section class="card pad stack" aria-labelledby="h-ev">
         <div class="row between"><h3 id="h-ev">Tədbir və taymer</h3><span class="saved" id="evSaved"></span></div>
         <form id="evForm" class="stack" novalidate>
           <div class="row" style="align-items:flex-start">
-            <div style="flex:2 1 240px"><label class="f" for="evName">Tədbirin adı</label><input type="text" id="evName" value="${esc(ev.name)}" maxlength="120" required></div>
+            <div style="flex:2 1 240px"><label class="f" for="evName">Brend / prefiks (istəyə bağlı)</label>
+              <div class="row" style="flex-wrap:nowrap;gap:8px"><input type="text" id="evName" value="${esc(ev.name)}" maxlength="40" placeholder="məs. Ignite" autocomplete="off">
+              <span class="brandprev" aria-live="polite"><span class="flame" style="width:9px;height:9px;border-radius:50%;background:var(--accent)"></span><b id="evPrev">${brandHtml(brandName(ev.name))}</b></span></div></div>
             <div style="flex:1 1 140px"><label class="f" for="evDate">Tarix</label><input type="text" id="evDate" value="${esc(ev.date)}" maxlength="40" placeholder="29.10.2026"></div>
             <div style="flex:1 1 110px"><label class="f" for="evPitch">Pitch (dəq:san)</label><input type="text" id="evPitch" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.pitchSec)}"></div>
             <div style="flex:1 1 110px"><label class="f" for="evQa">Sual-cavab (dəq:san)</label><input type="text" id="evQa" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.qaSec)}"></div>
@@ -126,35 +122,39 @@ function render() {
       </section>
 
       <section class="card pad stack" aria-labelledby="h-jur">
-        <div class="row between"><h3 id="h-jur">Münsiflər (${jurors.length})</h3></div>
-        <p class="sub" style="margin:0">Hər münsifin istifadəçi adını və şifrəsini siz təyin edirsiniz. Şifrə dəyişəndə münsifin açıq sessiyaları bağlanır.</p>
-        <div class="ed jur">
-          ${jurors.map(j => `
-          <div class="er jrow ${j.active ? "" : "off"}" data-row="jurors:${j.id}">
-            <div><label class="f" for="jn-${j.id}">Görünən ad</label><input type="text" id="jn-${j.id}" data-k="displayName" value="${esc(j.displayName)}" maxlength="80"></div>
-            <div><label class="f" for="ju-${j.id}">İstifadəçi adı</label><input type="text" id="ju-${j.id}" data-k="username" value="${esc(j.username)}" maxlength="40" autocapitalize="none" spellcheck="false"></div>
-            <div class="pw"><label class="f" for="jp-${j.id}">Yeni şifrə</label>
-              <div class="row" style="flex-wrap:nowrap;gap:6px"><input type="text" id="jp-${j.id}" data-pw autocomplete="off" spellcheck="false" placeholder="ən azı 6 simvol">
-              <button type="button" class="btn sm" data-setpw>${icon("key")}Təyin et</button></div></div>
-            <div><span class="f">Aktiv</span><button type="button" class="sw" role="switch" data-active aria-checked="${j.active}" aria-label="${esc(j.displayName)} aktivdir"></button></div>
-            <div><span class="f">&nbsp;</span><button type="button" class="x del" data-del aria-label="${esc(j.displayName)} sil">${icon("trash")}</button></div>
-            <div class="meta">
-              <span>${j.sessionCount ? `${j.sessionCount} açıq sessiya` : "Açıq sessiya yoxdur"}</span>
+        <div class="row between"><h3 id="h-jur">Münsiflər (${jurors.length})</h3>
+          <button class="btn sm primary" id="addJuror">${icon("qr")}Münsif əlavə et (QR)</button></div>
+        <p class="sub" style="margin:0">Hər münsif üçün QR kod yaradın və ekranı münsifə yaxınlaşdırın. Münsif telefonla skan edib adını yazır, adı dərhal burada görünür.
+          QR bir dəfə işləyir. Telefon dəyişsə və ya əlaqə itsə, “Yeni QR” eyni hesab üçün yeni kod verir: ballar qorunur.</p>
+        <div class="jlist">
+          ${jurors.map(j => {
+            const waiting = !j.claimed;
+            return `
+          <div class="jrow2 ${j.active ? "" : "off"}" data-row="jurors:${j.id}">
+            <span class="ini ${waiting ? "wait" : ""}">${esc(initials(j.displayName))}</span>
+            <div class="mid">
+              <input type="text" data-k="displayName" value="${esc(j.displayName)}" maxlength="80" aria-label="Münsifin adı">
+              <small>${waiting ? `<span class="warn-t">QR gözləyir</span>` : `<span class="ok-t">Qoşulub</span>`}
+                <span>${j.sessionCount ? `${j.sessionCount} açıq sessiya` : "Açıq sessiya yoxdur"}</span><span class="saved" data-saved></span></small>
+            </div>
+            <div class="acts">
+              <button type="button" class="btn sm ${waiting ? "outline-acc" : ""}" data-qr>${icon("qr")}${waiting ? "QR göstər" : "Yeni QR"}</button>
               ${j.sessionCount ? `<button type="button" class="btn ghost sm" data-logout>Sessiyaları bağla</button>` : ""}
-              <span class="saved" data-saved></span>
+              <span class="f" style="margin:0">Aktiv</span><button type="button" class="sw" role="switch" data-active aria-checked="${j.active}" aria-label="${esc(j.displayName)} aktivdir"></button>
+              <button type="button" class="x del" data-del aria-label="${esc(j.displayName)} sil">${icon("trash")}</button>
             </div>
             ${confirmRow("jurors", j.id)}
-          </div>`).join("") || `<p class="note">Hələ münsif yoxdur. Aşağıdan əlavə edin.</p>`}
+          </div>`;
+          }).join("") || `<p class="note">Hələ münsif yoxdur. “Münsif əlavə et (QR)” düyməsi ilə başlayın.</p>`}
         </div>
-        <form class="newj" id="newJ" novalidate>
-          <div><label class="f" for="nj-name">Görünən ad</label><input type="text" id="nj-name" maxlength="80" placeholder="Əli Məmmədov" required></div>
-          <div><label class="f" for="nj-user">İstifadəçi adı</label><input type="text" id="nj-user" maxlength="40" autocapitalize="none" spellcheck="false" placeholder="ali" required></div>
-          <div><label class="f" for="nj-pw">Şifrə</label>
-            <div class="row" style="flex-wrap:nowrap;gap:6px"><input type="text" id="nj-pw" autocomplete="off" spellcheck="false" required>
-            <button type="button" class="btn sm ghost" id="genPw" title="Şifrə təklif et">Yarat</button></div></div>
-          <button class="btn primary" type="submit">${icon("plus")}Münsif əlavə et</button>
-          <p id="njErr" role="alert" style="grid-column:1/-1;color:var(--danger);margin:0;font-size:13px;font-weight:600"></p>
-        </form>
+      </section>
+
+      <section class="card pad stack" aria-labelledby="h-tags">
+        <div class="row between"><h3 id="h-tags">Sürətli rəy etiketləri</h3><span class="saved" id="tagSaved"></span></div>
+        <p class="sub" style="margin:0">Münsiflər bu etiketləri bir toxunuşla seçir. Seçilənlər münsifin şəxsi qeydi kimi saxlanılır və Excel/PDF hesabatlarına düşür.</p>
+        <div class="tagsed">${ev.feedbackTags.map((t, i) => `<span class="qchip">${esc(t)}<button type="button" data-tagdel="${i}" aria-label="${esc(t)} sil">${icon("close")}</button></span>`).join("") || `<span class="sub">Etiket yoxdur: münsif panelində bu bölmə gizlənəcək.</span>`}</div>
+        <form class="row" id="tagForm" novalidate style="flex-wrap:nowrap"><input type="text" id="tagNew" maxlength="60" placeholder="Yeni etiket, məs. Güclü MVP" style="max-width:360px">
+          <button class="btn sm" type="submit">${icon("plus")}Əlavə et</button></form>
       </section>
 
       <section class="card pad stack" aria-labelledby="h-cr">
@@ -269,7 +269,7 @@ main.addEventListener("change", async e => {
       }
       v = n;
     }
-  } else if (k === "name" || k === "displayName" || k === "username") {
+  } else if (k === "name" || k === "displayName") {
     if (!v) {
       toast("Bu sahə boş ola bilməz.", "err");
       const list = r.kind === "teams" ? S!.teams : r.kind === "criteria" ? S!.criteria : jurors;
@@ -298,7 +298,13 @@ main.addEventListener("click", async e => {
     return;
   }
 
-  if (t.closest("#genPw")) { $<HTMLInputElement>("#nj-pw").value = suggestPassword(); return; }
+  if (t.closest("#addJuror")) { createJuror(); return; }
+  const tagDel = t.closest<HTMLElement>("[data-tagdel]");
+  if (tagDel) {
+    const tags = S.event.feedbackTags.filter((_, i) => i !== Number(tagDel.dataset.tagdel));
+    await saveTags(tags);
+    return;
+  }
   if (t.closest("#evTotal")) {
     const sw = t.closest<HTMLElement>("#evTotal")!;
     sw.setAttribute("aria-checked", String(sw.getAttribute("aria-checked") !== "true"));
@@ -355,16 +361,9 @@ main.addEventListener("click", async e => {
     }
     return;
   }
-  if (t.closest("[data-setpw]")) {
-    const input = r.el.querySelector<HTMLInputElement>("[data-pw]")!;
-    const pw = input.value;
-    if (pw.length < 6) { toast("Şifrə ən azı 6 simvol olmalıdır.", "err"); input.focus(); return; }
-    if (await patchRow("jurors", r.id, { password: pw }, r.el)) {
-      input.value = "";
-      flashSaved(r.el, "Şifrə təyin edildi");
-      const j = jurors.find(x => x.id === r.id);
-      if (j?.sessionCount) { j.sessionCount = 0; setTimeout(render, 1900); }
-    }
+  if (t.closest("[data-qr]")) {
+    const j = jurors.find(x => x.id === r.id);
+    if (j) reissue(j);
     return;
   }
   if (t.closest("[data-logout]")) {
@@ -383,8 +382,7 @@ main.addEventListener("submit", async e => {
     const err = $("#evErr");
     const pitchSec = parseClock($<HTMLInputElement>("#evPitch").value);
     const qaSec = parseClock($<HTMLInputElement>("#evQa").value);
-    const name = $<HTMLInputElement>("#evName").value.trim();
-    if (!name) { err.textContent = "Tədbirin adı boş ola bilməz."; $("#evName").focus(); return; }
+    const name = $<HTMLInputElement>("#evName").value.trim().replace(/\s*demo\s*day\s*$/i, "");
     if (!pitchSec || pitchSec < 10) { err.textContent = "Pitch müddətini dəq:san formatında yazın, məs. 3:00."; $("#evPitch").focus(); return; }
     if (!qaSec || qaSec < 10) { err.textContent = "Sual-cavab müddətini dəq:san formatında yazın, məs. 2:00."; $("#evQa").focus(); return; }
     err.textContent = "";
@@ -393,28 +391,48 @@ main.addEventListener("submit", async e => {
         name, date: $<HTMLInputElement>("#evDate").value.trim(), pitchSec, qaSec,
         showJurorTotal: $("#evTotal").getAttribute("aria-checked") === "true",
       } });
-      bar.setEventName(name);
+      bar.setEventName(brandName(name));
+      $<HTMLInputElement>("#evName").value = name;
       const s = $("#evSaved"); s.textContent = "Saxlanıldı"; setTimeout(() => { s.textContent = ""; }, 1800);
       $<HTMLInputElement>("#evPitch").value = fmtClock(pitchSec);
       $<HTMLInputElement>("#evQa").value = fmtClock(qaSec);
     } catch (ex) { err.textContent = (ex as ApiError).message; }
     return;
   }
-  if (form.id === "newJ") {
-    const err = $("#njErr");
-    const displayName = $<HTMLInputElement>("#nj-name").value.trim();
-    const username = $<HTMLInputElement>("#nj-user").value.trim();
-    const password = $<HTMLInputElement>("#nj-pw").value;
-    if (!displayName) { err.textContent = "Görünən adı yazın."; $("#nj-name").focus(); return; }
-    if (!username) { err.textContent = "İstifadəçi adını yazın."; $("#nj-user").focus(); return; }
-    if (password.length < 6) { err.textContent = "Şifrə ən azı 6 simvol olmalıdır."; $("#nj-pw").focus(); return; }
-    try {
-      await api("/api/admin/jurors", { method: "POST", body: { displayName, username, password } });
-      toast(`${displayName} əlavə edildi. Giriş: ${username} / ${password}`);
-      await load();
-      $<HTMLInputElement>("#nj-name").focus();
-    } catch (ex) { err.textContent = (ex as ApiError).message; }
+  if (form.id === "tagForm") {
+    const input = $<HTMLInputElement>("#tagNew");
+    const v = input.value.trim().replace(/\s+/g, " ");
+    if (!v) { input.focus(); return; }
+    if (S!.event.feedbackTags.some(x => x.toLocaleLowerCase("az") === v.toLocaleLowerCase("az"))) { toast("Bu etiket artıq var", "err"); return; }
+    if (await saveTags([...S!.event.feedbackTags, v])) $<HTMLInputElement>("#tagNew").focus();
   }
+});
+
+async function saveTags(tags: string[]) {
+  try {
+    const r = await api<{ event: EventState }>("/api/admin/event", { method: "PATCH", body: { feedbackTags: tags } });
+    S!.event.feedbackTags = r.event.feedbackTags;
+    render();
+    const el = document.getElementById("tagSaved");
+    if (el) { el.textContent = "Saxlanıldı"; setTimeout(() => { el.textContent = ""; }, 1800); }
+    return true;
+  } catch (ex) { toast((ex as ApiError).message, "err"); return false; }
+}
+
+main.addEventListener("input", e => {
+  const el = e.target as HTMLInputElement;
+  if (el.id === "evName") $("#evPrev").innerHTML = brandHtml(brandName(el.value.replace(/\s*demo\s*day\s*$/i, "")));
+});
+
+onQrChange(() => load());
+live({
+  role: "admin",
+  on: {
+    "juror:joined": (p: { jurorId: number; displayName: string }) => { jurorJoined(p); load(); },
+    "presence:changed": () => { /* session counts refresh on the next load */ },
+  },
+  resync: load,
+  status: online => bar.setOnline(online),
 });
 
 load();
