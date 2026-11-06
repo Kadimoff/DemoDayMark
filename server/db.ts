@@ -111,6 +111,13 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE event ADD COLUMN reveal_top INTEGER NOT NULL DEFAULT 3;
   `,
+  // v6: event type (Hakaton / DemoDay), jurors' final order for the reveal, reveal display options
+  `
+  ALTER TABLE event ADD COLUMN product TEXT NOT NULL DEFAULT 'Hakaton';
+  ALTER TABLE event ADD COLUMN final_order_json TEXT;
+  ALTER TABLE event ADD COLUMN reveal_hide_scores INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE event ADD COLUMN reveal_batch INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 export function openDb(file: string): DB {

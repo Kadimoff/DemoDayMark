@@ -4,22 +4,32 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>Nəticələr · DemoDay</title>
+<title>Nəticələr · Hakaton</title>
 <link rel="icon" href="/favicon.svg">
 <script type="module" src="/src/reveal.ts"></script>
 </head>
 <body class="rv">
+<!-- Backdrop: Higgsfield-generated stage loop (poster image until the video can play) -->
+<div class="rv-bg" aria-hidden="true">
+  <video class="rv-bgv" id="bgv" muted loop playsinline preload="auto" poster="/reveal/stage.webp"><source src="/reveal/stage.mp4" type="video/mp4"></video>
+  <div class="rv-bgshade"></div>
+</div>
 <canvas class="rv-fx" id="fx" aria-hidden="true"></canvas>
 
 <header class="rv-head">
-  <div class="rv-brand"><b id="ev"><i>DemoDay</i></b></div>
+  <div class="rv-brand"><b id="ev"><i>Hakaton</i></b></div>
   <div class="rv-title" id="title">Nəticələr</div>
+  <div class="rv-prog" id="prog" hidden><span class="rv-prog-bar"><i id="progBar"></i></span><span><b id="progN">0</b> / <span id="progT">0</span> yer açıqlanıb</span><span class="rv-manual" id="manual" hidden>Münsiflərin yekun qərarı</span></div>
 </header>
 
 <main class="rv-main" id="main" aria-live="polite"></main>
 
+<!-- Lower places: each reveal (or group) is shown big, then flies into its tile -->
+<div class="rv-spot" id="spot" hidden></div>
+
 <!-- Top-three ceremony: heartbeat suspense, then the reveal -->
 <div class="rv-overlay" id="overlay" hidden>
+  <video class="rv-ovv" id="susv" muted loop playsinline preload="auto"><source src="/reveal/suspense.mp4" type="video/mp4"></video>
   <div class="rv-vignette"></div>
   <div class="rv-ov">
     <div class="rv-ov-place" id="ovPlace"></div>
@@ -39,6 +49,7 @@
 
 <!-- Winner scene: ignition → name forge → fireworks. Driven by winnerScene() in reveal.ts -->
 <div class="rv-win" id="win" hidden>
+  <video class="rv-winv" id="winv" muted playsinline preload="auto"><source src="/reveal/winner.mp4" type="video/mp4"></video>
   <canvas class="rv-win-fx" id="winFx" aria-hidden="true"></canvas>
   <div class="rv-win-rays" aria-hidden="true"></div>
   <div class="rv-win-beam l" aria-hidden="true"></div>
@@ -49,7 +60,7 @@
     <div class="rv-win-label"><span class="line"></span><span id="winLabel">1-ci yer</span><span class="line"></span></div>
     <h1 class="rv-win-name" id="winName"><span class="chars"></span><span class="shine" aria-hidden="true"></span></h1>
     <div class="rv-win-proj" id="winProj"></div>
-    <div class="rv-win-score"><b class="mono" id="winScore">0.0</b><span>bal</span></div>
+    <div class="rv-win-score" id="winScoreBox"><b class="mono" id="winScore">0.0</b><span>bal</span></div>
     <div class="rv-win-break" id="winBreak"></div>
     <div class="rv-win-congrats" id="winCongrats">Təbriklər!</div>
   </div>

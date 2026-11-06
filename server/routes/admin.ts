@@ -9,6 +9,8 @@ import { buildPdf } from "../export/pdf.js";
 import { buildXlsx, exportFileName } from "../export/xlsx.js";
 import { adminResults, revealAdminView, revealSnapshot } from "../views.js";
 import { revealSteps } from "../../shared/reveal.js";
+import { PRODUCTS } from "../../shared/brand.js";
+import { adjustTimer } from "../../shared/timer.js";
 import { isPlaceholderName, placeholderName } from "../../shared/brand.js";
 
 /** A juror QR is valid this long, or until it is scanned / replaced. */
@@ -29,7 +31,13 @@ const eventBody = z.object({
   includeEntry: z.boolean().optional(),
   entryMax: z.number().min(1, "Giriş balının maksimumu ən azı 1 olmalıdır.").max(1000).optional(),
   revealTop: z.number().int().min(0, "İntizarlı yer sayı 0–10 arası olmalıdır.").max(10, "İntizarlı yer sayı 0–10 arası olmalıdır.").optional(),
+  revealBatch: z.number().int().min(1, "Toplu açılış 1–10 arası olmalıdır.").max(10, "Toplu açılış 1–10 arası olmalıdır.").optional(),
+  revealHideScores: z.boolean().optional(),
+  product: z.enum(PRODUCTS).optional(),
+  timerAdd: z.number().int().min(-3600).max(3600).optional(),
+  timerSet: z.number().int().min(0).max(3600).optional(),
 });
+const finalOrderBody = z.object({ ids: z.array(z.number().int().positive()).max(500).nullable() });
 const entryScore = z.number().min(0, "Giriş balı mənfi ola bilməz.").max(1000).nullable();
 const teamBody = z.object({ name: name(), project: z.string().trim().max(160).default(""), entryScore: entryScore.optional() });
 const teamPatch = z.object({ name: name().optional(), project: z.string().trim().max(160).optional(), active: z.boolean().optional(), entryScore: entryScore.optional() });
@@ -89,6 +97,9 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         repo.audit(actor, "stage.change", { teamId: b.currentTeamId });
       }
       if (b.timer) timer = applyTimerAction(timer, b.timer, now);
+      if (b.timerAdd !== undefined) timer = adjustTimer(timer, now, { addSec: b.timerAdd });
+      if (b.timerSet !== undefined) timer = adjustTimer(timer, now, { setRemaining: b.timerSet });
+      if (b.timerAdd !== undefined || b.timerSet !== undefined) repo.audit(actor, "timer.adjust", { add: b.timerAdd, set: b.timerSet });
       const timerChanged = JSON.stringify(timer) !== JSON.stringify(cur.timer);
       const ev = repo.updateEvent({
         name: b.name ?? cur.name,
@@ -100,14 +111,19 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         entryMax: b.entryMax ?? cur.entryMax,
         feedbackTags: b.feedbackTags ? [...new Set(b.feedbackTags)] : cur.feedbackTags,
         revealTop: b.revealTop ?? cur.revealTop,
+        revealBatch: b.revealBatch ?? cur.revealBatch,
+        revealHideScores: b.revealHideScores ?? cur.revealHideScores,
+        product: b.product ?? cur.product,
         timer,
       });
       if (b.locked !== undefined && b.locked !== cur.locked) {
         repo.audit(actor, b.locked ? "event.lock" : "event.unlock");
         rt.emitLocked(ev.locked);
       }
-      if (b.name !== undefined || b.date !== undefined || b.showJurorTotal !== undefined || b.feedbackTags !== undefined) {
-        repo.audit(actor, "event.settings", { name: b.name, date: b.date, showJurorTotal: b.showJurorTotal, feedbackTags: b.feedbackTags });
+      // Durations change what every screen shows ("Pitch 3:00", the projector rim): push the full stage.
+      if (b.pitchSec !== undefined || b.qaSec !== undefined) stageChanged = true;
+      if (b.name !== undefined || b.date !== undefined || b.showJurorTotal !== undefined || b.feedbackTags !== undefined || b.product !== undefined) {
+        repo.audit(actor, "event.settings", { name: b.name, date: b.date, showJurorTotal: b.showJurorTotal, feedbackTags: b.feedbackTags, product: b.product });
         rt.emitConfig();
         stageChanged = true;
       }
@@ -116,9 +132,13 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         rt.emitResults();
         rt.emitConfig(); // jurors show or hide entry scores
       }
-      if (b.revealTop !== undefined && b.revealTop !== cur.revealTop) {
-        repo.audit(actor, "event.revealTop", { revealTop: b.revealTop });
+      if ((b.revealTop !== undefined && b.revealTop !== cur.revealTop) || (b.revealBatch !== undefined && b.revealBatch !== cur.revealBatch)) {
+        repo.audit(actor, "event.revealSteps", { revealTop: b.revealTop, revealBatch: b.revealBatch });
         rt.emitReveal();
+      }
+      if (b.revealHideScores !== undefined && b.revealHideScores !== cur.revealHideScores) {
+        repo.audit(actor, "reveal.hideScores", { hide: b.revealHideScores });
+        rt.emitReveal(); // applies at once: the public view is built per request
       }
       if (stageChanged) rt.emitStage();
       else if (timerChanged) rt.emitTimer();
@@ -337,6 +357,19 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       return { deleted: n };
     });
 
+    // ---------- jurors' final decision (order used by the reveal) ----------
+    r.put("/api/admin/final-order", async (req, reply) => {
+      const b = parseBody(finalOrderBody, req.body, reply); if (!b) return;
+      if (b.ids) {
+        const known = new Set(repo.teams().map(t => t.id));
+        if (b.ids.some(id => !known.has(id)) || new Set(b.ids).size !== b.ids.length) return reply.code(400).send({ error: "Sıra yanlışdır." });
+      }
+      repo.updateEvent({ finalOrder: b.ids?.length ? b.ids : null });
+      repo.audit(req.user!.id, b.ids ? "results.finalOrder" : "results.finalOrder.clear", { ids: b.ids });
+      rt.emitResults();
+      return { finalOrder: repo.getEvent().finalOrder };
+    });
+
     // ---------- results reveal ----------
     r.get("/api/admin/reveal", async () => revealAdminView(repo, cfg));
     r.post("/api/admin/reveal", async (req, reply) => {
@@ -372,7 +405,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         }
         case "next": {
           if (!cur.enabled || !cur.snapshot) return reply.code(409).send({ error: "Əvvəlcə açıqlamaya icazə verin." });
-          if (cur.step >= revealSteps(cur.snapshot.entries, cur.snapshot.top).length) return reply.code(409).send({ error: "Bütün yerlər artıq açıqlanıb." });
+          if (cur.step >= revealSteps(cur.snapshot.entries, cur.snapshot.top, cur.snapshot.batch).length) return reply.code(409).send({ error: "Bütün yerlər artıq açıqlanıb." });
           repo.setReveal({ step: cur.step + 1 });
           break;
         }
@@ -388,14 +421,14 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     // ---------- exports / audit ----------
     r.get("/api/admin/export.xlsx", async (_req, reply) => {
       const buf = await buildXlsx(repo, cfg);
-      const file = exportFileName(repo.getEvent().name, repo.getEvent().date, "netice.xlsx");
+      const file = exportFileName(repo.getEvent().displayName, repo.getEvent().date, "netice.xlsx");
       reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       reply.header("Content-Disposition", `attachment; filename="${file}"; filename*=UTF-8''${encodeURIComponent(file)}`);
       return reply.send(buf);
     });
     r.get("/api/admin/export.pdf", async (_req, reply) => {
       const buf = await buildPdf(repo, cfg);
-      const file = exportFileName(repo.getEvent().name, repo.getEvent().date, "protokol.pdf");
+      const file = exportFileName(repo.getEvent().displayName, repo.getEvent().date, "protokol.pdf");
       reply.header("Content-Type", "application/pdf");
       reply.header("Content-Disposition", `attachment; filename="${file}"; filename*=UTF-8''${encodeURIComponent(file)}`);
       return reply.send(buf);

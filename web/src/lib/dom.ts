@@ -111,9 +111,9 @@ export function ago(ms: number, now = Date.now()) {
   return hhmm(ms);
 }
 
-/** "Ignite DemoDay" → `Ignite <i>DemoDay</i>`: the fixed product word is highlighted. */
+/** "Ignite Hakaton" → `Ignite <i>Hakaton</i>`: the event type (Hakaton / DemoDay) is highlighted. */
 export function brandHtml(name: string) {
-  const n = (name || "DemoDay").trim();
-  const m = n.match(/^(.*?)\s*(DemoDay)$/i);
+  const n = (name || "Hakaton").trim();
+  const m = n.match(/^(.*?)\s*(DemoDay|Hakaton)$/i);
   return m && m[1] ? `${esc(m[1])} <i>${esc(m[2])}</i>` : `<i>${esc(n)}</i>`;
 }

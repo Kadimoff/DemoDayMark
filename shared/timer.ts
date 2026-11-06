@@ -76,3 +76,26 @@ export function applyTimerAction(t: TimerState, action: TimerAction, now: number
       return { ...t, visible: false, running: false, offsetSec: 0, anchorAt: null };
   }
 }
+
+/**
+ * Manual correction by the coordinator. `addSec` > 0 gives the team more time, < 0 takes some away;
+ * `setRemaining` sets the time left in the current phase (pitch or Q&A). Running/paused state is kept,
+ * and every screen follows because only offsetSec/anchorAt change.
+ */
+export function adjustTimer(t: TimerState, now: number, op: { addSec?: number; setRemaining?: number }): TimerState {
+  if (!t.visible) return t;
+  const end = t.pitchSec + t.qaSec;
+  const pos = Math.min(timerPosition(t, now), end);
+  let next = pos;
+  if (op.addSec != null) {
+    // Within the phase it is in: taking away more pitch time than is left ends the pitch (Q&A starts in full).
+    const [start, stop] = pos < t.pitchSec ? [0, t.pitchSec] : [t.pitchSec, end];
+    next = Math.max(start, Math.min(stop, pos - op.addSec));
+    if (pos >= end && op.addSec > 0) next = Math.max(t.pitchSec, end - op.addSec); // after "done": reopen Q&A
+  } else if (op.setRemaining != null) {
+    const phaseEnd = pos < t.pitchSec ? t.pitchSec : end;
+    const phaseStart = pos < t.pitchSec ? 0 : t.pitchSec;
+    next = Math.max(phaseStart, Math.min(phaseEnd, phaseEnd - op.setRemaining));
+  }
+  return { ...t, offsetSec: next, anchorAt: t.running ? now : null };
+}

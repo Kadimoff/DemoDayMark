@@ -220,8 +220,8 @@ function render() {
           <span class="w"><span>Maks:</span> ${c.maxScore}</span>
         </div>
         ${c.description ? `<p>${esc(c.description)}</p>` : ""}
-        <div class="scale" role="group" aria-labelledby="cl-${esc(c.key)}">${Array.from({ length: c.maxScore - MIN_POINTS + 1 }, (_, k) => k + MIN_POINTS).map(v =>
-          `<button type="button" data-c="${esc(c.key)}" data-v="${v}" aria-pressed="${d.values[c.key] === v}" aria-label="${esc(c.name)}: ${v} / ${c.maxScore}" ${locked ? "disabled" : ""}>${v}</button>`).join("")}</div>
+        ${c.maxScore > BUTTONS_MAX ? bigScale(c, d.values[c.key], locked) : `<div class="scale" role="group" aria-labelledby="cl-${esc(c.key)}">${Array.from({ length: c.maxScore - MIN_POINTS + 1 }, (_, k) => k + MIN_POINTS).map(v =>
+          `<button type="button" data-c="${esc(c.key)}" data-v="${v}" aria-pressed="${d.values[c.key] === v}" aria-label="${esc(c.name)}: ${v} / ${c.maxScore}" ${locked ? "disabled" : ""}>${v}</button>`).join("")}</div>`}
       </section>`).join("")}
       ${S.feedbackTags.length ? `
       <section class="qchips" aria-labelledby="qcl">
@@ -242,6 +242,43 @@ function render() {
   }
   renderNudge();
   renderTags();
+  renderTotal();
+  renderDock();
+}
+
+/** Up to 10 points: one button per point. Above that (20, 30…) a phone can't fit the buttons: big value, −/+, slider, quick picks. */
+const BUTTONS_MAX = 10;
+function quickPicks(max: number) { return [0.2, 0.4, 0.6, 0.8, 1].map(f => Math.max(MIN_POINTS, Math.round(max * f))); }
+function bigScale(c: Criterion, v: number | undefined, locked: boolean) {
+  const has = validValue(c, v);
+  return `<div class="bigscale" data-big="${esc(c.key)}" role="group" aria-labelledby="cl-${esc(c.key)}">
+    <div class="bs-row">
+      <button type="button" class="bs-step" data-step="-1" aria-label="${esc(c.name)}: bir bal az" ${locked ? "disabled" : ""}>−</button>
+      <output class="bs-val mono${has ? "" : " empty"}" aria-live="polite"><b>${has ? v : "—"}</b><span>/ ${c.maxScore}</span></output>
+      <button type="button" class="bs-step" data-step="1" aria-label="${esc(c.name)}: bir bal çox" ${locked ? "disabled" : ""}>+</button>
+    </div>
+    <input type="range" class="bs-range" min="${MIN_POINTS}" max="${c.maxScore}" step="1" value="${has ? v : Math.round(c.maxScore / 2)}" aria-label="${esc(c.name)} balı" ${locked ? "disabled" : ""}${has ? "" : ` data-untouched="1"`}>
+    <div class="bs-quick">${quickPicks(c.maxScore).map(q => `<button type="button" data-q="${q}" aria-pressed="${v === q}" ${locked ? "disabled" : ""}>${q}</button>`).join("")}</div>
+  </div>`;
+}
+function setBig(key: string, value: number) {
+  if (!S || selTeam == null) return;
+  const c = S.criteria.find(x => x.key === key);
+  if (!c) return;
+  const v = Math.max(MIN_POINTS, Math.min(c.maxScore, Math.round(value)));
+  draftFor(selTeam).values[key] = v;
+  const box = main.querySelector<HTMLElement>(`[data-big="${CSS.escape(key)}"]`);
+  if (box) {
+    const out = box.querySelector<HTMLElement>(".bs-val")!;
+    out.classList.remove("empty");
+    out.querySelector("b")!.textContent = String(v);
+    const r = box.querySelector<HTMLInputElement>(".bs-range")!;
+    r.value = String(v);
+    r.removeAttribute("data-untouched");
+    box.querySelectorAll<HTMLElement>("[data-q]").forEach(q => q.setAttribute("aria-pressed", String(Number(q.dataset.q) === v)));
+  }
+  touched(selTeam);
+  renderHead();
   renderTotal();
   renderDock();
 }
@@ -415,6 +452,18 @@ function onClick(e: Event) {
     renderDock();
     return;
   }
+  const big = t.closest<HTMLElement>("[data-big]");
+  if (big) {
+    const key = big.dataset.big!;
+    const step = t.closest<HTMLButtonElement>("[data-step]");
+    const quick = t.closest<HTMLButtonElement>("[data-q]");
+    if (step && !step.disabled) {
+      const cur = draftFor(selTeam).values[key];
+      const c = S.criteria.find(x => x.key === key)!;
+      setBig(key, validValue(c, cur) ? cur + Number(step.dataset.step) : Math.round(c.maxScore / 2));
+    } else if (quick && !quick.disabled) setBig(key, Number(quick.dataset.q));
+    return;
+  }
   const q = t.closest<HTMLButtonElement>(".qchip");
   if (q && !q.disabled) {
     const d = draftFor(selTeam);
@@ -449,6 +498,8 @@ function onClick(e: Event) {
 main.addEventListener("click", onClick);
 head.addEventListener("click", onClick);
 main.addEventListener("input", e => {
+  const range = (e.target as HTMLElement).closest<HTMLInputElement>(".bs-range");
+  if (range) { const box = range.closest<HTMLElement>("[data-big]"); if (box) setBig(box.dataset.big!, Number(range.value)); return; }
   const el = e.target as HTMLTextAreaElement;
   if (el.id !== "note" || selTeam == null) return;
   const d = draftFor(selTeam);

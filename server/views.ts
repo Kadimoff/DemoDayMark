@@ -1,7 +1,6 @@
 // Response builders. The juror view is the privacy boundary: it is assembled from the
 // juror's own rows only and never touches computeResults().
-import { brandName } from "../shared/brand.js";
-import { revealPublic, revealSteps, type RevealSnapshot } from "../shared/reveal.js";
+import { applyFinalOrder, revealPublic, revealSteps, type RevealSnapshot } from "../shared/reveal.js";
 import { computeResults, jurorTotal } from "../shared/scoring.js";
 import type { JurorStatePayload } from "../shared/types.js";
 import type { Config } from "./config.js";
@@ -57,27 +56,27 @@ export type AdminResults = ReturnType<typeof adminResults>;
 /** Freezes the current ranking: the reveal walks this list, whatever happens to scores later. */
 export function revealSnapshot(repo: Repo, cfg: Config): RevealSnapshot {
   const { results } = adminResults(repo, cfg);
-  return {
-    createdAt: Date.now(),
-    maxTotal: results.maxTotal,
-    top: repo.getEvent().revealTop,
-    entries: results.ranking
-      .filter(r => r.score != null && r.rank != null)
-      .map(r => ({
-        teamId: r.team.id, name: r.team.name, project: r.team.project, rank: r.rank!,
-        score: r.score!, demo: r.demo!, entry: results.includeEntry ? r.entry : null, n: r.n,
-      })),
-  };
+  const ev = repo.getEvent();
+  const byScore = results.ranking
+    .filter(r => r.score != null && r.rank != null)
+    .map(r => ({
+      teamId: r.team.id, name: r.team.name, project: r.team.project, rank: r.rank!,
+      score: r.score!, demo: r.demo!, entry: results.includeEntry ? r.entry : null, n: r.n,
+    }));
+  // The jurors' final decision (admin's order) overrides the score order.
+  const { entries, manual } = applyFinalOrder(byScore, ev.finalOrder);
+  return { createdAt: Date.now(), maxTotal: results.maxTotal, top: ev.revealTop, batch: ev.revealBatch, manual, entries };
 }
 
 export const revealPublicView = (repo: Repo) => {
   const r = repo.getReveal();
-  return revealPublic(r.snapshot, r.step, r.enabled, brandName(repo.getEvent().name));
+  const ev = repo.getEvent();
+  return revealPublic(r.snapshot, r.step, r.enabled, ev.displayName, ev.revealHideScores);
 };
 
 export function revealAdminView(repo: Repo, cfg: Config) {
   const r = repo.getReveal();
-  const steps = r.snapshot ? revealSteps(r.snapshot.entries, r.snapshot.top) : [];
+  const steps = r.snapshot ? revealSteps(r.snapshot.entries, r.snapshot.top, r.snapshot.batch) : [];
   const nextStep = steps[r.step] ?? null;
   const fresh = revealSnapshot(repo, cfg);
   // Has anything that would change the order or the numbers happened since the snapshot?
@@ -87,11 +86,14 @@ export function revealAdminView(repo: Repo, cfg: Config) {
     enabled: r.enabled,
     step: r.step,
     top: r.snapshot?.top ?? repo.getEvent().revealTop,
-    steps: steps.map(s => ({ ...s, rank: r.snapshot!.entries[s.index].rank, name: r.snapshot!.entries[s.index].name })),
+    batch: r.snapshot?.batch ?? repo.getEvent().revealBatch,
+    manual: r.snapshot?.manual ?? false,
+    steps: steps.map(s => ({ ...s, rank: r.snapshot!.entries[s.index].rank, name: r.snapshot!.entries[s.index].name,
+      ranks: s.indices.map(i => r.snapshot!.entries[i].rank) })),
     stepsTotal: steps.length,
     snapshotAt: r.snapshot?.createdAt ?? null,
     entries: r.snapshot?.entries ?? [],
-    next: nextStep ? { ...nextStep, entry: r.snapshot!.entries[nextStep.index] } : null,
+    next: nextStep ? { ...nextStep, entry: r.snapshot!.entries[nextStep.index], entries: nextStep.indices.map(i => r.snapshot!.entries[i]) } : null,
     stale: !!r.snapshot && sig(r.snapshot) !== sig(fresh),
     unscored: teams.filter(t => t.active).length - fresh.entries.length,
     progress: { done: results.done, need: results.need },

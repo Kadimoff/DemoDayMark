@@ -252,7 +252,7 @@ describe("admin view", () => {
       const c: Buffer[] = []; res.on("data", (d: Buffer) => c.push(d)); res.on("end", () => cb(null, Buffer.concat(c)));
     });
     expect(x.status).toBe(200);
-    expect(x.headers["content-disposition"]).toMatch(/DemoDay_.*_netice\.xlsx/);
+    expect(x.headers["content-disposition"]).toMatch(/Hakaton_.*_netice\.xlsx/);
     expect((x.body as Buffer).subarray(0, 2).toString()).toBe("PK");
     const p = await get("/api/admin/export.pdf", adminCookie).buffer(true).parse((res, cb) => {
       const c: Buffer[] = []; res.on("data", (d: Buffer) => c.push(d)); res.on("end", () => cb(null, Buffer.concat(c)));
@@ -453,6 +453,58 @@ describe("results reveal", () => {
     expect(p.revealed.length).toBe(1);
     await reveal("disable");
     expect((await get("/api/reveal")).body.enabled).toBe(false);
+  });
+});
+
+describe("hackathon results controls", () => {
+  const adminPatch = (body: object) => request(base).patch("/api/admin/event").set("Origin", origin()).set("Cookie", adminCookie).send(body);
+  it("hides scores on the public reveal when the admin says so", async () => {
+    expect((await post("/api/admin/reveal", adminCookie).send({ action: "enable" })).status).toBe(200);
+    await post("/api/admin/reveal", adminCookie).send({ action: "reset" });
+    await post("/api/admin/reveal", adminCookie).send({ action: "next" });
+    await post("/api/admin/reveal", adminCookie).send({ action: "next" });
+    await post("/api/admin/reveal", adminCookie).send({ action: "next" });
+    expect((await get("/api/reveal")).body.revealed[0].score).toEqual(expect.any(Number));
+    expect((await adminPatch({ revealHideScores: true })).status).toBe(200);
+    const pub = (await get("/api/reveal")).body;
+    expect(pub.hideScores).toBe(true);
+    expect(pub.revealed.length).toBeGreaterThan(0);
+    expect(pub.revealed.every((e: any) => e.score === null && e.demo === null)).toBe(true);
+    expect((await adminPatch({ revealHideScores: false })).status).toBe(200);
+    expect((await adminPatch({ revealHideScores: true })).status).toBe(200);
+    expect((await adminPatch({ revealHideScores: true }).set("Cookie", jurorCookie.ali)).status).toBe(403);
+    await adminPatch({ revealHideScores: false });
+  });
+
+  it("uses the jurors' final order for the reveal", async () => {
+    const before = (await get("/api/admin/reveal", adminCookie)).body.entries.map((e: any) => e.teamId);
+    const flipped = [...before].reverse();
+    expect((await request(base).put("/api/admin/final-order").set("Origin", origin()).set("Cookie", adminCookie).send({ ids: flipped })).status).toBe(200);
+    expect((await request(base).put("/api/admin/final-order").set("Origin", origin()).set("Cookie", jurorCookie.ali).send({ ids: flipped })).status).toBe(403);
+    expect((await request(base).put("/api/admin/final-order").set("Origin", origin()).set("Cookie", adminCookie).send({ ids: [99999] })).status).toBe(400);
+    const r = (await post("/api/admin/reveal", adminCookie).send({ action: "reset" })).body;
+    expect(r.entries.map((e: any) => e.teamId)).toEqual(flipped);
+    expect(r.entries.map((e: any) => e.rank)).toEqual(flipped.map((_: number, i: number) => i + 1));
+    expect(r.manual).toBe(true);
+    await request(base).put("/api/admin/final-order").set("Origin", origin()).set("Cookie", adminCookie).send({ ids: null });
+    expect((await post("/api/admin/reveal", adminCookie).send({ action: "reset" })).body.entries.map((e: any) => e.teamId)).toEqual(before);
+    await post("/api/admin/reveal", adminCookie).send({ action: "disable" });
+  });
+
+  it("changes the event type and pushes timer corrections and new durations to every screen", async () => {
+    expect((await adminPatch({ product: "DemoDay" })).body.stage.eventName).toBe("DemoDay");
+    expect((await adminPatch({ product: "Hakaton" })).body.stage.eventName).toBe("Hakaton");
+    expect((await adminPatch({ product: "Konfrans" })).status).toBe(400);
+    const anon = await socket();
+    const got = new Promise<any>(res => anon.once("stage:changed", res));
+    await adminPatch({ pitchSec: 240 });
+    expect((await got).timer.pitchSec).toBe(240);
+    await adminPatch({ currentTeamId: teamIds[0] });
+    await adminPatch({ timer: "pitch" });
+    const t = (await adminPatch({ timerSet: 30 })).body.stage.timer;
+    expect(t.pitchSec - t.offsetSec).toBeGreaterThan(29);
+    expect(t.pitchSec - t.offsetSec).toBeLessThanOrEqual(30);
+    await adminPatch({ pitchSec: 180, currentTeamId: null });
   });
 });
 

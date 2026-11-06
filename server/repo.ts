@@ -1,6 +1,6 @@
 // Data access. Every function returns plain shared/types objects; no route touches SQL directly.
 import type { DB } from "./db.js";
-import { brandName, DEFAULT_FEEDBACK_TAGS } from "../shared/brand.js";
+import { asProduct, brandName, DEFAULT_FEEDBACK_TAGS, type Product } from "../shared/brand.js";
 import { normalizeSnapshot, type RevealSnapshot } from "../shared/reveal.js";
 import type { AdminTeam, Criterion, Juror, ScoreRow, StagePayload, TimerState } from "../shared/types.js";
 
@@ -20,11 +20,19 @@ interface EventRow {
   entry_max: number;
   feedback_tags_json: string | null;
   reveal_top: number;
+  product: string;
+  final_order_json: string | null;
+  reveal_hide_scores: number;
+  reveal_batch: number;
 }
 
 export interface EventState {
-  /** Brand prefix only ("Ignite"); the display name is brandName(name) → "Ignite DemoDay". */
+  /** Brand prefix only ("Ignite"); the display name is displayName → "Ignite Hakaton". */
   name: string;
+  /** Event type shown after the prefix. */
+  product: Product;
+  /** brandName(name, product), e.g. "Ignite Hakaton". */
+  displayName: string;
   date: string;
   currentTeamId: number | null;
   timer: TimerState;
@@ -38,6 +46,12 @@ export interface EventState {
   feedbackTags: string[];
   /** Places 1..revealTop get a suspense step in the results reveal. */
   revealTop: number;
+  /** Lower places revealed this many per click. */
+  revealBatch: number;
+  /** The reveal screen shows places and names only. */
+  revealHideScores: boolean;
+  /** Jurors' final decision: team ids best first, or null = score order. */
+  finalOrder: number[] | null;
 }
 
 export interface UserRow {
@@ -56,8 +70,11 @@ export class Repo {
   // ---------- event ----------
   getEvent(): EventState {
     const r = this.db.prepare("SELECT * FROM event WHERE id = 1").get() as EventRow;
+    const product = asProduct(r.product);
     return {
       name: r.name,
+      product,
+      displayName: brandName(r.name, product),
       date: r.date,
       currentTeamId: r.current_team_id,
       timer: {
@@ -74,6 +91,9 @@ export class Repo {
       entryMax: r.entry_max,
       feedbackTags: parseTags(r.feedback_tags_json) ?? DEFAULT_FEEDBACK_TAGS,
       revealTop: r.reveal_top,
+      revealBatch: r.reveal_batch,
+      revealHideScores: !!r.reveal_hide_scores,
+      finalOrder: parseIds(r.final_order_json),
     };
   }
 
@@ -82,10 +102,11 @@ export class Repo {
     const n = { ...cur, ...p, timer: { ...cur.timer, ...(p.timer ?? {}) } };
     this.db.prepare(`UPDATE event SET name=?, date=?, current_team_id=?, timer_visible=?, timer_running=?,
       timer_offset_sec=?, timer_anchor_at=?, pitch_sec=?, qa_sec=?, locked=?, show_juror_total=?, include_entry=?, entry_max=?,
-      feedback_tags_json=?, reveal_top=? WHERE id = 1`)
+      feedback_tags_json=?, reveal_top=?, product=?, final_order_json=?, reveal_hide_scores=?, reveal_batch=? WHERE id = 1`)
       .run(n.name, n.date, n.currentTeamId, +n.timer.visible, +n.timer.running, n.timer.offsetSec,
         n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal, +n.includeEntry, n.entryMax,
-        JSON.stringify(n.feedbackTags), n.revealTop);
+        JSON.stringify(n.feedbackTags), n.revealTop, n.product, n.finalOrder ? JSON.stringify(n.finalOrder) : null,
+        +n.revealHideScores, n.revealBatch);
     return this.getEvent();
   }
 
@@ -108,7 +129,7 @@ export class Repo {
     const i = teams.findIndex(t => t.id === ev.currentTeamId);
     const t = i >= 0 ? teams[i] : null;
     return {
-      eventName: brandName(ev.name),
+      eventName: ev.displayName,
       eventDate: ev.date,
       team: t ? { id: t.id, name: t.name, project: t.project, index: i + 1, total: teams.length } : null,
       timer: ev.timer,
@@ -277,5 +298,13 @@ function parseTags(json: string | null | undefined): string[] | null {
   try {
     const v = JSON.parse(json);
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+  } catch { return null; }
+}
+
+function parseIds(json: string | null | undefined): number[] | null {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) && v.length ? v.filter((x): x is number => Number.isInteger(x)) : null;
   } catch { return null; }
 }

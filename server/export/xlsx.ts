@@ -1,12 +1,12 @@
 import ExcelJS from "exceljs";
-import { brandName, brandSlug } from "../../shared/brand.js";
+import { brandSlug } from "../../shared/brand.js";
 import type { Config } from "../config.js";
 import type { Repo } from "../repo.js";
 import { adminResults } from "../views.js";
 
-export function exportFileName(prefix: string, date: string, suffix: string) {
+export function exportFileName(eventName: string, date: string, suffix: string) {
   const d = date.trim().replace(/[^0-9A-Za-z.-]+/g, "-").replace(/^-|-$/g, "") || new Date().toISOString().slice(0, 10);
-  return `${brandSlug(prefix)}_${d}_${suffix}`;
+  return `${brandSlug(eventName)}_${d}_${suffix}`;
 }
 
 const fmtTime = (ms: number) => {
@@ -28,7 +28,7 @@ export async function buildXlsx(repo: Repo, cfg: Config): Promise<Buffer> {
   const ev = repo.getEvent();
   const { results, jurors, criteria, teams, scores } = adminResults(repo, cfg);
   const wb = new ExcelJS.Workbook();
-  wb.creator = brandName(ev.name);
+  wb.creator = ev.displayName;
   wb.created = new Date();
   const num = "0.00";
 
@@ -83,7 +83,7 @@ export async function buildXlsx(repo: Repo, cfg: Config): Promise<Buffer> {
     : `Yekun bal = Demo Day balı (giriş balı yekuna daxil edilmir).`]);
   s4.addRow(["", `Bərabərlikdə əvvəlcə Demo Day balı, sonra meyarların orta balı həlledicidir (${results.tieBreakKeys.map(k => criteria.find(c => c.key === k)?.name).join(" → ")}).`]);
   s4.addRow([]);
-  s4.addRow(["Tədbir", `${brandName(ev.name)} · ${ev.date}`]);
+  s4.addRow(["Tədbir", `${ev.displayName} · ${ev.date}`]);
   styleSheet(s4, 1, [28, 90, 14]);
   s4.getColumn(2).alignment = { wrapText: true, vertical: "top" };
 

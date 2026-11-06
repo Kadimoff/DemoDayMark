@@ -1,5 +1,6 @@
 import "./styles.css";
-import { brandName, isPlaceholderName } from "../../shared/brand";
+import { brandName, isPlaceholderName, PRODUCTS } from "../../shared/brand";
+import { sortable } from "./lib/sortable";
 import { fmtClock } from "../../shared/timer";
 import type { AdminTeam, Criterion, Juror, ScoreRow, StagePayload, TimerState } from "../../shared/types";
 import { api, ApiError } from "./lib/api";
@@ -10,7 +11,7 @@ import { brandHtml, topbar } from "./lib/topbar";
 
 interface EventState {
   name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean;
-  includeEntry: boolean; entryMax: number; feedbackTags: string[]; revealTop: number;
+  includeEntry: boolean; entryMax: number; feedbackTags: string[]; revealTop: number; product: string;
 }
 interface SetupState { event: EventState; stage: StagePayload; teams: AdminTeam[]; criteria: Criterion[]; scores: ScoreRow[] }
 
@@ -74,9 +75,10 @@ function render() {
         <div class="row between"><h3 id="h-ev">Tədbir və taymer</h3><span class="saved" id="evSaved"></span></div>
         <form id="evForm" class="stack" novalidate>
           <div class="row" style="align-items:flex-start">
-            <div style="flex:2 1 240px"><label class="f" for="evName">Brend / prefiks (istəyə bağlı)</label>
+            <div style="flex:2 1 320px"><label class="f" for="evName">Brend / prefiks (istəyə bağlı) və tədbir növü</label>
               <div class="row brandrow" style="flex-wrap:nowrap;gap:8px"><input type="text" id="evName" value="${esc(ev.name)}" maxlength="40" placeholder="məs. Ignite" autocomplete="off">
-              <span class="brandprev" aria-live="polite"><span class="flame" style="width:9px;height:9px;border-radius:50%;background:var(--accent)"></span><b id="evPrev">${brandHtml(brandName(ev.name))}</b></span></div></div>
+              <select id="evProduct" aria-label="Tədbir növü" style="width:auto;flex:0 0 auto">${PRODUCTS.map(p => `<option${p === ev.product ? " selected" : ""}>${p}</option>`).join("")}</select>
+              <span class="brandprev" aria-live="polite"><span class="flame" style="width:9px;height:9px;border-radius:50%;background:var(--accent)"></span><b id="evPrev">${brandHtml(brandName(ev.name, ev.product))}</b></span></div></div>
             <div style="flex:1 1 140px"><label class="f" for="evDate">Tarix</label><input type="text" id="evDate" value="${esc(ev.date)}" maxlength="40" placeholder="29.10.2026"></div>
             <div style="flex:1 1 110px"><label class="f" for="evPitch">Pitch (dəq:san)</label><input type="text" id="evPitch" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.pitchSec)}"></div>
             <div style="flex:1 1 110px"><label class="f" for="evQa">Sual-cavab (dəq:san)</label><input type="text" id="evQa" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.qaSec)}"></div>
@@ -110,8 +112,8 @@ function render() {
         <div class="ed teams${ev.includeEntry ? "" : " noentry"}" role="list">
           <div class="er sub" aria-hidden="true" style="font-size:12px;font-weight:700"><span></span><span>Komanda adı</span><span class="pj">Layihə / məhsul</span><span class="en">Giriş balı</span><span>Aktiv</span><span></span><span></span></div>
           ${S.teams.map((t, i) => `
-          <div class="er ${t.active ? "" : "off"}" role="listitem" data-row="teams:${t.id}">
-            <span class="ix">${i + 1}</span>
+          <div class="er ${t.active ? "" : "off"}" role="listitem" data-row="teams:${t.id}" data-id="${t.id}">
+            <span class="ix"><span class="grip" title="Sürüşdürüb yerini dəyiş" aria-hidden="true">⋮⋮</span>${i + 1}</span>
             <input type="text" data-k="name" value="${esc(t.name)}" maxlength="120" aria-label="Komanda ${i + 1} adı">
             <input type="text" class="pj" data-k="project" value="${esc(t.project)}" maxlength="160" placeholder="məs. Ağıllı parkinq" aria-label="Komanda ${i + 1} layihəsi">
             <input type="text" class="mono en" data-k="entryScore" value="${entryValue(t.entryScore)}" inputmode="decimal" autocomplete="off" placeholder="Giriş balı" aria-label="Komanda ${i + 1} giriş balı (maks. ${ev.entryMax})" title="maks. ${ev.entryMax}">
@@ -393,27 +395,7 @@ main.addEventListener("click", async e => {
 main.addEventListener("submit", async e => {
   e.preventDefault();
   const form = e.target as HTMLFormElement;
-  if (form.id === "evForm") {
-    const err = $("#evErr");
-    const pitchSec = parseClock($<HTMLInputElement>("#evPitch").value);
-    const qaSec = parseClock($<HTMLInputElement>("#evQa").value);
-    const name = $<HTMLInputElement>("#evName").value.trim().replace(/\s*demo\s*day\s*$/i, "");
-    if (!pitchSec || pitchSec < 10) { err.textContent = "Pitch müddətini dəq:san formatında yazın, məs. 3:00."; $("#evPitch").focus(); return; }
-    if (!qaSec || qaSec < 10) { err.textContent = "Sual-cavab müddətini dəq:san formatında yazın, məs. 2:00."; $("#evQa").focus(); return; }
-    err.textContent = "";
-    try {
-      await api("/api/admin/event", { method: "PATCH", body: {
-        name, date: $<HTMLInputElement>("#evDate").value.trim(), pitchSec, qaSec,
-        showJurorTotal: $("#evTotal").getAttribute("aria-checked") === "true",
-      } });
-      bar.setEventName(brandName(name));
-      $<HTMLInputElement>("#evName").value = name;
-      const s = $("#evSaved"); s.textContent = "Saxlanıldı"; setTimeout(() => { s.textContent = ""; }, 1800);
-      $<HTMLInputElement>("#evPitch").value = fmtClock(pitchSec);
-      $<HTMLInputElement>("#evQa").value = fmtClock(qaSec);
-    } catch (ex) { err.textContent = (ex as ApiError).message; }
-    return;
-  }
+  if (form.id === "evForm") { await saveEvent(); return; }
   if (form.id === "tagForm") {
     const input = $<HTMLInputElement>("#tagNew");
     const v = input.value.trim().replace(/\s+/g, " ");
@@ -434,10 +416,54 @@ async function saveTags(tags: string[]) {
   } catch (ex) { toast((ex as ApiError).message, "err"); return false; }
 }
 
+const cleanPrefix = (v: string) => v.trim().replace(/\s*(demo\s*day|hakaton|hackathon)\s*$/i, "");
 main.addEventListener("input", e => {
   const el = e.target as HTMLInputElement;
-  if (el.id === "evName") $("#evPrev").innerHTML = brandHtml(brandName(el.value.replace(/\s*demo\s*day\s*$/i, "")));
+  if (el.id === "evName" || el.id === "evProduct") $("#evPrev").innerHTML = brandHtml(brandName(cleanPrefix($<HTMLInputElement>("#evName").value), $<HTMLSelectElement>("#evProduct").value));
 });
+// Event fields save on change too (the page promises "saved when you leave the field"): durations reach every screen at once.
+main.addEventListener("change", e => {
+  const id = (e.target as HTMLElement).id;
+  if (["evName", "evProduct", "evDate", "evPitch", "evQa"].includes(id)) saveEvent();
+});
+
+async function saveEvent() {
+  const err = $("#evErr");
+  const pitchSec = parseClock($<HTMLInputElement>("#evPitch").value);
+  const qaSec = parseClock($<HTMLInputElement>("#evQa").value);
+  const name = cleanPrefix($<HTMLInputElement>("#evName").value);
+  const product = $<HTMLSelectElement>("#evProduct").value;
+  if (!pitchSec || pitchSec < 10) { err.textContent = "Pitch müddətini dəq:san formatında yazın, məs. 3:00."; $("#evPitch").focus(); return; }
+  if (!qaSec || qaSec < 10) { err.textContent = "Sual-cavab müddətini dəq:san formatında yazın, məs. 2:00."; $("#evQa").focus(); return; }
+  err.textContent = "";
+  try {
+    const r = await api<{ stage: { eventName: string } }>("/api/admin/event", { method: "PATCH", body: {
+      name, product, date: $<HTMLInputElement>("#evDate").value.trim(), pitchSec, qaSec,
+      showJurorTotal: $("#evTotal").getAttribute("aria-checked") === "true",
+    } });
+    bar.setEventName(r.stage.eventName);
+    $<HTMLInputElement>("#evName").value = name;
+    $<HTMLInputElement>("#evPitch").value = fmtClock(pitchSec);
+    $<HTMLInputElement>("#evQa").value = fmtClock(qaSec);
+    if (S) { S.event.name = name; S.event.product = product; S.event.timer.pitchSec = pitchSec; S.event.timer.qaSec = qaSec; }
+    const s = $("#evSaved"); s.textContent = "Saxlanıldı · bütün ekranlarda yeniləndi"; setTimeout(() => { s.textContent = ""; }, 2200);
+  } catch (ex) { err.textContent = (ex as ApiError).message; }
+}
+
+// Drag teams by ⋮⋮ to change the running order (the ↑/↓ buttons stay for keyboards).
+let teamSort: ReturnType<typeof sortable> | null = null;
+function bindTeamSort() {
+  if (teamSort) return;
+  teamSort = sortable(main, {
+    item: ".ed.teams [data-id]", handle: ".grip",
+    onDrop: async ids => {
+      try { await api("/api/admin/teams/reorder", { method: "POST", body: { ids } }); toast("Komandaların sırası yeniləndi"); }
+      catch (ex) { toast((ex as ApiError).message, "err"); }
+      await load();
+    },
+  });
+}
+bindTeamSort();
 
 onQrChange(() => load());
 live({

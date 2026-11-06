@@ -116,3 +116,30 @@ export function jurorJoined(p: { jurorId: number; displayName: string }) {
 
 /** Called whenever the dialog opens a new juror or closes, so the page can refresh its list. */
 export function onQrChange(fn: () => void) { onChange = fn; }
+
+/** A plain "scan to open" QR (e.g. the presenter's timer). Same look as the juror dialog, no state. */
+export async function showLinkQr(o: { title: string; heading: string; path: string; note: string }) {
+  const d = document.createElement("dialog");
+  d.className = "qrdlg";
+  const url = location.origin + o.path;
+  const svg = await QRCode.toString(url, { type: "svg", errorCorrectionLevel: "M", margin: 1, color: { dark: "#0B0F19", light: "#FFFFFF" } });
+  d.innerHTML = `
+    <div class="dh"><div><h3>${esc(o.title)}</h3><h2 style="margin-top:4px">${esc(o.heading)}</h2></div>
+      <div class="row" style="gap:6px;flex-wrap:nowrap"><button class="icon-btn" data-big title="Tam ekran" aria-label="Tam ekran">${icon("expand")}</button>
+      <button class="icon-btn" data-close aria-label="Bağla">${icon("close")}</button></div></div>
+    <div class="db">
+      ${localHost() ? `<div class="banner lock" style="text-align:left">${icon("warn")}<span>Panel <b>${esc(location.host)}</b> ünvanında açılıb. Telefonlar bu ünvana çata bilməz. Paneli server ünvanı ilə açın.</span></div>` : ""}
+      <div class="qrbox">${svg}</div>
+      <p class="sub" style="margin:0;max-width:44ch">${esc(o.note)}</p>
+      <span class="link">${esc(url)}</span>
+      <div class="acts"><a class="btn sm" href="${esc(o.path)}" target="_blank" rel="noopener">${icon("ext")}Aç</a><button class="btn sm ghost" data-close>Bağla</button></div>
+    </div>`;
+  document.body.appendChild(d);
+  d.addEventListener("click", e => {
+    const t = e.target as HTMLElement;
+    if (t === d || t.closest("[data-close]")) d.close();
+    else if (t.closest("[data-big]")) d.classList.toggle("big");
+  });
+  d.addEventListener("close", () => d.remove());
+  d.showModal();
+}

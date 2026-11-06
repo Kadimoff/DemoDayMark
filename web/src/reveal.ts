@@ -8,13 +8,18 @@ import { $, brandHtml, esc, icon, reducedMotion } from "./lib/dom";
 import { FX, rgb } from "./lib/fx";
 import { live } from "./lib/socket";
 
-interface AdminReveal { enabled: boolean; step: number; stepsTotal: number; next: { kind: "suspense" | "reveal"; entry: { rank: number } } | null }
+interface AdminReveal { enabled: boolean; step: number; stepsTotal: number; next: { kind: "suspense" | "reveal"; indices: number[]; entry: { rank: number }; entries: Array<{ rank: number }> } | null }
 
 const main = $("#main");
 const overlay = $("#overlay");
+const spot = $("#spot");
+const vid = { bg: $<HTMLVideoElement>("#bgv"), sus: $<HTMLVideoElement>("#susv"), win: $<HTMLVideoElement>("#winv") };
+const play = (v: HTMLVideoElement, fromStart = false) => { if (fromStart) v.currentTime = 0; v.play().catch(() => { /* autoplay blocked or file missing: CSS backdrop stays */ }); };
+play(vid.bg);
 const el = {
   ev: $("#ev"), title: $("#title"), ovPlace: $("#ovPlace"), ovName: $("#ovName"), ovProj: $("#ovProj"), ovScore: $("#ovScore"), ovBreak: $("#ovBreak"),
   ovHint: $("#ovHint"), btns: $("#btns"), keys: $("#keys"), toast: $("#toast"), dock: $("#dock"),
+  prog: $("#prog"), progN: $("#progN"), progT: $("#progT"), progBar: $("#progBar"), manual: $("#manual"),
 };
 const calm = reducedMotion();
 
@@ -152,7 +157,8 @@ function stopBeats() { clearTimeout(beatTimer); overlay.classList.remove("beat")
 
 // ---------- helpers ----------
 const medal = (rank: number) => (rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "");
-function countUp(node: HTMLElement, to: number, ms: number) {
+function countUp(node: HTMLElement, to: number | null, ms: number) {
+  if (to == null) { node.textContent = ""; return; }
   if (calm) { node.textContent = to.toFixed(2); return; }
   const t0 = performance.now(), my = ceremony;
   const step = (t: number) => {
@@ -193,14 +199,20 @@ function waiting() {
   stopBeats();
   overlay.hidden = true;
   el.title.textContent = "Nəticələr";
-  main.innerHTML = `<div class="rv-wait"><div class="rv-wait-ring"></div><h1>Nəticələr</h1><p>Münsiflərin qərarı tezliklə açıqlanacaq</p></div>`;
+  document.body.classList.add("waiting");
+  el.prog.hidden = true;
+  main.innerHTML = `<div class="rv-wait"><div class="rv-wait-art" aria-hidden="true"></div><div class="rv-wait-ring"></div><h1>Nəticələr</h1><p>Münsiflərin qərarı tezliklə açıqlanacaq</p></div>`;
 }
 
+/** Wall layout for places 4..N: 1 column up to 8 teams, then 2, 3 or 4 columns so 20–40 teams still fit one screen. */
+function wallCols(n: number) { return n <= 8 ? 1 : n <= 18 ? 2 : n <= 33 ? 3 : 4; }
 function buildBoard(total: number) {
   boardTotal = total;
+  document.body.classList.remove("waiting");
   const pod = [1, 0, 2].filter(i => i < total);
   const rest = Array.from({ length: Math.max(0, total - 3) }, (_, k) => k + 3);
-  main.innerHTML = `<div class="rv-board${rest.length ? "" : " solo"}">
+  const cols = wallCols(rest.length), rows = Math.max(1, Math.ceil(rest.length / cols));
+  main.innerHTML = `<div class="rv-board${rest.length ? "" : " solo"}${cols > 1 ? " wall" : ""}" style="--cols:${cols};--rows:${rows}">
     ${rest.length ? `<section class="rv-list" aria-label="${ordinal(4)}–${ordinal(total)} yerlər">${rest.map(i => `
       <div class="rv-row" data-slot="${i}"><span class="rk">${i + 1}</span>
         <div class="nm"><b>?</b><small></small><div class="bar"><i></i></div></div><span class="sc mono"></span></div>`).join("")}
@@ -224,7 +236,7 @@ function fillSlot(e: RevealedEntry, animate: boolean) {
     slot.querySelector(".rk")!.textContent = String(e.rank);
     slot.querySelector(".nm b")!.textContent = e.name;
     slot.querySelector(".nm small")!.textContent = [e.project, breakdown(e)].filter(Boolean).join(" · ");
-    slot.querySelector<HTMLElement>(".bar i")!.style.width = `${pct(e.score)}%`;
+    slot.querySelector<HTMLElement>(".bar i")!.style.width = `${e.score == null ? 0 : pct(e.score)}%`;
   } else {
     slot.querySelector(".medal")!.textContent = `${ordinal(e.rank)} yer`;
     slot.querySelector(".nm")!.textContent = e.name;
@@ -237,11 +249,51 @@ function fillSlot(e: RevealedEntry, animate: boolean) {
     void slot.offsetWidth;
     slot.classList.add("enter");
     countUp(sc, e.score, 1300);
-  } else sc.textContent = e.score.toFixed(2);
+  } else sc.textContent = e.score == null ? "" : e.score.toFixed(2);
+}
+
+// ---------- spotlight: lower places are shown big first, then fly into their tiles ----------
+function spotlight(list: RevealedEntry[]) {
+  const my = ceremony;
+  spot.hidden = false;
+  spot.className = `rv-spot n${Math.min(list.length, 10)}${list.length > 1 ? " many" : ""}`;
+  // Worst place first, the way the room reads it.
+  const order = [...list].sort((a, b) => b.rank - a.rank);
+  spot.innerHTML = `<div class="rv-spot-in">${order.map((e, k) => `
+    <div class="rv-sc" style="--k:${k}" data-i="${e.index}">
+      <span class="rk">${ordinal(e.rank)} yer</span>
+      <b class="nm">${esc(e.name)}</b>
+      ${e.project ? `<small>${esc(e.project)}</small>` : ""}
+      ${e.score != null ? `<span class="sc mono">0.00</span>` : ""}
+    </div>`).join("")}</div>`;
+  spot.querySelectorAll<HTMLElement>(".rv-sc").forEach((card, k) => {
+    const e = order[k];
+    const sc = card.querySelector<HTMLElement>(".sc");
+    if (sc) window.setTimeout(() => { if (my === ceremony) countUp(sc, e.score, 900); }, k * 220 + 250);
+    if (order.length === 1) fit(card.querySelector<HTMLElement>(".nm")!, 28);
+  });
+  sound.reveal();
+  const hold = calm ? 300 : 1500 + order.length * 220;
+  window.setTimeout(() => {
+    if (my !== ceremony) return;
+    const cards = [...spot.querySelectorAll<HTMLElement>(".rv-sc")];
+    cards.forEach((card, k) => {
+      const e = order[k];
+      const slot = main.querySelector<HTMLElement>(`[data-slot="${e.index}"]`);
+      const done = () => { if (my === ceremony) fillSlot(e, true); };
+      if (!slot || calm) { done(); return; }
+      const a = card.getBoundingClientRect(), b = slot.getBoundingClientRect();
+      const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2);
+      const k2 = Math.min(1, b.height / a.height);
+      card.animate([{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${k2})`, opacity: 0.15 }],
+        { duration: 650, delay: k * 70, easing: "cubic-bezier(.6,0,.3,1)", fill: "forwards" }).finished.then(done, done);
+    });
+    window.setTimeout(() => { if (my === ceremony) { spot.hidden = true; spot.innerHTML = ""; } }, 650 + cards.length * 70 + 60);
+  }, hold);
 }
 /** "Giriş 41.7 + Demo Day 43.2" when the final score includes an entry score. */
 const breakdown = (e: RevealedEntry) => {
-  if (e.entry == null) return "";
+  if (e.entry == null || e.score == null) return "";
   const p = displayParts(e.score, e.entry);
   return `Giriş ${p.entry} + Demo Day ${p.demo}`;
 };
@@ -270,6 +322,7 @@ function showSuspense(rank: number) {
   el.ovScore.textContent = "";
   el.ovBreak.textContent = "";
   el.ovHint.textContent = rank === 1 ? "Qalib kimdir?" : "Kim olacaq?";
+  play(vid.sus, true);
   if (!calm) startBeats();
 }
 
@@ -282,7 +335,7 @@ function ceremonyReveal(e: RevealedEntry) {
   el.ovPlace.textContent = `${ordinal(e.rank)} yer`;
   el.ovName.textContent = e.name;
   el.ovProj.textContent = e.project;
-  el.ovScore.textContent = "0.00";
+  el.ovScore.textContent = e.score == null ? "" : "0.00";
   el.ovHint.textContent = e.rank === 1 ? "Təbriklər!" : "";
   el.ovBreak.textContent = breakdown(e);
   fit(el.ovName, 24);
@@ -304,30 +357,39 @@ function ceremonyReveal(e: RevealedEntry) {
 let lastSig = "";
 function apply(next: RevealPublic) {
   // The same state can arrive twice (API response + socket echo); re-applying would cut a running scene.
-  const sig = JSON.stringify([next.enabled, next.eventName, next.step, next.total, next.stepsTotal, next.revealed.map(r => r.teamId)]);
+  const sig = JSON.stringify([next.enabled, next.eventName, next.step, next.total, next.stepsTotal, next.hideScores, next.manual, next.revealed.map(r => r.teamId)]);
   if (sig === lastSig) return;
   lastSig = sig;
   const prev = state;
   state = next;
   ceremony++;
   stopWinner();
+  spot.hidden = true;
+  spot.innerHTML = "";
   fxFront.embers(0, []);
-  el.ev.innerHTML = brandHtml(next.eventName || "DemoDay");
+  el.ev.innerHTML = brandHtml(next.eventName || "Hakaton");
+  document.body.classList.toggle("noscores", next.hideScores);
   if (!next.enabled) { waiting(); renderButtons(); return; }
   if (boardTotal !== next.total) buildBoard(next.total);
   el.title.textContent = next.done ? "Qaliblər" : "Nəticələr";
+  el.prog.hidden = false;
+  el.progN.textContent = String(next.revealed.length);
+  el.progT.textContent = String(next.total);
+  el.progBar.style.width = `${next.total ? (next.revealed.length / next.total) * 100 : 0}%`;
+  el.manual.hidden = !next.manual;
 
-  const live = !!prev?.enabled && next.step === prev.step + 1 && !!next.last;
-  const fresh = live && next.last!.kind === "reveal" ? next.last!.index : -1;
-  // A top-three reveal arrives right after its suspense step.
+  const live = !!prev?.enabled && next.step === prev.step + 1 && !!next.last && prev.hideScores === next.hideScores;
+  const freshSet = new Set(live && next.last!.kind === "reveal" ? next.last!.indices : []);
+  const fresh = freshSet.size === 1 ? [...freshSet][0] : -1;
+  // A top-place reveal arrives right after its suspense step.
   const special = fresh >= 0 && prev!.suspense?.index === fresh;
   const shown = new Set(next.revealed.map(e => e.index));
   for (let i = 0; i < next.total; i++) if (!shown.has(i)) clearSlot(i);
   for (const e of next.revealed) {
-    if (e.index === fresh && special) continue; // filled when the ceremony hands over
-    fillSlot(e, e.index === fresh);
+    if (freshSet.has(e.index)) continue; // filled when its ceremony or spotlight hands over
+    fillSlot(e, false);
   }
-  if (fresh >= 0 && !special) sound.reveal();
+  if (freshSet.size && !special) spotlight(next.revealed.filter(e => freshSet.has(e.index)));
 
   if (next.suspense) {
     if (!(prev?.suspense && prev.suspense.index === next.suspense.index && !overlay.hidden)) showSuspense(next.suspense.rank);
@@ -337,6 +399,7 @@ function apply(next: RevealPublic) {
     stopBeats();
     overlay.hidden = true;
   }
+  if (overlay.hidden) vid.sus.pause();
   main.querySelectorAll(".rv-pod.p0").forEach(p => p.classList.toggle("champion", next.done));
   ambient();
   renderButtons();
@@ -381,14 +444,15 @@ function winnerScene(e: RevealedEntry) {
   winEntry = e;
   $("#winLabel").textContent = `${ordinal(1)} yer · Qalib`;
   $("#winProj").textContent = e.project;
-  $("#winScore").textContent = "0.00";
+  $("#winScore").textContent = e.score == null ? "" : "0.00";
+  $("#winScoreBox").hidden = e.score == null;
   $("#winBreak").textContent = breakdown(e);
   const letters = setWinnerName(e.name);
   if (calm) {
     overlay.hidden = true;
     win.hidden = false;
     win.className = "rv-win label name score congrats";
-    $("#winScore").textContent = e.score.toFixed(2);
+    $("#winScore").textContent = e.score == null ? "" : e.score.toFixed(2);
     later(9000, () => finishWinner());
     return;
   }
@@ -399,6 +463,7 @@ function winnerScene(e: RevealedEntry) {
     overlay.classList.remove("hold");
     win.hidden = false;
     win.className = "rv-win ignite";
+    play(vid.win, true);
     winFx.resize();
     sound.boom();
     sound.shimmer();
@@ -443,8 +508,12 @@ function nextLabel() {
   const n = adminView?.next;
   if (!adminView?.enabled) return "Açıqlamaya icazə verilməyib";
   if (!n) return "Hamısı açıqlandı";
-  if (n.kind === "suspense") return `${ordinal(n.entry.rank)} yer — intizar`;
-  return n.entry.rank <= 3 ? `${ordinal(n.entry.rank)} yeri açıqla` : `Sıradakı: ${ordinal(n.entry.rank)} yer`;
+  if (n.kind === "suspense") return `${ordinal(n.entry.rank)} yer: intizar`;
+  if (n.entries && n.entries.length > 1) {
+    const r = n.entries.map(x => x.rank);
+    return `${Math.max(...r)}–${ordinal(Math.min(...r))} yerlər`;
+  }
+  return `${ordinal(n.entry.rank)} yeri açıqla`;
 }
 function renderButtons() {
   const common = `<button class="tp-btn" data-act="mute" title="Səs (M)">${icon("sound")}<span>${muted ? "Səs sönük" : "Səs"}</span></button>

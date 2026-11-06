@@ -1,7 +1,6 @@
 // A4 protocol in the layout of the reference prototype, drawn with pdfkit and embedded TTFs.
 // Manrope has no capital "Ə" (U+018F), so text is split into runs and any glyph a font lacks
 // is drawn with Noto Sans of a matching weight.
-import { brandName } from "../../shared/brand.js";
 import * as fontkit from "fontkit";
 import path from "node:path";
 import PDFDocument from "pdfkit";
@@ -40,7 +39,7 @@ export async function buildPdf(repo: Repo, cfg: Config): Promise<Buffer> {
   const { results, jurors, criteria, scores, teams } = adminResults(repo, cfg);
   const fontDir = path.join(cfg.assetsDir, "fonts");
 
-  const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true, info: { Title: `${brandName(ev.name)} — protokol`, Author: brandName(ev.name) } });
+  const doc = new PDFDocument({ size: "A4", margin: 0, bufferPages: true, info: { Title: `${ev.displayName} — protokol`, Author: ev.displayName } });
   for (const [name, [file, fb]] of Object.entries(FONT_FILES)) {
     doc.registerFont(name, path.join(fontDir, file));
     doc.registerFont(name + "_fb", path.join(fontDir, fb));
@@ -136,8 +135,8 @@ export async function buildPdf(repo: Repo, cfg: Config): Promise<Buffer> {
 
   // ---------- header ----------
   rect(0, 0, W, 5, C.acc);
-  text(`${brandName(ev.name).toLocaleUpperCase("az")} · PROTOKOL`, M, y, { font: "b700", size: 7.5, color: C.mute });
-  text(brandName(ev.name), M, y + 14, { font: "d700", size: 21, width: CW });
+  text(`${ev.displayName.toLocaleUpperCase("az")} · PROTOKOL`, M, y, { font: "b700", size: 7.5, color: C.mute });
+  text(ev.displayName, M, y + 14, { font: "d700", size: 21, width: CW });
   text(`${ev.date}  ·  ${teams.filter(t => t.active).length} komanda  ·  ${jurors.filter(j => j.active).length} münsif  ·  ${results.done}/${results.need} qiymət`,
     M, y + 46, { font: "b400", size: 9.5, color: C.mute, width: CW });
   y += 78;
@@ -238,7 +237,7 @@ export async function buildPdf(repo: Repo, cfg: Config): Promise<Buffer> {
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
     doc.switchToPage(range.start + i);
-    text(`${brandName(ev.name)} · ${ev.date}`, M, H - 30, { font: "b500", size: 7, color: C.mute, width: CW - 60 });
+    text(`${ev.displayName} · ${ev.date}`, M, H - 30, { font: "b500", size: 7, color: C.mute, width: CW - 60 });
     text(`${i + 1}/${range.count}`, M, H - 30, { font: "b500", size: 7, color: C.mute, width: CW, align: "right" });
   }
   doc.end();

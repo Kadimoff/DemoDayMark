@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="az">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070C">
+<meta name="robots" content="noindex">
+<title>Təqdimatçı taymeri · Hakaton</title>
+<link rel="icon" href="/timer-icon.svg">
+<script type="module" src="/src/speaker.ts"></script>
+</head>
+<body class="sp phase-idle">
+<header class="sp-head"><b id="brand"><i>Hakaton</i></b><span class="sp-conn" id="conn">Qoşulur…</span></header>
+<main class="sp-main">
+  <div class="sp-team" id="team">Səhnədə komanda yoxdur</div>
+  <div class="sp-phase" id="phase">Gözləmədə</div>
+  <div class="sp-ring">
+    <svg viewBox="0 0 200 200" aria-hidden="true"><circle class="bg" cx="100" cy="100" r="88"/><circle class="fg" id="arc" cx="100" cy="100" r="88"/></svg>
+    <div class="sp-time mono" id="time" role="timer" aria-live="off">—</div>
+  </div>
+  <div class="sp-next" id="next"></div>
+  <p class="sp-hint" id="hint">Ekranı açıq saxlayın · vaxt koordinatorun taymeri ilə eynidir</p>
+</main>
+</body>
+</html>

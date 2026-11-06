@@ -76,7 +76,7 @@ function finalAlarm() {
 // ---------- rendering ----------
 function setTeam() {
   const t = stage?.team;
-  el.event.innerHTML = `${esc(stage?.eventName || "DemoDay")}${t ? `<span class="ix">${t.index}/${t.total}</span>` : ""}`;
+  el.event.innerHTML = `${esc(stage?.eventName || "Hakaton")}${t ? `<span class="ix">${t.index}/${t.total}</span>` : ""}`;
   const key = t ? `${t.id}|${t.name}|${t.project}|${t.index}` : "";
   if (key === lastTeamKey) return;
   el.nameTeam.innerHTML = t ? `<span class="ix">#${t.index}</span>${esc(t.name)}` : "Komanda seçilməyib";
@@ -88,11 +88,11 @@ function setTeam() {
     el.name.classList.add("swap");
   }
   lastTeamKey = key;
-  document.title = t ? `${t.name} · Pitch taymeri` : `Pitch taymeri · ${stage?.eventName || "DemoDay"}`;
+  document.title = t ? `${t.name} · Pitch taymeri` : `Pitch taymeri · ${stage?.eventName || "Hakaton"}`;
 }
 
 function visuals(kind: PhaseKind, timer: TimerState, ready: boolean) {
-  const brand = (stage?.eventName || "DemoDay").toLocaleUpperCase("az");
+  const brand = (stage?.eventName || "Hakaton").toLocaleUpperCase("az");
   const sig = `${kind}|${timer.pitchSec}|${timer.qaSec}|${ready}|${brand}`;
   if (sig === lastVisual) return;
   lastVisual = sig;
@@ -184,6 +184,12 @@ async function act(a: string) {
       toast(r.stage.team ? `Yeni: ${r.stage.team.name}` : "Səhnə boşdur");
       return;
     }
+    if (a === "plus" || a === "minus") {
+      const r = await api<{ stage: StagePayload }>("/api/admin/event", { method: "PATCH", body: { timerAdd: a === "plus" ? 30 : -30 } });
+      onStage(r.stage);
+      toast(a === "plus" ? "+30 saniyə" : "−30 saniyə");
+      return;
+    }
     let action = a as TimerAction;
     // Starting from "idle" (hidden timer) begins the pitch.
     if (a === "toggle" && stage && !stage.timer.visible) action = "pitch";
@@ -212,6 +218,8 @@ document.addEventListener("keydown", e => {
   else if (k === "s" || k === "q") act("qa");
   else if (k === "r") act("reset");
   else if (k === "n") act("next");
+  else if (k === "+" || k === "=") act("plus");
+  else if (k === "-" || k === "_") act("minus");
 });
 
 // Hide the dock after a few idle seconds so the projector shows only the timer.

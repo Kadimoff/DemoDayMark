@@ -1,19 +1,23 @@
-// Product name. The organiser fills in only the prefix (e.g. "Ignite"); "DemoDay" is fixed.
-export const PRODUCT = "DemoDay";
+// Event name = organiser's prefix (e.g. "Ignite") + event type ("Hakaton" or "DemoDay") → "Ignite Hakaton".
+export const PRODUCTS = ["Hakaton", "DemoDay"] as const;
+export type Product = (typeof PRODUCTS)[number];
+export const DEFAULT_PRODUCT: Product = "Hakaton";
+export const asProduct = (v: unknown): Product => (PRODUCTS as readonly unknown[]).includes(v) ? (v as Product) : DEFAULT_PRODUCT;
 
-export function brandName(prefix: string | null | undefined): string {
+export function brandName(prefix: string | null | undefined, product: string = DEFAULT_PRODUCT): string {
   const p = (prefix ?? "").trim();
-  return p ? `${p} ${PRODUCT}` : PRODUCT;
+  const k = asProduct(product);
+  return p ? `${p} ${k}` : k;
 }
 
-/** File-name-safe form: "Ignite_DemoDay" / "DemoDay". */
-export function brandSlug(prefix: string | null | undefined): string {
-  return brandName(prefix).replace(/[^\p{L}\p{N}]+/gu, "_").replace(/^_+|_+$/g, "");
+/** File-name-safe form: "Ignite_Hakaton" / "DemoDay". */
+export function brandSlug(name: string): string {
+  return name.replace(/[^\p{L}\p{N}]+/gu, "_").replace(/^_+|_+$/g, "");
 }
 
-/** Turns a legacy full event name ("Ignite Demo Day") into its prefix ("Ignite"). */
+/** Strips a trailing event type the organiser may have typed into the prefix ("Ignite Demo Day" → "Ignite"). */
 export function prefixFromLegacyName(name: string): string {
-  return name.replace(/\s*demo\s*day\s*$/i, "").trim();
+  return name.replace(/\s*(demo\s*day|hakaton|hackathon)\s*$/i, "").trim();
 }
 
 export const DEFAULT_FEEDBACK_TAGS = [

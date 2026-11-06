@@ -17,7 +17,7 @@ export function topbar(opts: TopbarOpts) {
   const root = $("#top");
   root.className = "top";
   root.innerHTML = `<div class="wrap${opts.wide ? " wide" : ""}">
-    <a class="brand" href="/"><span class="flame" aria-hidden="true"></span><b id="evName">${brandHtml(opts.eventName ?? "DemoDay")}</b><span class="role">${opts.role === "admin" ? "Koordinator paneli" : "Münsif"}</span></a>
+    <a class="brand" href="/"><span class="flame" aria-hidden="true"></span><b id="topBrand">${brandHtml(opts.eventName ?? "Hakaton")}</b><span class="role">${opts.role === "admin" ? "Koordinator paneli" : "Münsif"}</span></a>
     ${opts.nav ? `<nav class="nav" aria-label="Bölmələr">${opts.nav.map(n => `<a href="${n.href}"${n.current ? ' aria-current="page"' : ""}${n.external ? ' target="_blank" rel="noopener"' : ""}>${esc(n.label)}${n.external ? icon("ext") : ""}</a>`).join("")}</nav>` : ""}
     <span class="spacer"></span>
     <span class="conn" id="conn">Qoşulur…</span>
@@ -29,9 +29,9 @@ export function topbar(opts: TopbarOpts) {
   themeSwitch($("#themeSw"));
   return {
     setEventName(name: string) {
-      $("#evName").innerHTML = brandHtml(name);
+      $("#topBrand").innerHTML = brandHtml(name);
       const page = document.title.split(" · ")[0];
-      document.title = `${page} · ${name || "DemoDay"}`;
+      document.title = `${page} · ${name || "Hakaton"}`;
     },
     setOnline(online: boolean) {
       const c = $("#conn");

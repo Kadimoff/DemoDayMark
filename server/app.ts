@@ -27,6 +27,7 @@ const PAGES: Record<string, { file: string; role?: "admin" | "juror" }> = {
   "/admin/setup": { file: "setup.html", role: "admin" },
   "/timer": { file: "timer.html" },
   "/reveal": { file: "reveal.html" },
+  "/speaker": { file: "speaker.html" },
 };
 
 export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Promise<App> {

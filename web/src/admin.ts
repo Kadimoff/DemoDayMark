@@ -7,12 +7,16 @@ import type { AdminTeam, Criterion, Juror, PresenceEntry, ProgressEntry, ScoreRo
 import { api, ApiError } from "./lib/api";
 import { now } from "./lib/clock";
 import { $, ago, esc, flip, hhmm, icon, initials, toast } from "./lib/dom";
-import { createJuror, jurorJoined, onQrChange, reissue } from "./lib/qr";
+import { createJuror, jurorJoined, onQrChange, reissue, showLinkQr } from "./lib/qr";
 import { live } from "./lib/socket";
+import { sortable } from "./lib/sortable";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
 import { topbar } from "./lib/topbar";
 
-interface EventState { name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean; includeEntry: boolean; revealTop: number }
+interface EventState {
+  name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean; includeEntry: boolean;
+  revealTop: number; revealBatch: number; revealHideScores: boolean; finalOrder: number[] | null;
+}
 interface AdminData {
   results: Results;
   teams: AdminTeam[];
@@ -24,7 +28,8 @@ interface AdminData {
 interface AdminState extends AdminData { event: EventState; stage: StagePayload; presence: PresenceEntry[]; progress: ProgressEntry[]; sessions: Array<{ userId: number }> }
 interface AdminReveal {
   enabled: boolean; step: number; stepsTotal: number; snapshotAt: number | null; entries: RevealEntry[];
-  next: { kind: "suspense" | "reveal"; index: number; entry: RevealEntry } | null;
+  next: { kind: "suspense" | "reveal"; index: number; indices: number[]; entry: RevealEntry; entries: RevealEntry[] } | null;
+  batch: number; manual: boolean;
   stale: boolean; unscored: number; progress: { done: number; need: number }; locked: boolean;
   top: number; steps: Array<{ kind: "suspense" | "reveal"; index: number; rank: number; name: string }>;
   public: { revealed: Array<RevealEntry & { index: number }>; suspense: { index: number; rank: number } | null; total: number };
@@ -109,6 +114,7 @@ function build() {
       <section class="card pad-lg stack" id="orderCard" aria-labelledby="h-order"></section>
     </div>
     <section class="card pad-lg stack section-gap" id="juryCard" aria-labelledby="h-jury"></section>
+    <section class="card pad-lg stack section-gap" id="finalCard" aria-labelledby="h-final"></section>
     <section class="card pad-lg stack section-gap" id="revealCard" aria-labelledby="h-rv"></section>
     <div class="grid2 section-gap">
       <section>
@@ -134,6 +140,7 @@ function renderAll() {
   renderStage();
   renderOrder();
   renderJury();
+  renderFinal();
   renderRanking();
   renderMatrix();
   renderHeat();
@@ -150,6 +157,7 @@ function renderHero() {
       <p class="sub">Səhnə tempi, real vaxtda münsif sinxronizasiyası və nəticə açıqlaması</p></div></div>
     <div class="row">
       <a class="btn sm" href="/timer" target="_blank" rel="noopener">${icon("timer")}Proyektor taymeri</a>
+      <button class="btn sm" id="speakerQr">${icon("qr")}Təqdimatçı QR</button>
       <button class="btn sm primary" id="heroQr">${icon("qr")}Münsif QR yarat</button>
     </div>`;
   $("#footBrand").textContent = `${S.stage.eventName} · Tədbir idarəetmə sistemi`;
@@ -229,7 +237,15 @@ function renderStage() {
         </div>`
       : `<div class="tname faint">Səhnədə komanda yoxdur</div><p class="tproj">Sağdakı siyahıdan komandanı seçin və ya “Növbəti” düyməsini basın.</p>`}
     </div>
-    <div class="clockbox" id="clockbox"><div class="lbl">Qalan müddət</div><b id="clockT">—</b><div class="sync"><span id="clockSrv"></span><span class="live-t">· Canlı geri sayım</span></div></div>
+    <div class="clockbox" id="clockbox"><div class="lbl">Qalan müddət</div>
+      <b id="clockT" title="Toxunun və vaxtı yazın" tabindex="0" role="button" aria-label="Qalan vaxtı dəyiş">—</b>
+      <form id="clockForm" hidden><input id="clockIn" inputmode="numeric" autocomplete="off" aria-label="Qalan vaxt (dəq:san)"><button class="btn sm primary" type="submit">Tətbiq et</button><button class="btn sm" type="button" id="clockCancel">Ləğv</button></form>
+      <div class="sync"><span id="clockSrv"></span><span class="live-t">· Canlı geri sayım</span></div>
+      <div class="adj" id="adj" role="group" aria-label="Vaxtı düzəlt">
+        <button type="button" data-adj="-30">−30 san</button><button type="button" data-adj="-10">−10</button>
+        <button type="button" data-adj="10">+10</button><button type="button" data-adj="30">+30 san</button>
+        <button type="button" data-adj="60">+1 dəq</button>
+      </div></div>
     <div class="tbtns" id="tbtns"></div>
     <div class="tmore" id="tmore"></div>`;
   renderTimerCtl();
@@ -256,11 +272,14 @@ function renderTimerCtl(v?: TimerView) {
       <button class="btn sm ${kind === "pitch" && running ? "on" : ""}" data-timer="pitch" ${hasTeam ? "" : "disabled"}>${icon("play")}Pitch-i başdan · ${fmtClock(t.pitchSec)}</button>
       <button class="btn sm ghost" data-timer="stop" ${kind === "idle" ? "disabled" : ""}>${icon("stop")}Taymeri gizlət</button>
       <button class="btn sm ghost" id="clearStage" ${hasTeam ? "" : "disabled"}>Səhnəni boşalt</button>
-      <a class="btn sm ghost" href="/timer" target="_blank" rel="noopener">${icon("ext")}Proyektor taymeri</a>`;
+      <a class="btn sm ghost" href="/timer" target="_blank" rel="noopener">${icon("ext")}Proyektor taymeri</a>
+      <button class="btn sm ghost" id="speakerQr2">${icon("qr")}Təqdimatçı QR</button>`;
   }
   const cb = document.getElementById("clockbox");
   if (!cb) return;
   const T = $("#clockT");
+  const adj = document.getElementById("adj");
+  if (adj) adj.querySelectorAll("button").forEach(b => { (b as HTMLButtonElement).disabled = kind === "idle"; });
   if (view && view.kind !== "idle") {
     T.textContent = fmtClock(view.remaining);
     cb.className = `clockbox${view.kind === "done" ? " over" : view.remaining <= 30 && !view.ready && view.running ? " warn" : ""}`;
@@ -278,8 +297,11 @@ function renderTimerCtl(v?: TimerView) {
 strip.onTick(v => { renderTimerCtl(v); renderKpis(v); });
 
 // ---------- running order ----------
+let orderSort: ReturnType<typeof sortable> | null = null;
 function renderOrder() {
   if (!S) return;
+  if (orderSort?.dragging) return; // never re-render under the user's finger
+  if (!orderSort) orderSort = sortable($("#orderCard"), { item: ".order [data-id]", handle: ".grip", onDrop: ids => reorderTeams(ids) });
   const teams = activeTeams();
   const cur = S.event.currentTeamId;
   const ci = teams.findIndex(t => t.id === cur);
@@ -293,10 +315,71 @@ function renderOrder() {
         : nJ && n >= nJ ? `<span class="pill ok">${icon("check")}${n}/${nJ}</span>`
         : ci >= 0 && i === ci + 1 ? `<span class="st acc-t">Növbədə</span>`
         : n ? `<span class="st">${n}/${nJ} səs</span>` : `<span class="st">Gözləyir</span>`;
-      return `<button data-cur="${t.id}" aria-pressed="${t.id === cur}"><span class="ix">#${String(i + 1).padStart(2, "0")}</span>
+      return `<button data-cur="${t.id}" data-id="${t.id}" aria-pressed="${t.id === cur}"><span class="grip" title="Sürüşdürüb yerini dəyiş" aria-hidden="true">⋮⋮</span><span class="ix">#${String(i + 1).padStart(2, "0")}</span>
         <span class="nm"><b>${esc(t.name)}</b>${t.project ? `<small>${esc(t.project)}</small>` : ""}</span>${st}</button>`;
     }).join("") || `<p class="note">Aktiv komanda yoxdur.</p>`}</div>
-    <a class="btn sm ghost" href="/admin/setup" style="margin-top:auto">${icon("list")}Ardıcıllığı yenidən nizamla</a>`;
+    <p class="sub" style="margin:auto 0 0">${icon("list")} Sırasını dəyişmək üçün komandanı <b>⋮⋮</b> tutub sürüşdürün.</p>`;
+}
+async function reorderTeams(activeIds: number[]) {
+  if (!S) return;
+  const rest = S.teams.filter(t => !t.active).map(t => t.id);
+  try {
+    await api("/api/admin/teams/reorder", { method: "POST", body: { ids: [...activeIds, ...rest] } });
+    toast("Püşk ardıcıllığı yeniləndi");
+  } catch (e) { toast((e as ApiError).message, "err"); }
+  await load();
+}
+
+// ---------- jurors' final decision: the order the reveal uses ----------
+let finalSort: ReturnType<typeof sortable> | null = null;
+/** Jurors mostly argue about the top places: the list shows 10 until the admin opens it all. */
+let finalAll = false;
+const FINAL_SHOWN = 10;
+function finalTeams() {
+  if (!S) return [];
+  const scored = S.results.ranking.filter(r => r.score != null);
+  const order = S.event.finalOrder;
+  if (!order?.length) return scored;
+  const pos = new Map(order.map((id, i) => [id, i]));
+  return [...scored].sort((a, b) => (pos.get(a.team.id) ?? 1e6 + (a.rank ?? 0)) - (pos.get(b.team.id) ?? 1e6 + (b.rank ?? 0)));
+}
+function renderFinal() {
+  if (!S) return;
+  if (finalSort?.dragging) return;
+  const card = $("#finalCard");
+  if (!finalSort) finalSort = sortable(card, {
+    item: ".final [data-id]", handle: ".grip",
+    // Hidden places keep their order after the ones on screen.
+    onDrop: ids => saveFinal([...ids, ...finalTeams().map(x => x.team.id).filter(id => !ids.includes(id))]),
+  });
+  const all = finalTeams();
+  const list = finalAll ? all : all.slice(0, FINAL_SHOWN);
+  const manual = !!S.event.finalOrder?.length && list.some((x, i) => x.rank !== i + 1);
+  card.innerHTML = `
+    <div class="head">
+      <div><h2 id="h-final">${icon("medal")}Yekun sıra <span class="pill ${manual ? "hot" : ""}">${manual ? "Münsif qərarı" : "Ballara görə"}</span></h2>
+        <p class="sub">Münsiflər müzakirədən sonra qalibləri dəyişə bilər: komandanı <b>⋮⋮</b> tutub yeni yerinə sürüşdürün. Nəticə açıqlaması bu sıra ilə gedir, ballar dəyişmir.</p></div>
+      <div class="row">
+        <button class="btn sm" id="finalReset" ${S.event.finalOrder?.length ? "" : "disabled"}>${icon("reset")}Ballara görə sırala</button>
+      </div>
+    </div>
+    ${list.length ? `<div class="final">${list.map((x, i) => {
+      const d = (x.rank ?? i + 1) - (i + 1);
+      return `<div class="fin" data-id="${x.team.id}"><span class="grip" aria-hidden="true">⋮⋮</span><span class="place p${i + 1}">${i + 1}</span>
+        <span class="nm"><b>${esc(x.team.name)}</b><small>Ballara görə ${x.rank ?? "—"}-ci yer</small></span>
+        ${d ? `<span class="pill ${d > 0 ? "ok" : "warn"}">${d > 0 ? "↑" : "↓"} ${Math.abs(d)}</span>` : ""}
+        <span class="mono sc">${fmt2(x.score)}</span></div>`;
+    }).join("")}</div>${all.length > FINAL_SHOWN ? `<button class="btn sm ghost fin-more" id="finalMore">${finalAll ? `Yalnız ilk ${FINAL_SHOWN}` : `Hamısını göstər (${all.length})`}</button>` : ""}` : `<p class="note">Hələ qiymətləndirilmiş komanda yoxdur.</p>`}`;
+}
+async function saveFinal(ids: number[] | null) {
+  if (!S) return;
+  try {
+    const r = await api<{ finalOrder: number[] | null }>("/api/admin/final-order", { method: "PUT", body: { ids } });
+    S.event.finalOrder = r.finalOrder;
+    toast(ids ? "Yekun sıra saxlanıldı" : "Ballara görə sıraya qaytarıldı");
+  } catch (e) { toast((e as ApiError).message, "err"); }
+  renderFinal();
+  loadReveal();
 }
 
 // ---------- jurors: live voting state ----------
@@ -417,9 +500,12 @@ function renderReveal() {
     : !rv.enabled ? "Proyektorda “Nəticələr tezliklə açıqlanacaq” yazısı görünür. İrəliləyiş saxlanılıb."
     : done ? "Bütün yerlər açıqlanıb. Qalib ekranda qalır."
     : n!.kind === "suspense" ? `Növbəti basış: <b>${ordinal(n!.entry.rank)} yer</b> üçün intizar (qaranlıq ekran, ürək döyüntüsü). Ad hələ görünmür.`
+    : n!.entries?.length > 1 ? `Növbəti basış: <b>${Math.max(...n!.entries.map(e => e.rank))}–${ordinal(Math.min(...n!.entries.map(e => e.rank)))} yerlər</b> birlikdə açılır (${n!.entries.length} komanda).`
     : `Növbəti basış: <b>${ordinal(n!.entry.rank)} yer</b> açıqlanır: <b>${esc(n!.entry.name)}</b> · <span class="mono">${fmt2(n!.entry.score)}</span> <span class="faint">(yalnız siz görürsünüz)</span>`;
   const label = !rv.enabled ? "Açıqlamaya icazə ver" : done ? "Bütün yerlər açıqlandı"
-    : n!.kind === "suspense" ? `${ordinal(n!.entry.rank)} yer: intizarı başlat` : `${ordinal(n!.entry.rank)} yeri açıqla`;
+    : n!.kind === "suspense" ? `${ordinal(n!.entry.rank)} yer: intizarı başlat`
+    : n!.entries?.length > 1 ? `${Math.max(...n!.entries.map(e => e.rank))}–${ordinal(Math.min(...n!.entries.map(e => e.rank)))} yerləri açıqla`
+    : `${ordinal(n!.entry.rank)} yeri açıqla`;
   // One chip per place, last place first, the way the ceremony goes.
   const places = rv.entries.map((e, i) => ({ e, i })).reverse();
   const revealedIdx = new Set((rv.public?.revealed ?? []).map(x => x.index));
@@ -451,6 +537,14 @@ function renderReveal() {
           <span class="row" style="gap:8px"><span class="caps">İntizarlı yer</span>
             <span class="stepper"><button id="topDec" ${S.event.revealTop > 0 ? "" : "disabled"} aria-label="Azalt">−</button><b>${S.event.revealTop}</b><button id="topInc" ${S.event.revealTop < 10 ? "" : "disabled"} aria-label="Artır">+</button></span></span>
         </div>
+        <div class="row between">
+          <span class="row" style="gap:8px"><span class="caps">Toplu açılış</span>
+            <span class="stepper"><button id="batDec" ${S.event.revealBatch > 1 ? "" : "disabled"} aria-label="Azalt">−</button><b>${S.event.revealBatch}</b><button id="batInc" ${S.event.revealBatch < 10 ? "" : "disabled"} aria-label="Artır">+</button></span>
+            <span class="sub" style="margin:0">komanda / basış</span></span>
+          <span class="row" style="gap:8px"><span class="caps">Balları göstər</span>
+            <button class="sw" role="switch" id="rvScores" aria-checked="${!S.event.revealHideScores}" aria-label="Açıqlamada balları göstər"></button></span>
+        </div>
+        ${rv.snapshotAt && S.event.revealBatch !== rv.batch ? `<p class="sub" style="margin:0">Toplu açılış (${S.event.revealBatch}) “Sıfırla”dan sonra tətbiq olunur.</p>` : ""}
         ${rv.snapshotAt && S.event.revealTop !== top ? `<p class="sub" style="margin:0">Yeni say (${S.event.revealTop}) “Sıfırla”dan sonra tətbiq olunur. İndiki açıqlama: ilk ${top} yer intizarla.</p>` : ""}
       </div>
       <div class="rvstat">
@@ -602,6 +696,11 @@ main.addEventListener("click", async e => {
   if (t.closest("#rnCancel")) { editing = null; renderStage(); return; }
   if (t.closest("#lockSw") || t.closest("#lockBtn")) { await patchEvent({ locked: !S.event.locked }); renderJury(); return; }
   if (t.closest("#heroQr") || t.closest("#addJuror")) { createJuror(); return; }
+  if (t.closest("#speakerQr") || t.closest("#speakerQr2")) {
+    showLinkQr({ title: "Təqdimatçı taymeri", heading: "Pitch edən tələbə skan etsin",
+      path: "/speaker", note: "Telefonda qalan vaxt böyük rəqəmlərlə görünür: proyektor taymeri ilə eyni saniyə, 30 saniyə qalanda və vaxt bitəndə titrəyir. Giriş tələb etmir, ballar görünmür." });
+    return;
+  }
   const qr = t.closest<HTMLElement>("[data-qr]");
   if (qr) {
     const j = S.jurors.find(x => x.id === Number(qr.dataset.qr));
@@ -627,6 +726,24 @@ main.addEventListener("click", async e => {
     else revealAction("next");
     return;
   }
+  if (t.closest("#batDec") || t.closest("#batInc")) {
+    const v = Math.max(1, Math.min(10, S.event.revealBatch + (t.closest("#batInc") ? 1 : -1)));
+    await patchEvent({ revealBatch: v });
+    await loadReveal();
+    return;
+  }
+  if (t.closest("#rvScores")) {
+    await patchEvent({ revealHideScores: !S.event.revealHideScores });
+    toast(S.event.revealHideScores ? "Açıqlamada ballar gizlədildi" : "Açıqlamada ballar göstərilir");
+    await loadReveal();
+    return;
+  }
+  if (t.closest("#finalReset")) { saveFinal(null); return; }
+  if (t.closest("#finalMore")) { finalAll = !finalAll; renderFinal(); return; }
+  const ad = t.closest<HTMLButtonElement>("[data-adj]");
+  if (ad && !ad.disabled) { patchEvent({ timerAdd: Number(ad.dataset.adj) }); return; }
+  if (t.closest("#clockT")) { openClockEdit(); return; }
+  if (t.closest("#clockCancel")) { closeClockEdit(); return; }
   if (t.closest("#topDec") || t.closest("#topInc")) {
     const v = Math.max(0, Math.min(10, S.event.revealTop + (t.closest("#topInc") ? 1 : -1)));
     await patchEvent({ revealTop: v });
@@ -681,7 +798,33 @@ main.addEventListener("click", async e => {
     renderDanger();
   }
 });
+function openClockEdit() {
+  if (!S?.stage.timer.visible) { toast("Əvvəlcə taymeri başladın və ya “Sıfırla” basın"); return; }
+  const f = document.getElementById("clockForm") as HTMLFormElement | null;
+  if (!f) return;
+  f.hidden = false;
+  $("#clockT").hidden = true;
+  const input = $<HTMLInputElement>("#clockIn");
+  input.value = $("#clockT").textContent ?? "";
+  input.select();
+}
+function closeClockEdit() {
+  const f = document.getElementById("clockForm") as HTMLFormElement | null;
+  if (f) f.hidden = true;
+  const T = document.getElementById("clockT");
+  if (T) T.hidden = false;
+}
 main.addEventListener("submit", async e => {
+  if ((e.target as HTMLElement).id === "clockForm") {
+    e.preventDefault();
+    const m = $<HTMLInputElement>("#clockIn").value.trim().match(/^(\d{1,2})(?::([0-5]\d))?$/);
+    if (!m) { toast("Vaxtı dəq:san formatında yazın, məs. 1:30", "err"); return; }
+    const sec = m[2] != null ? Number(m[1]) * 60 + Number(m[2]) : Number(m[1]) * 60;
+    closeClockEdit();
+    await patchEvent({ timerSet: sec });
+    toast(`Qalan vaxt: ${fmtClock(sec)}`);
+    return;
+  }
   if ((e.target as HTMLElement).id !== "renameForm" || !S) return;
   e.preventDefault();
   const id = editing;
@@ -698,6 +841,8 @@ main.addEventListener("submit", async e => {
 
 // Same shortcuts as the projector timer, while no field or dialog has focus.
 document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeClockEdit();
+  if ((e.target as HTMLElement).id === "clockT" && e.key === "Enter") { openClockEdit(); return; }
   if (!S || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
   const el = e.target as HTMLElement;
   if (el.closest("input, textarea, select, dialog[open]") || document.querySelector("dialog[open]")) return;
@@ -707,6 +852,8 @@ document.addEventListener("keydown", e => {
   else if ((k === "q" || k === "s") && has) patchEvent({ timer: "qa" });
   else if (k === "r" && has) patchEvent({ timer: "reset" });
   else if (k === "n") nextTeam();
+  else if ((k === "+" || k === "=") && has) patchEvent({ timerAdd: 30 });
+  else if ((k === "-" || k === "_") && has) patchEvent({ timerAdd: -30 });
 });
 
 onQrChange(() => load());
@@ -729,7 +876,10 @@ live({
     },
     "timer:changed": (p: { timer: TimerState; serverNow: number }) => {
       strip.setTimer(p.timer, p.serverNow);
-      if (S) { S.stage = { ...S.stage, timer: p.timer }; S.event.timer = p.timer; }
+      if (!S) return;
+      const durations = S.stage.timer.pitchSec !== p.timer.pitchSec || S.stage.timer.qaSec !== p.timer.qaSec;
+      S.stage = { ...S.stage, timer: p.timer }; S.event.timer = p.timer;
+      if (durations) renderStage();
     },
     "score:upserted": (s: ScoreRow) => { flashKey = `${s.jurorId}:${s.teamId}`; },
     "results:changed": (d: AdminData) => {
@@ -739,6 +889,7 @@ live({
       renderStage();
       renderOrder();
       renderJury();
+      renderFinal();
       renderRanking();
       renderMatrix();
       renderHeat();
