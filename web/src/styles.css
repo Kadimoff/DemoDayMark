@@ -1,23 +1,20 @@
 /* DemoDay — one stylesheet for every screen.
-   App screens follow the Stitch "juror interface" design (dark only); the projector screens keep their own palettes. */
+   App screens follow the Stitch "juror interface" design (dark + light); the projector screens keep their own dark palettes. */
 
-/* ---------- fonts (self-hosted; Manrope lacks capital Ə, Noto Sans fills that one glyph) ---------- */
-@font-face { font-family: "Manrope"; font-weight: 400; font-display: swap; src: url("/fonts/Manrope-400.ttf") format("truetype"); }
-@font-face { font-family: "Manrope"; font-weight: 500; font-display: swap; src: url("/fonts/Manrope-500.ttf") format("truetype"); }
-@font-face { font-family: "Manrope"; font-weight: 600; font-display: swap; src: url("/fonts/Manrope-600.ttf") format("truetype"); }
-@font-face { font-family: "Manrope"; font-weight: 700 900; font-display: swap; src: url("/fonts/Manrope-700.ttf") format("truetype"); }
-@font-face { font-family: "Manrope"; font-weight: 400 500; font-display: swap; src: url("/fonts/NotoSans-400.ttf") format("truetype"); unicode-range: U+018F; }
-@font-face { font-family: "Manrope"; font-weight: 600; font-display: swap; src: url("/fonts/NotoSans-600.ttf") format("truetype"); unicode-range: U+018F; }
-@font-face { font-family: "Manrope"; font-weight: 700 900; font-display: swap; src: url("/fonts/NotoSans-700.ttf") format("truetype"); unicode-range: U+018F; }
-@font-face { font-family: "Unbounded"; font-weight: 500; font-display: swap; src: url("/fonts/Unbounded-500.ttf") format("truetype"); }
-@font-face { font-family: "Unbounded"; font-weight: 700 900; font-display: swap; src: url("/fonts/Unbounded-700.ttf") format("truetype"); }
-@font-face { font-family: "JetBrains Mono"; font-weight: 500; font-display: swap; src: url("/fonts/JetBrainsMono-500.ttf") format("truetype"); }
-@font-face { font-family: "JetBrains Mono"; font-weight: 700 900; font-display: swap; src: url("/fonts/JetBrainsMono-700.ttf") format("truetype"); }
-/* JetBrains Mono and Unbounded lack capital "Ə" too (it rendered as a lowercase-looking glyph in caps labels). */
-@font-face { font-family: "JetBrains Mono"; font-weight: 400 600; font-display: swap; src: url("/fonts/NotoSans-600.ttf") format("truetype"); unicode-range: U+018F; }
-@font-face { font-family: "JetBrains Mono"; font-weight: 700 900; font-display: swap; src: url("/fonts/NotoSans-700.ttf") format("truetype"); unicode-range: U+018F; }
-@font-face { font-family: "Unbounded"; font-weight: 400 900; font-display: swap; src: url("/fonts/NotoSans-700.ttf") format("truetype"); unicode-range: U+018F; }
-
+/* ---------- fonts ----------
+   Self-hosted WOFF2, subset to Latin + Azerbaijani (12–19 KB each; the TTFs stay for the PDF export).
+   Manrope lacks capital "Ə": a 1 KB Noto Sans subset fills that one glyph (JetBrains Mono and Unbounded have it). */
+@font-face { font-family: "Manrope"; font-weight: 400; font-display: swap; src: url("/fonts/Manrope-400.woff2") format("woff2"); unicode-range: U+0020-007E, U+00A0-00FF, U+0130-0131, U+011E-011F, U+015E-015F, U+0259, U+2010-2027, U+2030-203A, U+20AC, U+20BC, U+2122, U+2190-2193, U+2212, U+2713, U+25CF; }
+@font-face { font-family: "Manrope"; font-weight: 500; font-display: swap; src: url("/fonts/Manrope-500.woff2") format("woff2"); unicode-range: U+0020-007E, U+00A0-00FF, U+0130-0131, U+011E-011F, U+015E-015F, U+0259, U+2010-2027, U+2030-203A, U+20AC, U+20BC, U+2122, U+2190-2193, U+2212, U+2713, U+25CF; }
+@font-face { font-family: "Manrope"; font-weight: 600; font-display: swap; src: url("/fonts/Manrope-600.woff2") format("woff2"); unicode-range: U+0020-007E, U+00A0-00FF, U+0130-0131, U+011E-011F, U+015E-015F, U+0259, U+2010-2027, U+2030-203A, U+20AC, U+20BC, U+2122, U+2190-2193, U+2212, U+2713, U+25CF; }
+@font-face { font-family: "Manrope"; font-weight: 700 900; font-display: swap; src: url("/fonts/Manrope-700.woff2") format("woff2"); unicode-range: U+0020-007E, U+00A0-00FF, U+0130-0131, U+011E-011F, U+015E-015F, U+0259, U+2010-2027, U+2030-203A, U+20AC, U+20BC, U+2122, U+2190-2193, U+2212, U+2713, U+25CF; }
+@font-face { font-family: "Manrope"; font-weight: 400 500; font-display: swap; src: url("/fonts/NotoSans-400-schwa.woff2") format("woff2"); unicode-range: U+018F; }
+@font-face { font-family: "Manrope"; font-weight: 600; font-display: swap; src: url("/fonts/NotoSans-600-schwa.woff2") format("woff2"); unicode-range: U+018F; }
+@font-face { font-family: "Manrope"; font-weight: 700 900; font-display: swap; src: url("/fonts/NotoSans-700-schwa.woff2") format("woff2"); unicode-range: U+018F; }
+@font-face { font-family: "Unbounded"; font-weight: 500; font-display: swap; src: url("/fonts/Unbounded-500.woff2") format("woff2"); unicode-range: U+0020-007E, U+00A0-00FF, U+0130-0131, U+011E-011F, U+015E-015F, U+0259, U+2010-2027, U+2030-203A, U+20AC, U+20BC, U+2122, U+2190-2193, U+2212, U+2713, U+25CF, U+018F; }
+@font-face { font-family: "Unbounded"; font-weight: 700 900; font-display: swap; src: url("/fonts/Unbounded-700.woff2") format("woff2"); unicode-range: U+0020-007E, U+00A0-00FF, U+0130-0131, U+011E-011F, U+015E-015F, U+0259, U+2010-2027, U+2030-203A, U+20AC, U+20BC, U+2122, U+2190-2193, U+2212, U+2713, U+25CF, U+018F; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 500; font-display: swap; src: url("/fonts/JetBrainsMono-500.woff2") format("woff2"); unicode-range: U+0020-007E, U+00A0-00FF, U+0130-0131, U+011E-011F, U+015E-015F, U+0259, U+2010-2027, U+2030-203A, U+20AC, U+20BC, U+2122, U+2190-2193, U+2212, U+2713, U+25CF, U+018F; }
+@font-face { font-family: "JetBrains Mono"; font-weight: 700 900; font-display: swap; src: url("/fonts/JetBrainsMono-700.woff2") format("woff2"); unicode-range: U+0020-007E, U+00A0-00FF, U+0130-0131, U+011E-011F, U+015E-015F, U+0259, U+2010-2027, U+2030-203A, U+20AC, U+20BC, U+2122, U+2190-2193, U+2212, U+2713, U+25CF, U+018F; }
 
 /* ---------- tokens (Stitch "DemoDay juror interface": dark only) ---------- */
 :root {
@@ -448,8 +445,14 @@ textarea:disabled, input:disabled { opacity: .6; }
 .jcard.busy .box .k { color: var(--warn); }
 .jcard.busy .box .ago { color: var(--warn); background: rgba(245, 158, 11, .1); }
 .jcard.sent .box .k { color: var(--ok); }
-.jcard .qr-btn { position: absolute; top: 10px; right: 30px; border: 0; background: transparent; color: var(--faint); min-width: 30px; min-height: 30px; display: grid; place-items: center; border-radius: 6px; }
-.jcard .qr-btn:hover { color: var(--fg); background: var(--surface-3); }
+.jcard .tr { gap: 2px; }
+.jcard .tr .sp { flex: 1; }
+.jcard .tr .dot { margin-left: 6px; }
+.mini-btn { border: 0; background: transparent; color: var(--faint); width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; padding: 0; }
+.mini-btn:hover { color: var(--fg); background: var(--surface-3); }
+.mini-btn.del:hover { color: var(--danger); background: var(--danger-bg); }
+.jcard .confirm.jdel { padding: 8px; gap: 6px; font-size: 12.5px; }
+.jcard .confirm.jdel .btn { flex: 1 1 auto; }
 .addj { border: 1.5px dashed var(--line-2); border-radius: var(--r-md); background: transparent; color: var(--muted); display: grid; place-items: center; gap: 6px; min-height: 150px; font-weight: 700; }
 .addj .ic { width: 22px; height: 22px; color: var(--accent-2); }
 .addj:hover { border-color: var(--accent-line); color: var(--fg); }
@@ -666,7 +669,6 @@ dialog.qrdlg { width: min(560px, calc(100% - 24px)); }
   .jcard .nm b { font-size: 13.5px; }
   .jcard .box { padding: 7px 8px; flex-direction: column; align-items: flex-start; gap: 4px; }
   .jcard .box .v { font-size: 16px; }
-  .jcard .qr-btn { right: 24px; top: 6px; }
   .addj { min-height: 120px; }
   .rvsteps .p { min-width: 56px; padding: 6px 8px; }
   .footbar { flex-direction: column; }

@@ -53,6 +53,12 @@ let rvConfirm: "enable" | "reset" | null = null;
 let built = false;
 type JuryFilter = "all" | "wait" | "busy" | "sent" | "off" | "qr";
 let juryFilter: JuryFilter = "all";
+/** Juror whose delete is awaiting confirmation; `force` once the server said they have scores. */
+let jurorDel: { id: number; msg: string | null; force: boolean } | null = null;
+const delConfirm = (id: number, name: string) => jurorDel?.id === id
+  ? `<div class="confirm jdel"><span>${jurorDel.msg ? esc(jurorDel.msg) : `<b>${esc(name)}</b> silinsin? QR və sessiyaları da bağlanacaq.`}</span>
+      <button class="btn sm danger solid" data-jdel-yes="${id}">${jurorDel.force ? "Ballarla birlikdə sil" : "Bəli, sil"}</button><button class="btn sm" data-jdel-no>Ləğv et</button></div>`
+  : "";
 let juryView: "cards" | "table" = (() => { try { return localStorage.getItem("ij.juryView") === "table" ? "table" : "cards"; } catch { return "cards"; } })();
 
 const activeTeams = () => (S ? S.teams.filter(t => t.active) : []);
@@ -338,11 +344,14 @@ function renderJury() {
         const cls = state === "sent" ? "sent" : state === "busy" ? "busy" : state === "qr" ? "pending" : "";
         const dot = state === "qr" ? "" : state === "busy" ? "busy" : r.p?.online ? "on" : "off";
         return `<div class="jcard ${cls}">
-          <div class="tr"><span class="ini ${state === "qr" ? "wait" : ""}">${esc(initials(j.displayName))}</span><span class="dot ${dot}" title="${esc(lastSeen(r))}"></span></div>
-          <button class="qr-btn" data-qr="${j.id}" title="Yeni QR (əlaqə itibsə)" aria-label="${esc(j.displayName)} üçün yeni QR">${icon("qr")}</button>
+          <div class="tr"><span class="ini ${state === "qr" ? "wait" : ""}">${esc(initials(j.displayName))}</span><span class="sp"></span>
+            <button class="mini-btn" data-qr="${j.id}" title="Yeni QR (əlaqə itibsə)" aria-label="${esc(j.displayName)} üçün yeni QR">${icon("qr")}</button>
+            <button class="mini-btn del" data-jdel="${j.id}" title="Münsifi sil" aria-label="${esc(j.displayName)} sil">${icon("trash")}</button>
+            <span class="dot ${dot}" title="${esc(lastSeen(r))}"></span></div>
           <div class="nm"><b>${esc(j.displayName)}</b><small>${esc(lastSeen(r))} · ${r.done}/${teams.length}</small></div>
           <div class="box"><div><div class="k">${k}</div><div class="v">${v}</div></div>${tag}</div>
           ${state === "qr" ? `<button class="btn sm outline-acc" data-qr="${j.id}">${icon("qr")}QR göstər</button>` : ""}
+          ${delConfirm(j.id, j.displayName)}
         </div>`;
       }).join("")}
         <button class="addj" id="addJuror">${icon("plus")}<span>Münsif əlavə et<br><small class="faint">QR kod yaradılır</small></span></button>
@@ -358,8 +367,9 @@ function renderJury() {
             return `<td class="st${t.id === cur?.id ? " cur" : ""} ${has ? "y" : pr ? "w" : "n"}" title="${esc(t.name)}">${has ? "✓" : pr ? "…" : "—"}</td>`;
           }).join("")}
           <td class="num"><b>${r.done}</b>/${teams.length}</td>
-          <td class="act"><button class="btn sm ghost" data-qr="${r.j.id}" title="Yeni QR">${icon("qr")}</button></td>
-        </tr>`).join("")}</tbody></table></div>
+          <td class="act"><span class="row" style="gap:4px;flex-wrap:nowrap;justify-content:flex-end"><button class="btn sm ghost" data-qr="${r.j.id}" title="Yeni QR" aria-label="${esc(r.j.displayName)} üçün yeni QR">${icon("qr")}</button>
+            <button class="btn sm ghost" data-jdel="${r.j.id}" title="Münsifi sil" aria-label="${esc(r.j.displayName)} sil">${icon("trash")}</button></span></td>
+        </tr>${jurorDel?.id === r.j.id ? `<tr><td colspan="${teams.length + 4}">${delConfirm(r.j.id, r.j.displayName)}</td></tr>` : ""}`).join("")}</tbody></table></div>
       <div class="row"><button class="btn sm" id="addJuror">${icon("plus")}Münsif əlavə et (QR)</button></div>`;
   card.innerHTML = `
     <div class="head">
@@ -623,6 +633,25 @@ main.addEventListener("click", async e => {
     await loadReveal();
     return;
   }
+  const jd = t.closest<HTMLElement>("[data-jdel]");
+  if (jd) { jurorDel = { id: Number(jd.dataset.jdel), msg: null, force: false }; renderJury(); return; }
+  if (t.closest("[data-jdel-no]")) { jurorDel = null; renderJury(); return; }
+  const jy = t.closest<HTMLElement>("[data-jdel-yes]");
+  if (jy && jurorDel) {
+    const id = Number(jy.dataset.jdelYes);
+    const name = S.jurors.find(x => x.id === id)?.displayName ?? "Münsif";
+    try {
+      await api(`/api/admin/jurors/${id}${jurorDel.force ? "?force=1" : ""}`, { method: "DELETE" });
+      jurorDel = null;
+      toast(`${name} silindi`);
+      await load();
+    } catch (ex) {
+      const err = ex as ApiError;
+      if (err.status === 409) { jurorDel = { id, msg: err.message, force: true }; renderJury(); }
+      else { jurorDel = null; toast(err.message, "err"); renderJury(); }
+    }
+    return;
+  }
   const jf = t.closest<HTMLElement>("[data-jf]");
   if (jf) { juryFilter = jf.dataset.jf as JuryFilter; renderJury(); return; }
   const jv = t.closest<HTMLElement>("[data-jv]");
@@ -728,6 +757,6 @@ live({
 });
 
 // Refresh "45 san əvvəl" labels.
-setInterval(() => { if (S && !document.querySelector("dialog[open]")) renderJury(); }, 15000);
+setInterval(() => { if (S && !jurorDel && !document.querySelector("dialog[open]")) renderJury(); }, 15000);
 
 load();

@@ -19,6 +19,7 @@
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {
+    "@fastify/compress": "^8.3.1",
     "@fastify/cookie": "^11.1.5",
     "@fastify/static": "^10.1.8",
     "@node-rs/argon2": "^2.2.2",

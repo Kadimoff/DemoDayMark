@@ -1,7 +1,9 @@
+import fastifyCompress from "@fastify/compress";
 import fastifyCookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import fs from "node:fs";
+import zlib from "node:zlib";
 import path from "node:path";
 import { LoginLimiter, originAllowed, resolveUser, roleForUrl } from "./auth.js";
 import { ensureBaseline } from "./baseline.js";
@@ -36,6 +38,12 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   repo.purgeSessions(Date.now() - cfg.sessionTtlMs);
 
   await app.register(fastifyCookie, { secret: cfg.sessionSecret });
+  // Phones on the venue Wi-Fi / mobile data: every KB counts (CSS 80 KB → ~14 KB, JS ~3×).
+  // Fonts are already WOFF2 and stay uncompressed (the plugin skips non-compressible types).
+  await app.register(fastifyCompress, {
+    global: true, threshold: 1024, encodings: ["br", "gzip"],
+    brotliOptions: { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } },
+  });
   const rt = new Realtime(app, repo, cfg);
   const ctx: Ctx = { repo, cfg, rt, limiter: new LoginLimiter(cfg.loginMaxFails, cfg.loginLockMs) };
 
@@ -84,7 +92,8 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
       // HTML pages are only reachable through the guarded clean URLs below.
       allowedPath: (_p, _root, req) => !req.url.split("?")[0].endsWith(".html"),
       setHeaders: (res, file) => {
-        res.header("Cache-Control", file.includes(`${path.sep}assets${path.sep}`) ? "public, max-age=31536000, immutable" : "public, max-age=86400");
+        res.header("Cache-Control", file.includes(`${path.sep}assets${path.sep}`) ? "public, max-age=31536000, immutable"
+          : file.includes(`${path.sep}fonts${path.sep}`) ? "public, max-age=2592000" : "public, max-age=86400");
       },
     });
   }

@@ -43,6 +43,9 @@ async function start() {
     </form>`;
   const input = $<HTMLInputElement>("#nm");
   input.focus();
+  // Warm the cache with the juror panel's heavy shared chunks while the juror is typing their name.
+  void import("./lib/socket");
+  void import("./lib/stage");
   $("#form").addEventListener("submit", async e => {
     e.preventDefault();
     const displayName = input.value.trim().replace(/\s+/g, " ");
@@ -54,7 +57,7 @@ async function start() {
     try {
       const r = await api<{ redirect: string; displayName: string }>(`/api/auth/invite/${encodeURIComponent(token)}`, { method: "POST", body: { displayName } });
       box.innerHTML = `<div class="join-ok"><span class="tick">${icon("check")}</span><div class="join-hello">${esc(r.displayName)}</div><p class="sub" style="margin:0">Münsif panelinə keçirsiniz…</p></div>`;
-      setTimeout(() => location.replace(r.redirect), 700);
+      location.replace(r.redirect);
     } catch (ex) {
       const a = ex as ApiError;
       if (a.status === 410) { fail(a.message); return; }

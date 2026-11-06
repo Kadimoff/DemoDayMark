@@ -78,9 +78,14 @@ function reportProgress(teamId: number) {
 }
 
 // ---------- data ----------
+declare global { interface Window { __jstate?: Promise<JurorStatePayload | null> } }
+
 async function load() {
   try {
-    S = await api<JurorStatePayload>("/api/juror/state");
+    // First load: reuse the request the page's <head> already started.
+    const early = window.__jstate ? await window.__jstate : null;
+    window.__jstate = undefined;
+    S = early ?? await api<JurorStatePayload>("/api/juror/state");
   } catch (e) {
     if (!S) main.innerHTML = `<div class="banner err">${esc((e as Error).message)}</div>`;
     return;
