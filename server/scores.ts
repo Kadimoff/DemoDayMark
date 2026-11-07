@@ -40,6 +40,7 @@ export function submitScore(repo: Repo, rt: Realtime, jurorId: number, teamIdRaw
   const total = jurorTotal(values, criteria);
   const note = body.note.trim();
   const { score, created } = repo.upsertScore(jurorId, team.id, values, total, note, tags);
+  repo.recordScore(created ? "submit" : "update", jurorId, team.id, values, total, note, tags);
   repo.audit(jurorId, created ? "score.submit" : "score.update", { teamId: team.id, values, total, note, tags });
   rt.emitScore(score, total, ev.showJurorTotal);
   rt.emitResults();

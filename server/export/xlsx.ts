@@ -87,5 +87,24 @@ export async function buildXlsx(repo: Repo, cfg: Config): Promise<Buffer> {
   styleSheet(s4, 1, [28, 90, 14]);
   s4.getColumn(2).alignment = { wrapText: true, vertical: "top" };
 
+  // 5. Tarixçə: every submit and change, oldest first, including those later wiped or deleted.
+  const s5 = wb.addWorksheet("Tarixçə");
+  s5.addRow(["Vaxt", "Hadisə", "Münsif", "Komanda", "Ballar", "Cəmi", "Əvvəlki cəmi", "Sürətli rəylər", "Şərh"]);
+  const KIND: Record<string, string> = { submit: "Göndərildi", update: "Dəyişdirildi", wipe: "Bütün ballar silindi", "team.delete": "Komanda silindi", "juror.delete": "Münsif silindi" };
+  const hist: ReturnType<Repo["history"]>["rows"] = [];
+  for (let before: number | undefined, more = true; more;) {
+    const pg = repo.history({ before, limit: 500 });
+    hist.push(...pg.rows); more = pg.more; before = pg.rows.at(-1)?.id;
+  }
+  for (const h of hist.reverse()) {
+    const marker = h.kind !== "submit" && h.kind !== "update";
+    s5.addRow([fmtTime(h.at), KIND[h.kind] ?? h.kind, h.jurorName, h.teamName,
+      marker ? `${h.count ?? 0} qiymət silindi${h.actorName ? ` (${h.actorName})` : ""}` : h.values.map(v => `${v.name}: ${v.prev != null ? `${v.prev}→` : ""}${v.v}`).join("; "),
+      h.total, h.prevTotal, h.tags.join(", "), h.note]);
+  }
+  styleSheet(s5, 1, [18, 18, 22, 22, 70, 10, 12, 30, 50]);
+  s5.getColumn(5).alignment = { wrapText: true, vertical: "top" };
+  s5.getColumn(9).alignment = { wrapText: true, vertical: "top" };
+
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

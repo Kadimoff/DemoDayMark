@@ -11,7 +11,7 @@ describe("migrations v3 (points rubric + entry scores) and v4 (QR invites, tags,
     // Start from a current DB, then put the three tables v3 touches back into their v2 shape.
     openDb(file).close();
     const raw = new Database(file);
-    raw.exec("DROP TABLE IF EXISTS juror_invites; DROP TABLE IF EXISTS scores; DROP TABLE IF EXISTS criteria; DROP TABLE IF EXISTS teams; DROP TABLE IF EXISTS event;");
+    raw.exec("DROP TABLE IF EXISTS score_history; DROP TABLE IF EXISTS juror_invites; DROP TABLE IF EXISTS scores; DROP TABLE IF EXISTS criteria; DROP TABLE IF EXISTS teams; DROP TABLE IF EXISTS event;");
     raw.exec(`
       CREATE TABLE teams (id INTEGER PRIMARY KEY, order_index INTEGER NOT NULL, name TEXT NOT NULL, project TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1);
       CREATE TABLE criteria (id INTEGER PRIMARY KEY, order_index INTEGER NOT NULL, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', weight INTEGER NOT NULL);
@@ -34,7 +34,7 @@ describe("migrations v3 (points rubric + entry scores) and v4 (QR invites, tags,
 
     const db = openDb(file);
     const repo = new Repo(db);
-    expect(db.pragma("user_version", { simple: true })).toBe(6);
+    expect(db.pragma("user_version", { simple: true })).toBe(7);
     expect(repo.teams().map(t => [t.name, t.entryScore])).toEqual([["Pycore", null], ["Tusi", null]]);
     expect(repo.criteria().map(c => [c.key, c.maxScore])).toEqual([["mvp", 10]]);
     expect(repo.getEvent()).toMatchObject({ name: "Ignite", includeEntry: true, entryMax: 50, feedbackTags: DEFAULT_FEEDBACK_TAGS, revealTop: 3, product: "Hakaton", revealBatch: 1, revealHideScores: false, finalOrder: null });

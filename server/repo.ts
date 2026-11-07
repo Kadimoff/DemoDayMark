@@ -2,7 +2,7 @@
 import type { DB } from "./db.js";
 import { asProduct, brandName, DEFAULT_FEEDBACK_TAGS, type Product } from "../shared/brand.js";
 import { normalizeSnapshot, type RevealSnapshot } from "../shared/reveal.js";
-import type { AdminTeam, Criterion, Juror, ScoreRow, StagePayload, TimerState } from "../shared/types.js";
+import type { AdminTeam, Criterion, HistoryPage, HistoryRow, Juror, ScoreRow, StagePayload, TimerState } from "../shared/types.js";
 
 interface EventRow {
   name: string;
@@ -281,6 +281,45 @@ export class Repo {
   }
   wipeScores() { return this.db.prepare("DELETE FROM scores").run().changes; }
 
+  // ---------- scoring history (never wiped) ----------
+  /** Snapshot of one saved score; called right after upsertScore. */
+  recordScore(kind: "submit" | "update", jurorId: number, teamId: number, values: Record<string, number>, total: number | null, note: string, tags: string[]) {
+    const juror = this.userById(jurorId)?.display_name ?? `Münsif #${jurorId}`;
+    const team = this.team(teamId)?.name ?? `Komanda #${teamId}`;
+    const snap = this.criteria().filter(c => values[c.key] != null).map(c => ({ key: c.key, name: c.name, max: c.maxScore, v: values[c.key] }));
+    this.db.prepare(`INSERT INTO score_history (kind, juror_id, juror_name, team_id, team_name, values_json, total, note, tags_json, actor_name, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(kind, jurorId, juror, teamId, team, JSON.stringify(snap), total, note, JSON.stringify(tags), juror, Date.now());
+  }
+  /** Marker for scores removed in bulk (wipe) or with a team / juror. */
+  recordRemoval(kind: "wipe" | "team.delete" | "juror.delete", actorId: number | null, count: number, who?: { jurorId?: number; jurorName?: string; teamId?: number; teamName?: string }) {
+    const actor = actorId != null ? this.userById(actorId)?.display_name ?? "" : "";
+    this.db.prepare(`INSERT INTO score_history (kind, juror_id, juror_name, team_id, team_name, actor_name, count, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(kind, who?.jurorId ?? null, who?.jurorName ?? "", who?.teamId ?? null, who?.teamName ?? "", actor, count, Date.now());
+  }
+  /** Newest first. Filters by juror / team; markers (wipes) show only when no filter is set. */
+  history(q: { jurorId?: number; teamId?: number; before?: number; limit?: number } = {}): HistoryPage {
+    const limit = Math.min(Math.max(q.limit ?? 50, 1), 500);
+    const where: string[] = [], args: unknown[] = [];
+    if (q.jurorId) { where.push("juror_id = ?"); args.push(q.jurorId); }
+    if (q.teamId) { where.push("team_id = ?"); args.push(q.teamId); }
+    const filt = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const page = q.before ? `${filt ? `${filt} AND` : "WHERE"} id < ?` : filt;
+    // prev_* come from the same juror's previous save for the same team (wipe markers sit outside that chain).
+    const rows = this.db.prepare(`WITH h AS (
+        SELECT *, CASE WHEN kind IN ('submit','update') THEN LAG(values_json) OVER w END prev_values,
+          CASE WHEN kind IN ('submit','update') THEN LAG(total) OVER w END prev_total,
+          CASE WHEN kind IN ('submit','update') THEN LAG(note) OVER w END prev_note
+        FROM score_history WINDOW w AS (PARTITION BY kind IN ('submit','update'), juror_id, team_id ORDER BY id))
+      SELECT * FROM h ${page} ORDER BY id DESC LIMIT ?`).all(...args, ...(q.before ? [q.before] : []), limit + 1) as any[];
+    const more = rows.length > limit;
+    const total = (this.db.prepare(`SELECT COUNT(*) n FROM score_history ${filt}`).get(...args) as any).n as number;
+    const jurors = this.db.prepare(`SELECT juror_id id, juror_name name FROM score_history WHERE juror_id IS NOT NULL AND kind IN ('submit','update')
+      AND id IN (SELECT MAX(id) FROM score_history WHERE juror_id IS NOT NULL AND kind IN ('submit','update') GROUP BY juror_id) ORDER BY name COLLATE NOCASE`).all() as HistoryPage["jurors"];
+    const teams = this.db.prepare(`SELECT team_id id, team_name name FROM score_history WHERE team_id IS NOT NULL AND kind IN ('submit','update')
+      AND id IN (SELECT MAX(id) FROM score_history WHERE team_id IS NOT NULL AND kind IN ('submit','update') GROUP BY team_id) ORDER BY name COLLATE NOCASE`).all() as HistoryPage["teams"];
+    return { rows: rows.slice(0, limit).map(mapHistory), more, total, jurors, teams };
+  }
+
   // ---------- audit ----------
   audit(actorId: number | null, action: string, payload: unknown = {}) {
     this.db.prepare("INSERT INTO audit_log (actor_id, action, payload_json, created_at) VALUES (?, ?, ?, ?)")
@@ -291,6 +330,28 @@ export class Repo {
       a.created_at createdAt FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id ORDER BY a.id DESC LIMIT ?`)
       .all(limit) as any[]).map(r => ({ ...r, payload: JSON.parse(r.payload) }));
   }
+}
+
+function parseJson<T>(json: string | null | undefined, fallback: T): T {
+  if (!json) return fallback;
+  try { return JSON.parse(json) as T; } catch { return fallback; }
+}
+
+function mapHistory(r: any): HistoryRow {
+  // Diffs only for changes; a first submit after a wipe is a fresh score, not a change.
+  const prev = r.kind === "update" && r.prev_values != null
+    ? new Map(parseJson<Array<{ key: string; v: number }>>(r.prev_values, []).map(x => [x.key, x.v])) : null;
+  const values = parseJson<HistoryRow["values"]>(r.values_json, []).map(x => {
+    const p = prev?.get(x.key);
+    return p != null && p !== x.v ? { ...x, prev: p } : x;
+  });
+  return {
+    id: r.id, kind: r.kind, at: r.created_at,
+    jurorId: r.juror_id, jurorName: r.juror_name, teamId: r.team_id, teamName: r.team_name,
+    values, total: r.total, prevTotal: prev ? r.prev_total : null,
+    note: r.note, prevNote: prev && r.prev_note !== r.note ? r.prev_note : null,
+    tags: parseTags(r.tags_json) ?? [], actorName: r.actor_name, count: r.count,
+  };
 }
 
 function parseTags(json: string | null | undefined): string[] | null {

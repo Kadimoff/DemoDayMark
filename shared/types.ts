@@ -115,3 +115,27 @@ export interface ProgressEntry {
 }
 
 export type TimerAction = "pitch" | "qa" | "toggle" | "pause" | "resume" | "reset" | "stop";
+
+/** One entry of the permanent scoring history (admin only). */
+export interface HistoryRow {
+  id: number;
+  kind: "submit" | "update" | "wipe" | "team.delete" | "juror.delete";
+  at: number;
+  jurorId: number | null; jurorName: string;
+  teamId: number | null; teamName: string;
+  /** Criteria as they were at that moment; `prev` is set on updates when the value changed. */
+  values: Array<{ key: string; name: string; max: number | null; v: number; prev?: number }>;
+  total: number | null; prevTotal: number | null;
+  note: string; prevNote: string | null;
+  tags: string[];
+  actorName: string;
+  /** Scores removed by a wipe or a deletion. */
+  count: number | null;
+}
+export interface HistoryPage {
+  rows: HistoryRow[];
+  more: boolean;
+  total: number;
+  jurors: Array<{ id: number; name: string }>;
+  teams: Array<{ id: number; name: string }>;
+}

@@ -78,7 +78,7 @@ afterAll(async () => {
 
 describe("role guards", () => {
   const adminGets = ["/api/admin/state", "/api/admin/results", "/api/admin/teams", "/api/admin/jurors", "/api/admin/criteria",
-    "/api/admin/sessions", "/api/admin/audit", "/api/admin/export.xlsx", "/api/admin/export.pdf"];
+    "/api/admin/sessions", "/api/admin/audit", "/api/admin/history", "/api/admin/export.xlsx", "/api/admin/export.pdf"];
 
   it("returns 403 for every admin endpoint called with a juror session", async () => {
     for (const p of adminGets) expect((await get(p, jurorCookie.ali)).status, p).toBe(403);

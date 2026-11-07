@@ -7,6 +7,7 @@ import type { AdminTeam, Criterion, Juror, PresenceEntry, ProgressEntry, ScoreRo
 import { api, ApiError } from "./lib/api";
 import { now } from "./lib/clock";
 import { $, ago, esc, flip, hhmm, icon, initials, toast } from "./lib/dom";
+import { mountHistory, refreshHistory } from "./lib/history";
 import { createJuror, jurorJoined, onQrChange, reissue, showLinkQr } from "./lib/qr";
 import { live } from "./lib/socket";
 import { sortable } from "./lib/sortable";
@@ -38,10 +39,10 @@ interface AdminReveal {
 const bar = topbar({
   role: "admin",
   nav: [
-    { href: "/admin", label: "Canlı panel", current: true },
-    { href: "/admin/setup", label: "Quraşdırma" },
-    { href: "/timer", label: "Taymer", external: true },
-    { href: "/reveal", label: "Nəticə açıqlaması", external: true },
+    { href: "/admin", label: "Canlı panel", short: "Panel", icon: "users", current: true },
+    { href: "/admin/setup", label: "Quraşdırma", icon: "pencil" },
+    { href: "/timer", label: "Taymer", icon: "timer", external: true },
+    { href: "/reveal", label: "Nəticə açıqlaması", short: "Nəticə", icon: "medal", external: true },
   ],
   wide: true,
 });
@@ -124,12 +125,14 @@ function build() {
       <section class="card" id="matrixCard"></section>
     </div>
     <section class="card section-gap" id="heatCard"></section>
+    <section class="card pad-lg stack section-gap" id="histCard" aria-labelledby="h-hist"></section>
     <div class="grid2 section-gap">
       <section class="card pad-lg stack" id="exportCard"></section>
       <section class="card pad-lg stack" id="dangerCard"></section>
     </div>
     <div class="footbar"><span id="footBrand"></span><span>Avto-sinxronizasiya: açıq</span></div>`;
   built = true;
+  mountHistory($("#histCard"));
 }
 
 function renderAll() {
@@ -895,13 +898,14 @@ live({
       renderHeat();
       renderDanger();
       loadReveal();
+      refreshHistory();
     },
     "presence:changed": (p: PresenceEntry[]) => { if (S) { S.presence = p; renderJury(); renderKpis(); } },
     "progress:changed": (p: ProgressEntry[]) => { if (S) { S.progress = p; renderJury(); } },
     "juror:joined": (p: { jurorId: number; displayName: string }) => { jurorJoined(p); load(); },
     "event:locked": (p: { locked: boolean }) => { if (S) { S.event.locked = p.locked; renderKpis(); renderJury(); } },
     "reveal:changed": () => loadReveal(),
-    "config:changed": () => load(),
+    "config:changed": () => { load(); refreshHistory(); },
   },
   resync: load,
   status: online => bar.setOnline(online),

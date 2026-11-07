@@ -5,7 +5,7 @@ import path from "node:path";
 export type DB = Database.Database;
 
 // Plain SQL migrations, applied in order and tracked with PRAGMA user_version.
-const MIGRATIONS: string[] = [
+const MIGRATIONS: Array<string | ((db: DB) => void)> = [
   `
   CREATE TABLE users (
     id            INTEGER PRIMARY KEY,
@@ -118,6 +118,55 @@ const MIGRATIONS: string[] = [
   ALTER TABLE event ADD COLUMN reveal_hide_scores INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE event ADD COLUMN reveal_batch INTEGER NOT NULL DEFAULT 1;
   `,
+  // v7: permanent scoring history. One row per submit/update, plus markers for wipes and deletions that
+  // removed scores. Names and criteria are copied in, so the history survives deleted teams, jurors and criteria.
+  db => {
+    db.exec(`
+    CREATE TABLE score_history (
+      id          INTEGER PRIMARY KEY,
+      kind        TEXT NOT NULL CHECK (kind IN ('submit','update','wipe','team.delete','juror.delete')),
+      juror_id    INTEGER,
+      juror_name  TEXT NOT NULL DEFAULT '',
+      team_id     INTEGER,
+      team_name   TEXT NOT NULL DEFAULT '',
+      values_json TEXT NOT NULL DEFAULT '[]',   -- [{key, name, max, v}]
+      total       REAL,
+      note        TEXT NOT NULL DEFAULT '',
+      tags_json   TEXT NOT NULL DEFAULT '[]',
+      actor_name  TEXT NOT NULL DEFAULT '',
+      count       INTEGER,                      -- scores removed (wipe / delete markers)
+      created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX score_history_pair ON score_history(juror_id, team_id, id);
+    CREATE INDEX score_history_team ON score_history(team_id, id);
+    `);
+    // Backfill from the audit log, which has carried every submit since v1.
+    const crit = new Map((db.prepare("SELECT key, name, max_score max FROM criteria").all() as Array<{ key: string; name: string; max: number }>).map(c => [c.key, c]));
+    const users = new Map((db.prepare("SELECT id, display_name n FROM users").all() as Array<{ id: number; n: string }>).map(u => [u.id, u.n]));
+    const teams = new Map((db.prepare("SELECT id, name n FROM teams").all() as Array<{ id: number; n: string }>).map(t => [t.id, t.n]));
+    const ins = db.prepare(`INSERT INTO score_history (kind, juror_id, juror_name, team_id, team_name, values_json, total, note, tags_json, actor_name, count, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const rows = db.prepare(`SELECT actor_id, action, payload_json, created_at FROM audit_log
+      WHERE action IN ('score.submit','score.update','scores.wipe','team.delete','juror.delete') ORDER BY id`).all() as Array<{ actor_id: number | null; action: string; payload_json: string; created_at: number }>;
+    for (const r of rows) {
+      let p: any; try { p = JSON.parse(r.payload_json); } catch { continue; }
+      const actor = r.actor_id != null ? users.get(r.actor_id) ?? "" : "";
+      if (r.action === "scores.wipe") { ins.run("wipe", null, "", null, "", "[]", null, "", "[]", actor, p.deleted ?? null, r.created_at); continue; }
+      if (r.action === "team.delete" || r.action === "juror.delete") {
+        if (!p.scoresDeleted) continue;
+        const isTeam = r.action === "team.delete";
+        ins.run(r.action, isTeam ? null : p.id, isTeam ? "" : users.get(p.id) ?? `Münsif #${p.id}`, isTeam ? p.id : null, isTeam ? teams.get(p.id) ?? `Komanda #${p.id}` : "",
+          "[]", null, "", "[]", actor, p.scoresDeleted, r.created_at);
+        continue;
+      }
+      const values = Object.entries((p.values ?? {}) as Record<string, number>).map(([key, v]) => {
+        const c = crit.get(key);
+        return { key, name: c?.name ?? key, max: c?.max ?? null, v };
+      });
+      ins.run(r.action === "score.submit" ? "submit" : "update", r.actor_id, actor || `Münsif #${r.actor_id}`, p.teamId ?? null,
+        teams.get(p.teamId) ?? `Komanda #${p.teamId}`, JSON.stringify(values), p.total ?? null, p.note ?? "", JSON.stringify(p.tags ?? []), actor, null, r.created_at);
+    }
+  },
 ];
 
 export function openDb(file: string): DB {
@@ -134,7 +183,8 @@ function migrate(db: DB) {
   const current = db.pragma("user_version", { simple: true }) as number;
   for (let v = current; v < MIGRATIONS.length; v++) {
     db.transaction(() => {
-      db.exec(MIGRATIONS[v]);
+      const m = MIGRATIONS[v];
+      if (typeof m === "string") db.exec(m); else m(db);
       db.pragma(`user_version = ${v + 1}`);
     })();
   }

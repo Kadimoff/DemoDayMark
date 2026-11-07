@@ -22,10 +22,10 @@ type JurorRow = Juror & { sessionCount: number; claimed: boolean };
 const bar = topbar({
   role: "admin",
   nav: [
-    { href: "/admin", label: "Canlı panel" },
-    { href: "/admin/setup", label: "Quraşdırma", current: true },
-    { href: "/timer", label: "Taymer", external: true },
-    { href: "/reveal", label: "Nəticə açıqlaması", external: true },
+    { href: "/admin", label: "Canlı panel", short: "Panel", icon: "users" },
+    { href: "/admin/setup", label: "Quraşdırma", icon: "pencil", current: true },
+    { href: "/timer", label: "Taymer", icon: "timer", external: true },
+    { href: "/reveal", label: "Nəticə açıqlaması", short: "Nəticə", icon: "medal", external: true },
   ],
   wide: true,
 });

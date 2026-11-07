@@ -194,7 +194,9 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       if (n && req.query.force !== "1") {
         return reply.code(409).send({ error: `Bu komandanın ${n} qiyməti var. Silinsə, qiymətlər də silinəcək.`, scoreCount: n });
       }
+      const tname = repo.team(tid)?.name ?? "";
       if (!repo.deleteTeam(tid)) return reply.code(404).send({ error: "Komanda tapılmadı." });
+      if (n) repo.recordRemoval("team.delete", req.user!.id, n, { teamId: tid, teamName: tname });
       repo.audit(req.user!.id, "team.delete", { id: tid, scoresDeleted: n });
       configChanged();
       return { ok: true };
@@ -276,7 +278,9 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         return reply.code(409).send({ error: `Bu münsifin ${n} qiyməti var. Silinsə, qiymətlər də silinəcək. Bunun əvəzinə deaktiv edə bilərsiniz.`, scoreCount: n });
       }
       rt.kickUser(jid);
+      const jname = repo.userById(jid)?.display_name ?? "";
       if (!repo.deleteUser(jid)) return reply.code(404).send({ error: "Münsif tapılmadı." });
+      if (n) repo.recordRemoval("juror.delete", req.user!.id, n, { jurorId: jid, jurorName: jname });
       repo.audit(req.user!.id, "juror.delete", { id: jid, scoresDeleted: n });
       configChanged();
       rt.emitPresence();
@@ -349,6 +353,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       }
       wipe = null;
       const n = repo.wipeScores();
+      if (n) repo.recordRemoval("wipe", req.user!.id, n);
       repo.setReveal({ enabled: false, step: 0, snapshot: null });
       repo.audit(req.user!.id, "scores.wipe", { deleted: n });
       rt.emitReveal();
@@ -434,5 +439,10 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       return reply.send(buf);
     });
     r.get("/api/admin/audit", async () => repo.auditLog());
+    // Scoring history: every submit and change, kept even after a wipe. ?juror=&team=&before=<id>&limit=
+    r.get<{ Querystring: Record<string, string | undefined> }>("/api/admin/history", async req => {
+      const n = (v?: string) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
+      return repo.history({ jurorId: n(req.query.juror), teamId: n(req.query.team), before: n(req.query.before), limit: n(req.query.limit) });
+    });
   });
 }
