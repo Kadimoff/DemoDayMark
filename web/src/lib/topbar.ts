@@ -16,16 +16,26 @@ export { brandHtml } from "./dom";
 /** Renders the shared coordinator header into #top and returns setters for the brand and connection pill. */
 export function topbar(opts: TopbarOpts) {
   const root = $("#top");
+  const navHtml = opts.nav ? `${opts.nav.map(n => `<a href="${n.href}"${n.current ? ' aria-current="page"' : ""}${n.external ? ' target="_blank" rel="noopener"' : ""}>${n.icon ? `<span class="ni">${icon(n.icon)}</span>` : ""}<span class="nl">${esc(n.label)}</span><span class="ns">${esc(n.short ?? n.label)}</span>${n.external ? `<span class="nx">${icon("ext")}</span>` : ""}</a>`).join("")}` : "";
   root.className = "top";
   root.innerHTML = `<div class="wrap${opts.wide ? " wide" : ""}">
     <a class="brand" href="/"><span class="flame" aria-hidden="true"></span><b id="topBrand">${brandHtml(opts.eventName ?? "Hakaton")}</b><span class="role">${opts.role === "admin" ? "Koordinator paneli" : "Münsif"}</span></a>
-    ${opts.nav ? `<nav class="nav" aria-label="Bölmələr">${opts.nav.map(n => `<a href="${n.href}"${n.current ? ' aria-current="page"' : ""}${n.external ? ' target="_blank" rel="noopener"' : ""}>${n.icon ? `<span class="ni">${icon(n.icon)}</span>` : ""}<span class="nl">${esc(n.label)}</span><span class="ns">${esc(n.short ?? n.label)}</span>${n.external ? `<span class="nx">${icon("ext")}</span>` : ""}</a>`).join("")}</nav>` : ""}
+    ${navHtml ? `<nav class="nav" aria-label="Bölmələr">${navHtml}</nav>` : ""}
     <span class="spacer"></span>
     <span class="conn" id="conn">Qoşulur…</span>
     <div id="themeSw"></div><span class="th1" id="themeOne">${themeToggleHtml()}</span>
     <div class="who-me"><div class="nm"><b>Koordinator</b><small>Admin sessiyası</small></div><span class="avatar" aria-hidden="true">${icon("users")}</span></div>
     ${opts.logout !== false ? `<button class="icon-btn" id="logout" title="Çıxış" aria-label="Çıxış">${icon("logout")}</button>` : ""}
   </div>`;
+  // Phones: the same links as a tab bar fixed to the bottom of the screen (outside the blurred header,
+  // whose backdrop-filter would otherwise pin a fixed child to the header instead of the viewport).
+  if (navHtml && !document.querySelector(".tabbar")) {
+    const tb = document.createElement("nav");
+    tb.className = "tabbar";
+    tb.setAttribute("aria-label", "Bölmələr");
+    tb.innerHTML = navHtml;
+    document.body.appendChild(tb);
+  }
   root.querySelector("#logout")?.addEventListener("click", () => logout(opts.role));
   themeSwitch($("#themeSw"));
   // Phones get one light/dark button instead of the three-way switch.
