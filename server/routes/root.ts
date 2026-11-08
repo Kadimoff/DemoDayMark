@@ -131,7 +131,7 @@ export function rootRoutes(app: FastifyInstance, ctx: Ctx) {
       if (!orgs.byId(p.data.id)) return reply.code(404).send({ error: "Təşkilat tapılmadı." });
       const ev = req.query.event && /^\d+$/.test(req.query.event) ? Number(req.query.event) : orgs.activeEventId(p.data.id);
       const repo = orgs.eventRepo(p.data.id, ev);
-      if (!repo) return reply.code(404).send({ error: "Tədbir tapılmadı." });
+      if (!repo) return reply.code(404).send({ error: "Proqram tapılmadı." });
       return sendHistory(reply, repo);
     });
 

@@ -7,7 +7,7 @@ export interface TopbarOpts {
   role: "admin" | "juror";
   eventName?: string;
   /** `short` and `icon` are used by the phone tab bar. */
-  nav?: Array<{ href: string; label: string; short?: string; icon?: string; current?: boolean; external?: boolean }>;
+  nav?: Array<{ href: string; label: string; short?: string; icon?: string; current?: boolean; external?: boolean; tab?: boolean }>;
   logout?: boolean;
   wide?: boolean;
 }
@@ -25,7 +25,10 @@ export const whoAmI = () => (meP ??= api<Me>("/api/auth/me?role=admin").catch(()
 /** Renders the shared coordinator header into #top and returns setters for the brand and connection pill. */
 export function topbar(opts: TopbarOpts) {
   const root = $("#top");
-  const navHtml = opts.nav ? `${opts.nav.map(n => `<a href="${n.href}"${n.current ? ' aria-current="page"' : ""}${n.external ? ' target="_blank" rel="noopener"' : ""}>${n.icon ? `<span class="ni">${icon(n.icon)}</span>` : ""}<span class="nl">${esc(n.label)}</span><span class="ns">${esc(n.short ?? n.label)}</span>${n.external ? `<span class="nx">${icon("ext")}</span>` : ""}</a>`).join("")}` : "";
+  const item = (n: NonNullable<TopbarOpts["nav"]>[number]) => `<a href="${n.href}"${n.current ? ' aria-current="page"' : ""}${n.external ? ' target="_blank" rel="noopener"' : ""}>${n.icon ? `<span class="ni">${icon(n.icon)}</span>` : ""}<span class="nl">${esc(n.label)}</span><span class="ns">${esc(n.short ?? n.label)}</span>${n.external ? `<span class="nx">${icon("ext")}</span>` : ""}</a>`;
+  const navHtml = opts.nav ? opts.nav.map(item).join("") : "";
+  // v4: the phone tab bar shows only the entries meant for it
+  const tabHtml = opts.nav ? opts.nav.filter(n => n.tab !== false).map(item).join("") : "";
   root.className = "top";
   root.innerHTML = `<div class="wrap${opts.wide ? " wide" : ""}">
     <a class="brand" href="/" title="munsif.im"><img class="mlogo" src="/brand/munsif-logo.svg" alt="munsif.im" width="111" height="32"><img class="mmark" src="/brand/munsif-mark-flat.svg" alt="munsif.im" width="32" height="32"></a>
@@ -46,7 +49,7 @@ export function topbar(opts: TopbarOpts) {
     const tb = document.createElement("nav");
     tb.className = "tabbar";
     tb.setAttribute("aria-label", "Bölmələr");
-    tb.innerHTML = navHtml;
+    tb.innerHTML = tabHtml;
     document.body.appendChild(tb);
   }
   root.querySelector("#logout")?.addEventListener("click", () => logout(opts.role));

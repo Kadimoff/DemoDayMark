@@ -38,6 +38,10 @@ const PAGES: Record<string, { file: string; role?: "admin" | "juror" }> = {
   "/admin": { file: "admin.html", role: "admin" },
   "/admin/setup": { file: "setup.html", role: "admin" },
   "/admin/pult": { file: "pult.html", role: "admin" },
+  // v4: all team / juror QR cards of the active program (print, PDF, share, one juror QR at a time on a big screen)
+  "/admin/qr": { file: "qr.html", role: "admin" },
+  // v4: programs (events): the active one, a new one, the history and a full read-only view of an archived one
+  "/admin/programs": { file: "programs.html", role: "admin" },
   // orgs: platform owner only (coordinators are sent back to /admin)
   "/admin/orgs": { file: "orgs.html", role: "admin" },
   // v3: the platform owner's own panel (organisations, live state, projector preview, intervention)
@@ -208,8 +212,15 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
       cacheControl: false,
       // HTML pages are only reachable through the guarded clean URLs below.
       allowedPath: (_p, _root, req) => !req.url.split("?")[0].endsWith(".html"),
+      // v4: this hook also runs for reply.sendFile() of the HTML pages and overrides the Cache-Control set before it.
+      // Before v4 every page (/stage, /admin, …) went out as "public, max-age=86400": a phone that had opened /stage kept the
+      // OLD page (and the old hashed JS it names, cached as immutable) for a day after a deploy — the projector showed the
+      // removed control dock. HTML is now always revalidated; sign-in pages (/t/, /j/) are never stored.
       setHeaders: (res, file) => {
-        res.header("Cache-Control", file.includes(`${path.sep}assets${path.sep}`) ? "public, max-age=31536000, immutable"
+        // `res` is the Fastify reply here
+        const url = String((res as unknown as { request?: { url?: string } }).request?.url ?? "");
+        res.header("Cache-Control", file.endsWith(".html") ? (/^\/(t|j)\//.test(url) ? "no-store" : "no-cache")
+          : file.includes(`${path.sep}assets${path.sep}`) ? "public, max-age=31536000, immutable"
           : file.includes(`${path.sep}fonts${path.sep}`) ? "public, max-age=2592000" : "public, max-age=86400");
       },
     });

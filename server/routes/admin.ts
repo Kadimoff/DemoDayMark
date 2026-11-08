@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import path from "node:path";
 import { z } from "zod";
 import { applyTimerAction } from "../../shared/timer.js";
 import { newToken, requireRole, tokenId } from "../auth.js";
@@ -15,7 +16,9 @@ import { PRODUCTS } from "../../shared/brand.js";
 import { adjustTimer } from "../../shared/timer.js";
 import { isPlaceholderName, placeholderName } from "../../shared/brand.js";
 import { buildHistoryXlsx } from "../export/history.js";
-import { createEvent, listEvents } from "../events.js";
+import { buildQrCardsPdf } from "../export/qrcards.js";
+import { prettyCode } from "../teamrepo.js";
+import { createEvent, eventDetail, listEvents } from "../events.js";
 
 /** A juror QR is valid this long, or until it is scanned / replaced. */
 export const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -53,7 +56,7 @@ const critPatch = z.object({ name: name().optional(), description: z.string().tr
 const reorderBody = z.object({ ids: z.array(z.number().int().positive()).min(1) });
 const wipeBody = z.object({ token: z.string().min(1) });
 const newEventBody = z.object({
-  name: z.string().trim().min(2, "Tədbirin adını yazın.").max(40, "Ad 40 simvoldan uzun ola bilməz."),
+  name: z.string().trim().min(2, "Proqramın adını yazın.").max(40, "Ad 40 simvoldan uzun ola bilməz."),
   product: z.enum(PRODUCTS).optional(),
   date: z.string().trim().max(40).optional(),
   pitchSec: z.number().int().min(10).max(3600).optional(),
@@ -61,7 +64,9 @@ const newEventBody = z.object({
   uploadDeadline: z.number().int().positive().nullable().optional(),
   copyCriteria: z.boolean().optional(),
   copyTeams: z.boolean().optional(),
-  confirm: z.literal(true, { message: "Köhnə tədbirin arxivə köçürülməsini təsdiqləyin." }),
+  copyJurors: z.boolean().optional(),
+  copyFrom: z.number().int().positive().nullable().optional(),
+  confirm: z.literal(true, { message: "Hazırkı proqramın arxivə keçməsini təsdiqləyin." }),
 });
 const revealBody = z.object({ action: z.enum(["enable", "disable", "next", "back", "reset"]) });
 
@@ -264,12 +269,84 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         claimed: claimed.has(u.id) || !isPlaceholderName(u.display_name), sessionCount: sessions.filter(s => s.userId === u.id).length };
     };
     /** New single-use QR token for the juror; every earlier unused one stops working. */
-    const issueInvite = (repo: Repo, jurorId: number, actor: number) => {
+    const issueInvite = (repo: Repo, jurorId: number, actor: number, ttlMs = INVITE_TTL_MS) => {
       const token = newToken();
-      const { expiresAt } = repo.createInvite(jurorId, tokenId(token), INVITE_TTL_MS);
+      const { expiresAt } = repo.createInvite(jurorId, tokenId(token), ttlMs);
       repo.audit(actor, "juror.invite", { id: jurorId });
       return { path: `/j/${token}`, expiresAt };
     };
+
+    // ---------- v4: "QR kodlar" page (all team and juror QR cards of the active program, print / PDF / share) ----------
+    const publicOrigin = (req: FastifyRequest) => cfg.origins[0] ?? `${req.protocol}://${(req.headers["x-forwarded-host"] as string) || req.headers.host}`;
+    const teamCards = (sc: ReturnType<typeof scopeOf>) => sc.repo.teams().filter(t => t.active).map(t => {
+      const l = sc.trepo.link(t.id);
+      return { id: t.id, name: t.name, project: t.project, code: l?.code ? prettyCode(l.code) : null, path: l?.code ? `/t/${l.code}` : null, createdAt: l?.createdAt ?? null };
+    });
+    const jurorCards = (repo: Repo) => {
+      const claimed = repo.claimedJurors();
+      const now = Date.now();
+      const open = new Map((repo.db.prepare(`SELECT user_id, MAX(expires_at) e FROM juror_invites WHERE org_id = ? AND event_id = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?
+        GROUP BY user_id`).all(repo.orgId, repo.eventId, now) as Array<{ user_id: number; e: number }>).map(r => [r.user_id, r.e]));
+      return repo.jurors().map(j => ({ id: j.id, displayName: j.displayName, active: j.active, placeholder: isPlaceholderName(j.displayName),
+        claimed: claimed.has(j.id), openInviteUntil: open.get(j.id) ?? null }));
+    };
+    r.get("/api/admin/qr", async req => {
+      const sc = scopeOf(ctx, req);
+      return { eventName: sc.repo.getEvent().displayName, origin: publicOrigin(req), teams: teamCards(sc), jurors: jurorCards(sc.repo), inviteTtlHours: [24, 72] };
+    });
+    // Links for every active team that has none yet (existing links stay as they are).
+    r.post("/api/admin/qr/teams", async req => {
+      const sc = scopeOf(ctx, req);
+      let made = 0;
+      for (const t of sc.repo.teams().filter(x => x.active)) if (!sc.trepo.link(t.id)?.code) { sc.trepo.issueLink(t.id); made++; }
+      if (made) { sc.repo.audit(req.user!.id, "team.link.bulk", { made }); sc.rt.to("admin").emit("materials:changed", {}); }
+      return { made, teams: teamCards(sc) };
+    });
+    const qrJurorsBody = z.object({ ids: z.array(z.number().int().positive()).max(500).optional(), ttlHours: z.union([z.literal(24), z.literal(72)]).optional() });
+    /** New single-use QRs for the given jurors (default: active jurors who have not signed in yet). */
+    const bulkInvites = (req: FastifyRequest, b: z.infer<typeof qrJurorsBody>) => {
+      const { repo } = scopeOf(ctx, req);
+      const claimed = repo.claimedJurors();
+      const all = repo.jurors().filter(j => j.active);
+      const pick = b.ids ? all.filter(j => b.ids!.includes(j.id)) : all.filter(j => !claimed.has(j.id));
+      const ttl = (b.ttlHours ?? 24) * 3600_000;
+      return pick.map(j => ({ id: j.id, displayName: j.displayName, placeholder: isPlaceholderName(j.displayName), ...issueInvite(repo, j.id, req.user!.id, ttl) }));
+    };
+    r.post("/api/admin/qr/jurors", async (req, reply) => {
+      const b = parseBody(qrJurorsBody, req.body, reply); if (!b) return;
+      return { invites: bulkInvites(req, b) };
+    });
+    const fontDir = () => path.join(cfg.assetsDir, "fonts");
+    r.get("/api/admin/qr/teams.pdf", async (req, reply) => {
+      const sc = scopeOf(ctx, req);
+      const o = publicOrigin(req);
+      const ev = sc.repo.getEvent();
+      const cards = teamCards(sc).filter(t => t.path).map(t => ({ title: t.name, subtitle: t.project || ev.displayName, url: o + t.path!, code: t.code ?? undefined,
+        note: "Telefonun kamerası ilə skan edin və ya linki açın." }));
+      const pdf = await buildQrCardsPdf(cards, { heading: `${ev.displayName} · komanda girişi`, fontDir: fontDir() });
+      return attach(reply, exportFileName(ev.displayName, ev.date, "komanda-qr.pdf"), "application/pdf", pdf);
+    });
+    // PDF of the QR cards on screen (`invites`: the paths the page got from /api/admin/qr/jurors; only still-usable invites
+    // of this organisation's jurors are printed) or of new invites (`ids` / default, like /api/admin/qr/jurors).
+    const pdfBody = qrJurorsBody.extend({ invites: z.array(z.object({ id: z.number().int().positive(), path: z.string().max(200) })).max(500).optional() });
+    r.post("/api/admin/qr/jurors.pdf", async (req, reply) => {
+      const b = parseBody(pdfBody, req.body, reply); if (!b) return;
+      const { repo } = scopeOf(ctx, req);
+      const o = publicOrigin(req);
+      const ev = repo.getEvent();
+      const until = (ms: number) => new Date(ms).toLocaleString("az-AZ", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: process.env.TZ || "Asia/Baku" });
+      const given = b.invites?.flatMap(i => {
+        const token = i.path.startsWith("/j/") ? i.path.slice(3) : "";
+        const inv = token ? repo.invite(tokenId(token)) : null;
+        const u = inv ? repo.member(inv.user_id) : null;
+        if (!inv || !u || u.role !== "juror" || u.id !== i.id || inv.used_at || inv.revoked_at || inv.expires_at < Date.now()) return [];
+        return [{ id: u.id, displayName: u.display_name, placeholder: isPlaceholderName(u.display_name), path: `/j/${token}`, expiresAt: inv.expires_at }];
+      });
+      const cards = (given ?? bulkInvites(req, b)).map(i => ({ title: i.displayName, subtitle: ev.displayName, url: o + i.path,
+        note: `QR bir dəfə işləyir. ${until(i.expiresAt)} tarixinədək etibarlıdır.` }));
+      const pdf = await buildQrCardsPdf(cards, { heading: `${ev.displayName} · münsif QR kodları`, fontDir: fontDir() });
+      return attach(reply, exportFileName(ev.displayName, ev.date, "munsif-qr.pdf"), "application/pdf", pdf);
+    });
 
     r.get("/api/admin/jurors", async req => { const { repo } = scopeOf(ctx, req); return repo.jurors().map(j => jurorView(repo, j.id)); });
     r.post("/api/admin/jurors", async (req, reply) => {
@@ -498,18 +575,31 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     r.post("/api/admin/events", async (req, reply) => {
       const sc = scopeOf(ctx, req);
       const b = parseBody(newEventBody, req.body, reply); if (!b) return;
-      const r0 = createEvent(ctx.orgs, sc, cfg, req.user!.id, b);
+      if (b.copyFrom && !ctx.orgs.eventRepo(sc.orgId, b.copyFrom)) return reply.code(404).send({ error: "Proqram tapılmadı." });
+      // copied jurors get the hash of a discarded random token (they sign in only with a QR, like every juror)
+      const r0 = createEvent(ctx.orgs, sc, cfg, req.user!.id, b, b.copyJurors ? await hashPassword(newToken()) : "!");
       return { ...r0, events: listEvents(ctx.orgs, sc.orgId, cfg) };
     });
     const archived = (req: { params: unknown }, reply: FastifyReply, orgId: number) => {
       const p = idParam.safeParse(req.params);
       const repo = p.success ? ctx.orgs.eventRepo(orgId, p.data.id) : null;
-      if (!repo) { reply.code(404).send({ error: "Tədbir tapılmadı." }); return null; }
+      if (!repo) { reply.code(404).send({ error: "Proqram tapılmadı." }); return null; }
       return repo;
     };
     r.get("/api/admin/events/:id/results", async (req, reply) => {
       const repo = archived(req, reply, scopeOf(ctx, req).orgId); if (!repo) return;
       return { event: repo.getEvent(), meta: repo.meta(), ...adminResults(repo, cfg) };
+    });
+    // v4: one program in full, read-only (Proqramlar → Tarixçə)
+    r.get("/api/admin/events/:id/detail", async (req, reply) => {
+      const p = idParam.safeParse(req.params);
+      const d = p.success ? eventDetail(ctx.orgs, scopeOf(ctx, req).orgId, p.data.id, cfg) : null;
+      return d ?? reply.code(404).send({ error: "Proqram tapılmadı." });
+    });
+    r.get<{ Querystring: Record<string, string | undefined> }>("/api/admin/events/:id/history", async (req, reply) => {
+      const repo = archived(req, reply, scopeOf(ctx, req).orgId); if (!repo) return;
+      const n = (v?: string) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
+      return repo.history({ jurorId: n(req.query.juror), teamId: n(req.query.team), before: n(req.query.before), limit: n(req.query.limit) });
     });
     r.get("/api/admin/events/:id/export.xlsx", async (req, reply) => { const repo = archived(req, reply, scopeOf(ctx, req).orgId); if (repo) return sendResultsXlsx(reply, repo); });
     r.get("/api/admin/events/:id/export.pdf", async (req, reply) => { const repo = archived(req, reply, scopeOf(ctx, req).orgId); if (repo) return sendResultsPdf(reply, repo); });

@@ -33,7 +33,7 @@ const body = document.body;
 const el = {
   event: $("#event"), name: $("#name"), nameTeam: $("#nameTeam"), nameProj: $("#nameProj"), banner: $("#banner"), rim: $("#rimText"), badge: $("#badge"),
   digits: $("#digits"), sub: $("#subtext"), ring: $("#ring"), barP: $("#barPitch"), barQ: $("#barQa"),
-  pillP: $("#pillPitch"), pillQ: $("#pillQa"), btns: $("#btns"), toast: $("#tpToast"), keys: $("#keys"), dock: $("#dock"),
+  pillP: $("#pillPitch"), pillQ: $("#pillQa"), btns: $("#btns"), toast: $("#tpToast"), dock: $("#dock"), nav: $("#stNav"),
   view: $("#stView"), slides: $("#stSlides"), site: $("#stSite"), frame: $<HTMLIFrameElement>("#stFrame"), qr: $("#stQr"), qrImg: $<HTMLImageElement>("#stQrImg"),
   qrTeam: $("#stQrTeam"), qrUrl: $("#stQrUrl"), corner: $("#stCorner"), qrSmall: $<HTMLImageElement>("#stQrSmall"), host: $("#stHost"),
   hud: $("#stHud"), hudTeam: $("#hudTeam"), hudInfo: $("#hudInfo"), slidePill: $("#slidePill"),
@@ -378,6 +378,7 @@ function tick() {
   lastKind = v.kind;
   lastRemaining = v.remaining;
   renderButtons(v.running, v.kind, v.ready);
+  syncNav();
 }
 
 // ---------- v3: no control dock — only small auto-hiding sound / fullscreen icons ----------
@@ -441,13 +442,26 @@ document.addEventListener("keydown", e => {
   });
 }
 
-// Hide the dock and the HUD after a few idle seconds so the projector shows only the stage.
+// v4: slide arrows for the coordinator (admin session of this organisation) only, while a presentation is on screen.
+// An anonymous projector never shows them. They follow the same 2 s auto-hide as the sound / fullscreen icons.
+function syncNav() {
+  const on = isAdmin && !PREVIEW && !DEMO && view === "pres";
+  if (el.nav.hidden === !on) return;
+  el.nav.hidden = !on;
+}
+el.nav.addEventListener("click", e => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>("[data-nav]");
+  if (b && isAdmin) slideBy(Number(b.dataset.nav));
+});
+
+// Hide the icons, the arrows and the HUD after 2 idle seconds so the projector shows only the stage.
 let idleT = 0;
 function wakeDock() {
   el.dock.classList.remove("idle");
+  el.nav.classList.remove("idle");
   body.classList.remove("idle-ui");
   clearTimeout(idleT);
-  idleT = window.setTimeout(() => { el.dock.classList.add("idle"); body.classList.add("idle-ui"); }, 4000);
+  idleT = window.setTimeout(() => { el.dock.classList.add("idle"); el.nav.classList.add("idle"); body.classList.add("idle-ui"); }, 2000);
 }
 ["mousemove", "touchstart", "keydown"].forEach(ev => document.addEventListener(ev, wakeDock, { passive: true }));
 wakeDock();
@@ -629,6 +643,18 @@ if (DEMO) {
   load();
   // v3: a cheap safety net — refetch the stage every 60 s, so even a silently stuck connection heals itself
   setInterval(() => { if (!document.hidden) void load(); }, 60_000);
+  // v4: a projector left open across a deploy keeps running the old build. Every 2 minutes the page asks for its own HTML
+  // (never from a cache) and reloads itself when it names another script, at a calm moment (no takeover, no Anons).
+  const myScript = () => document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.getAttribute("src") ?? "";
+  const checkBuild = async () => {
+    try {
+      const r = await fetch(location.pathname + location.search, { cache: "no-store", credentials: "same-origin" });
+      if (!r.ok) return;
+      const m = (await r.text()).match(/<script[^>]+type="module"[^>]+src="([^"]+)"/);
+      if (m && myScript() && m[1] !== myScript() && !finale.active && !introOn) location.reload();
+    } catch { /* offline: next time */ }
+  };
+  setInterval(() => { if (!document.hidden) void checkBuild(); }, 120_000);
   (window as unknown as { __munsif: unknown }).__munsif = { beat: () => finale.n, particles: () => finale.particles, view: () => view, slide: () => deck.shown, stage: () => stage, deck };
 }
 renderButtons(false, "idle", false);

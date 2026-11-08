@@ -122,6 +122,7 @@ function render() {
       <p class="err-t" id="nErr" role="alert"></p>
     </section>` : ""}
     <div class="rgrid section-gap">${orgs.map(card).join("")}</div>
+    ${bkHtml()}
     ${sysCardHtml(sys, sysErr)}`;
   bind();
   bindSys();
@@ -218,6 +219,80 @@ function bind() {
   main.querySelectorAll<HTMLButtonElement>("[data-peek]").forEach(b => b.addEventListener("click", () => { const o = orgs.find(x => x.id === Number(b.dataset.peek)); if (o) peek(o); }));
 }
 
+// ---------- v4: "Yedəkdən import" (an old program from a backup file → a new archived program of an organisation) ----------
+interface BkEvent { orgId: number; orgSlug: string; orgName: string; eventId: number; name: string; brand: string; product: string; date: string; status: string;
+  teams: number; jurors: number; scores: number; history: number; files: number; firstScoreAt: number | null; lastScoreAt: number | null; imported: boolean }
+interface BkFile { file: string; bytes: number; mtime: number; schema: number | null; ok: boolean; error?: string; events: BkEvent[] }
+interface BkImport { id: number; orgSlug: string; orgName: string; eventId: number; eventName: string; file: string; schema: number; auto: string | null; at: number; stats: Record<string, number> }
+let bkOpen = false;
+let bk: { files: BkFile[]; imports: BkImport[] } | null = null;
+let bkErr: string | null = null;
+let bkBusy = false;
+let bkPick: string | null = null; // "<file>|<orgId>|<eventId>"
+const dt = (ms: number | null) => (ms ? new Date(ms).toLocaleString("az-AZ", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+const kb = (b: number) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+async function loadBk() {
+  bkBusy = true; rerenderBk();
+  try { bk = await api("/api/root/backups"); bkErr = null; } catch (e) { bkErr = (e as Error).message; }
+  bkBusy = false; rerenderBk();
+}
+function rerenderBk() { const box = document.getElementById("bk"); if (box) box.outerHTML = bkHtml(); }
+function bkHtml() {
+  const rows = (f: BkFile) => f.events.filter(e => e.teams || e.scores).map(e => {
+    const key = `${f.file}|${e.orgId}|${e.eventId}`;
+    return `<div class="bk-ev">
+      <div class="bk-nm"><b>${esc(e.name)}</b><small>${esc(e.orgName)} (/${esc(e.orgSlug)}) · ${e.status === "archived" ? "arxivdə" : "aktiv idi"}${e.date ? ` · ${esc(e.date)}` : ""}</small>
+        <small>${e.teams} komanda · ${e.jurors} münsif · ${e.scores} qiymət${e.lastScoreAt ? ` · son bal ${dt(e.lastScoreAt)}` : ""}</small></div>
+      ${e.imported ? `<span class="pill">import edilmiş</span>` : `<button class="btn sm" data-bk-pick="${esc(key)}">${icon("download")}Import et</button>`}
+      ${bkPick === key ? `<form class="inline-form bk-form" data-bk-form="${esc(key)}" novalidate>
+        <div><label class="f" for="bkOrg">Hansı təşkilata</label><select id="bkOrg">${orgs.map(o => `<option value="${o.id}"${o.root ? " selected" : ""}>${esc(o.name)} (/${esc(o.slug)})</option>`).join("")}</select></div>
+        <label class="check"><input type="checkbox" id="bkAudit" checked> Ballarla bağlı jurnal qeydlərini də köçür</label>
+        <p class="sub" style="margin:0">Proqram arxivə yeni proqram kimi düşür. Aktiv proqrama heç nə yazılmır, münsif hesabları giriş edə bilməz.</p>
+        <button class="btn primary sm" type="submit">${icon("download")}Arxiv proqram kimi import et</button><button class="btn sm" type="button" data-bk-cancel>Ləğv et</button></form>` : ""}
+    </div>`;
+  }).join("");
+  const body = bkBusy && !bk ? `<p class="sub">Yedəklər oxunur…</p>` : bkErr ? `<div class="banner err">${esc(bkErr)}</div>` : !bk ? "" : `
+    ${bk.imports.length ? `<div class="stack" style="gap:6px"><h4>Import edilənlər</h4>${bk.imports.map(i => `<div class="bk-imp">${icon("check")}<span><b>${esc(i.eventName)}</b> → ${esc(i.orgName)} · ${esc(i.file)} (v${i.schema}) · ${i.stats.teams ?? 0} komanda, ${i.stats.scores ?? 0} qiymət · ${dt(i.at)}${i.auto ? " · avtomatik" : ""}</span></div>`).join("")}</div>` : ""}
+    ${bk.files.length ? bk.files.map(f => `<div class="bk-file"><div class="bk-fh"><b class="mono">${esc(f.file)}</b><small>${dt(f.mtime)} · ${kb(f.bytes)}${f.schema != null ? ` · sxem v${f.schema}` : ""}</small></div>
+      ${f.ok ? rows(f) || `<p class="sub" style="margin:0">Bu faylda komandası olan proqram yoxdur.</p>` : `<p class="sub" style="margin:0">Oxunmadı: ${esc(f.error ?? "")}</p>`}</div>`).join("") : `<p class="sub">Yedək qovluğunda fayl yoxdur.</p>`}`;
+  return `<section class="card pad-lg stack section-gap" id="bk" aria-labelledby="h-bk">
+    <details class="fold inner" id="bkFold"${bkOpen ? " open" : ""}><summary id="h-bk">${icon("db")}Yedəkdən import</summary>
+      <div class="stack">
+        <p class="sub" style="margin:0">Serverdəki yedək faylları (gecəlik, yeniləmədən əvvəlki, avtomatik). Fayllar yalnız oxunur. Seçdiyiniz köhnə proqram təşkilatın tarixçəsinə arxiv proqram kimi əlavə olunur, reytinqi yedəkdəki ilə eyni qalır.</p>
+        <div class="row"><button class="btn sm" type="button" id="bkReload"${bkBusy ? " disabled" : ""}>${icon("retry")}Yenidən oxu</button></div>
+        ${body}
+      </div></details></section>`;
+}
+main.addEventListener("toggle", e => {
+  const d = e.target as HTMLDetailsElement;
+  if (d.id !== "bkFold") return;
+  bkOpen = d.open;
+  if (bkOpen && !bk && !bkBusy) void loadBk();
+}, true);
+main.addEventListener("click", e => {
+  const t = e.target as HTMLElement;
+  if (t.closest("#bkReload")) { void loadBk(); return; }
+  const pick = t.closest<HTMLElement>("[data-bk-pick]");
+  if (pick) { bkPick = pick.dataset.bkPick!; rerenderBk(); return; }
+  if (t.closest("[data-bk-cancel]")) { bkPick = null; rerenderBk(); }
+});
+main.addEventListener("submit", async e => {
+  const f = (e.target as HTMLElement).closest<HTMLFormElement>("[data-bk-form]");
+  if (!f) return;
+  e.preventDefault();
+  const [file, orgId, eventId] = f.dataset.bkForm!.split("|");
+  const btn = f.querySelector<HTMLButtonElement>("button[type=submit]")!;
+  btn.disabled = true;
+  try {
+    const r = await api<{ name: string; teams: number; scores: number; filesMissing: number }>("/api/root/backups/import", { method: "POST", body: {
+      file, sourceOrgId: Number(orgId), sourceEventId: Number(eventId), targetOrgId: Number($<HTMLSelectElement>("#bkOrg").value), audit: $<HTMLInputElement>("#bkAudit").checked } });
+    toast(`${r.name}: ${r.teams} komanda, ${r.scores} qiymət import edildi${r.filesMissing ? ` (${r.filesMissing} fayl serverdə yoxdur)` : ""}`);
+    bkPick = null;
+    await loadBk();
+    void load();
+  } catch (ex) { toast((ex as ApiError).message, "err"); btn.disabled = false; }
+});
+
 async function act(path: string, method: string, body: unknown, ok: string) {
   try {
     await api(path, { method, body });
@@ -251,5 +326,5 @@ live({
   status: online => bar.setOnline(online),
 });
 // counts (jurors online, votes) refresh every 15 s
-setInterval(() => { if (!document.hidden && !document.querySelector("form:focus-within") && !peekDlg?.open) void load(); }, 15_000);
+setInterval(() => { if (!document.hidden && !document.querySelector("form:focus-within") && !bkPick && !peekDlg?.open) void load(); }, 15_000);
 void load();

@@ -56,6 +56,7 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
         <p class="sub">Prezentasiyaya bir kliklə tam ekranda baxın (slaydlar arası ← →). Səhnəyə çıxarmaq üçün “qəbul et” lazım deyil.</p></div>
         <div class="row">${waiting ? `<span class="pill hot">${waiting} yeni yükləmə</span>` : ""}${pending ? `<span class="pill warn">${pending} təsdiq gözləyir</span>` : ""}
           <span class="pill">${withPres}/${D.teams.filter(t => t.active).length} prezentasiya</span>
+          <a class="btn sm" href="/admin/qr#teams">${icon("qr")}Bütün QR kodlar</a>
           <a class="btn sm ghost" href="/admin/setup#h-teams">${icon("pencil")}Redaktə</a></div></div>
       <div class="tl">${D.teams.map(t => {
         const p = t.presentation;
@@ -69,11 +70,11 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
             <button class="btn sm ${p?.viewable ? "primary" : ""}" data-mat-view="${t.teamId}" ${p?.viewable ? "" : "disabled"} title="${p ? esc(p.name) : "Prezentasiya yoxdur"}">${icon("expand")}Bax</button>
             ${t.siteUrl ? `<a class="btn sm" href="${esc(t.siteUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(t.siteUrl)}">${icon("ext")}Sayt</a>` : `<span class="btn sm ghost" aria-disabled="true" title="Sayt linki yoxdur">${icon("ext")}Sayt</span>`}
             ${t.active ? (onStage ? `<span class="pill fill">Səhnədədir</span>` : `<button class="btn sm" data-mat-stage="${t.teamId}">${icon("play")}Səhnəyə</button>`) : ""}
+            <button class="btn sm" data-mat-link="${t.teamId}" title="Giriş linki və QR" aria-label="${esc(t.name)}: giriş linki və QR">${icon("qr")}QR</button>
             <details class="more"><summary class="btn sm ghost" aria-label="Daha çox">⋯</summary><div class="menu">
               ${t.approval === "pending" ? `<button class="btn sm primary" data-mat-approve="${t.teamId}">${icon("check")}Təsdiqlə</button>` : ""}
               ${p && t.review !== "accepted" ? `<button class="btn sm" data-mat-accept="${t.teamId}">${icon("check")}Qəbul et</button>` : ""}
               ${p && t.review !== "returned" ? `<button class="btn sm" data-mat-return="${t.teamId}">${icon("undo")}Geri qaytar</button>` : ""}
-              <button class="btn sm" data-mat-link="${t.teamId}">${icon("qr")}Giriş linki / QR</button>
               ${p ? `<a class="btn sm ghost" href="${p.url}?orig=1&download=1">${icon("download")}Faylı endir</a>` : ""}
               ${t.videoUrl ? `<a class="btn sm ghost" href="${esc(t.videoUrl)}" target="_blank" rel="noopener noreferrer">${icon("play")}Demo video</a>` : ""}
             </div></details>

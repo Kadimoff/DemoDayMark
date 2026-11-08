@@ -8,6 +8,7 @@ import { $, esc, icon, initials, toast } from "./lib/dom";
 import { createJuror, jurorJoined, onQrChange, reissue } from "./lib/qr";
 import { live } from "./lib/socket";
 import { brandHtml, topbar } from "./lib/topbar";
+import { adminNav } from "./lib/adminnav";
 import { bindTeamAccess, teamAccessHtml, type MaterialsData } from "./lib/materials";
 import { noticeBell } from "./lib/notices";
 import type { EventFile, Notice } from "../../shared/types";
@@ -29,13 +30,7 @@ type JurorRow = Juror & { sessionCount: number; claimed: boolean };
 
 const bar = topbar({
   role: "admin",
-  nav: [
-    { href: "/admin", label: "Canlı panel", short: "Panel", icon: "users" },
-    { href: "/admin/setup", label: "Quraşdırma", icon: "pencil", current: true },
-    { href: "/admin/pult", label: "Pult", icon: "timer" },
-    { href: "/stage", label: "Səhnə", icon: "expand", external: true },
-    { href: "/reveal", label: "Nəticə açıqlaması", short: "Nəticə", icon: "medal", external: true },
-  ],
+  nav: adminNav("setup"),
   wide: true,
 });
 const bell = noticeBell($("#bellSlot"), { list: "/api/admin/notices", read: "/api/admin/notices/read" });
@@ -103,13 +98,11 @@ const dtShow = (ms: number) => new Date(ms).toLocaleString("az-AZ", { day: "2-di
 const fmtMb = (b: number) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 /** v3: open accordion rows survive re-renders. */
 const openTeams = new Set<number>();
-let newEventOpen = false;
 
 function eventSection(ev: EventState) {
-  const cur = EVENTS.find(e => e.status === "active");
   const arch = EVENTS.filter(e => e.status === "archived");
   return `<section class="card pad stack" aria-labelledby="h-ev">
-    <div class="row between"><h3 id="h-ev">${icon("medal")}Tədbir</h3><span class="saved" id="evSaved"></span></div>
+    <div class="row between"><h3 id="h-ev">${icon("medal")}Proqram</h3><span class="saved" id="evSaved"></span></div>
     <form id="evForm" class="stack" novalidate>
       <div class="row" style="align-items:flex-start">
         <div style="flex:2 1 320px"><label class="f" for="evName">Tədbirin adı (brend / prefiks) və növü</label>
@@ -122,34 +115,8 @@ function eventSection(ev: EventState) {
       <div class="toggle" style="border-top:1px solid var(--line)"><div><b>Münsif öz yekun balını görsün</b><small>Bağlı olanda münsif yalnız meyar ballarını görür (tövsiyə olunur).</small></div>
         <button type="button" class="sw" role="switch" id="evTotal" aria-checked="${ev.showJurorTotal}" aria-label="Münsif öz yekun balını görsün"></button></div>
     </form>
-    <details class="fold inner" id="newEv"${newEventOpen ? " open" : ""}><summary>${icon("plus")}Yeni tədbir yarat</summary>
-      <form id="newEvForm" class="stack" novalidate>
-        <p class="sub" style="margin:0">Hazırkı tədbir (<b>${esc(cur?.name ?? ev.name)}</b>) <b>arxivə keçir</b>: nəticələri, tarixçəsi və Excel/PDF ixracı oxuma rejimində qalır, heç nə silinmir.
-          Yeni tədbir boş başlayır: komanda, münsif və bal yoxdur. Arxivdəki münsiflərin və komandaların sessiyaları bağlanır.</p>
-        <div class="row" style="align-items:flex-start">
-          <div style="flex:2 1 240px"><label class="f" for="neName">Yeni tədbirin adı</label><input id="neName" maxlength="40" placeholder="məs. Ignite 2027" required></div>
-          <div style="flex:0 0 auto"><label class="f" for="neProduct">Növü</label><select id="neProduct">${PRODUCTS.map(p => `<option${p === ev.product ? " selected" : ""}>${p}</option>`).join("")}</select></div>
-          <div style="flex:1 1 130px"><label class="f" for="neDate">Tarix</label><input id="neDate" maxlength="40" placeholder="${esc(ev.date)}"></div>
-        </div>
-        <div class="row" style="align-items:flex-start">
-          <div style="flex:1 1 110px"><label class="f" for="nePitch">Təqdimat (dəq:san)</label><input id="nePitch" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.pitchSec)}"></div>
-          <div style="flex:1 1 110px"><label class="f" for="neQa">Sual-cavab (dəq:san)</label><input id="neQa" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.qaSec)}"></div>
-          <div style="flex:2 1 220px"><label class="f" for="neDeadline">Yükləmə üçün son tarix (istəyə bağlı)</label><input id="neDeadline" type="datetime-local"></div>
-        </div>
-        <label class="check"><input type="checkbox" id="neCrit" checked> Meyarları köçür (${S!.criteria.length} meyar)</label>
-        <label class="check"><input type="checkbox" id="neTeams"> Komandaların adlarını köçür (fayl, link və ballar köçmür)</label>
-        <label class="check"><input type="checkbox" id="neConfirm"> Hazırkı tədbirin arxivə keçməsini təsdiqləyirəm</label>
-        <p class="err-t" id="neErr" role="alert"></p>
-        <div class="row"><button class="btn primary" type="submit" id="neGo">${icon("plus")}Yeni tədbiri yarat</button></div>
-      </form>
-    </details>
-    ${arch.length ? `<details class="fold inner"><summary>${icon("db")}Arxiv (${arch.length} tədbir)</summary><div class="arch">${arch.map(e => `
-      <div class="arch-row"><div><b>${esc(e.name)}</b><small>${dtShow(e.createdAt)}${e.archivedAt ? ` → ${dtShow(e.archivedAt)}` : ""} · ${e.teams} komanda · ${e.jurors} münsif · ${e.scores} qiymət</small>
-        ${e.top.length ? `<small>${e.top.map(t => `${t.rank ?? "—"}. ${esc(t.name)}${t.score != null ? ` (${t.score.toFixed(2)})` : ""}`).join(" · ")}</small>` : ""}</div>
-        <div class="row" style="gap:6px"><button class="btn sm" type="button" data-arch="${e.id}">${icon("medal")}Nəticələr</button>
-          <a class="btn sm ghost" href="/api/admin/events/${e.id}/export.xlsx" download>${icon("sheet")}Excel</a>
-          <a class="btn sm ghost" href="/api/admin/events/${e.id}/export.pdf" download>${icon("doc")}PDF</a>
-          <a class="btn sm ghost" href="/api/admin/events/${e.id}/history.xlsx" download>${icon("list")}Tarixçə</a></div></div>`).join("")}</div></details>` : ""}
+    <div class="pg-link"><div><b>${icon("db")}Proqramlar</b><small>Yeni proqram yaratmaq və əvvəlki proqramlara (${arch.length}) baxmaq üçün.</small></div>
+      <a class="btn sm" href="/admin/programs">${icon("list")}Proqramlar</a></div>
   </section>`;
 }
 
@@ -563,7 +530,6 @@ main.addEventListener("toggle", e => {
     if (d.open) openTeams.add(id); else openTeams.delete(id);
     const b = document.getElementById("accAll"); if (b) b.textContent = openTeams.size ? "Hamısını bağla" : "Hamısını aç";
   }
-  if (d instanceof HTMLDetailsElement && d.id === "newEv") newEventOpen = d.open;
 }, true);
 const flash = (id: string, text = "Saxlanıldı") => { const s = document.getElementById(id); if (s) { s.textContent = text; setTimeout(() => { s.textContent = ""; }, 1800); } };
 main.addEventListener("click", async e => {
@@ -614,8 +580,6 @@ main.addEventListener("click", async e => {
     try { EF = (await api<{ files: EventFile[] }>(`/api/admin/event-files/${f.id}`, { method: "DELETE" })).files; toast("Silindi"); render(); } catch (ex) { toast((ex as ApiError).message, "err"); }
     return;
   }
-  const ar = t.closest<HTMLElement>("[data-arch]");
-  if (ar) { void showArchive(Number(ar.dataset.arch)); return; }
 });
 async function saveExtension(teamId: number, ms: number | null) {
   try { await api(`/api/admin/teams/${teamId}/materials`, { method: "PATCH", body: { extendUntil: ms } }); toast(ms ? "Son tarix bu komanda üçün uzadıldı" : "Uzadılma silindi"); await load(); }
@@ -665,54 +629,10 @@ function uploadEventFile(file: File) {
   xhr.send(file);
 }
 
-async function createEvent() {
-  const err = $("#neErr");
-  const name = cleanPrefix($<HTMLInputElement>("#neName").value);
-  const pitchSec = parseClock($<HTMLInputElement>("#nePitch").value);
-  const qaSec = parseClock($<HTMLInputElement>("#neQa").value);
-  const dlv = $<HTMLInputElement>("#neDeadline").value;
-  if (name.length < 2) { err.textContent = "Yeni tədbirin adını yazın."; $("#neName").focus(); return; }
-  if (!pitchSec || pitchSec < 10 || !qaSec || qaSec < 10) { err.textContent = "Müddətləri dəq:san formatında yazın, məs. 3:00 və 2:00."; return; }
-  if (!$<HTMLInputElement>("#neConfirm").checked) { err.textContent = "Hazırkı tədbirin arxivə keçməsini təsdiqləyin."; return; }
-  err.textContent = "";
-  const go = $<HTMLButtonElement>("#neGo");
-  go.disabled = true;
-  try {
-    await api("/api/admin/events", { method: "POST", body: {
-      name, product: $<HTMLSelectElement>("#neProduct").value, date: $<HTMLInputElement>("#neDate").value.trim() || undefined, pitchSec, qaSec,
-      uploadDeadline: dlv ? new Date(dlv).getTime() : null, copyCriteria: $<HTMLInputElement>("#neCrit").checked, copyTeams: $<HTMLInputElement>("#neTeams").checked, confirm: true,
-    } });
-    newEventOpen = false;
-    openTeams.clear();
-    toast("Yeni tədbir yaradıldı, köhnəsi arxivə keçdi");
-    await load();
-    document.getElementById("h-ev")?.scrollIntoView({ behavior: "smooth" });
-  } catch (ex) { err.textContent = (ex as ApiError).message; go.disabled = false; }
-}
-
-let archDlg: HTMLDialogElement | null = null;
-async function showArchive(id: number) {
-  let r: { meta: { name: string; createdAt: number; archivedAt: number | null }; results: { ranking: Array<{ rank: number | null; team: { name: string; project: string }; score: number | null; n: number }>; maxTotal: number } };
-  try { r = await api(`/api/admin/events/${id}/results`); } catch (ex) { toast((ex as ApiError).message, "err"); return; }
-  if (!archDlg) {
-    archDlg = document.createElement("dialog");
-    document.body.appendChild(archDlg);
-    archDlg.addEventListener("click", e => { if (e.target === archDlg || (e.target as HTMLElement).closest("[data-close]")) archDlg!.close(); });
-  }
-  archDlg.innerHTML = `<div class="dh"><div><h3>Arxiv · oxuma rejimi</h3><h2 style="font-size:19px;margin-top:4px">${esc(r.meta.name)}</h2>
-      <p class="sub">${dtShow(r.meta.createdAt)}${r.meta.archivedAt ? ` → ${dtShow(r.meta.archivedAt)}` : ""}</p></div><button class="icon-btn" data-close aria-label="Bağla">${icon("close")}</button></div>
-    <div class="db"><ol class="lb">${r.results.ranking.map(x => `<li class="${x.rank && x.rank <= 3 ? "r" + x.rank : ""}"><span class="rk">${x.rank ?? "—"}</span>
-      <div class="nm"><b>${esc(x.team.name)}</b><small>${esc(x.team.project)}</small></div><div class="sc"><b>${x.score == null ? "—" : x.score.toFixed(2)}</b><small>${x.n} münsif</small></div></li>`).join("") || "<p class=\"sub\">Qiymət yoxdur.</p>"}</ol>
-      <div class="row" style="margin-top:12px"><a class="btn sm" href="/api/admin/events/${id}/export.xlsx" download>${icon("sheet")}Excel</a><a class="btn sm" href="/api/admin/events/${id}/export.pdf" download>${icon("doc")}PDF</a>
-      <a class="btn sm ghost" href="/api/admin/events/${id}/history.xlsx" download>${icon("list")}Tarixçə</a></div></div>`;
-  archDlg.showModal();
-}
-
 main.addEventListener("submit", async e => {
   e.preventDefault();
   const form = e.target as HTMLFormElement;
   if (form.id === "evForm") { await saveEvent(); return; }
-  if (form.id === "newEvForm") { await createEvent(); return; }
   if (form.id === "tagForm") {
     const input = $<HTMLInputElement>("#tagNew");
     const v = input.value.trim().replace(/\s+/g, " ");

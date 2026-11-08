@@ -13,6 +13,7 @@ import { live } from "./lib/socket";
 import { sortable } from "./lib/sortable";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
 import { topbar } from "./lib/topbar";
+import { adminNav } from "./lib/adminnav";
 import { orgPath } from "./lib/org";
 import { bindShowCtl, mountMaterials, showCtlHtml } from "./lib/materials";
 import { noticeBell } from "./lib/notices";
@@ -44,13 +45,7 @@ interface AdminReveal {
 
 const bar = topbar({
   role: "admin",
-  nav: [
-    { href: "/admin", label: "Canlı panel", short: "Panel", icon: "users", current: true },
-    { href: "/admin/setup", label: "Quraşdırma", icon: "pencil" },
-    { href: "/admin/pult", label: "Pult", icon: "timer" },
-    { href: "/stage", label: "Səhnə", icon: "expand", external: true },
-    { href: "/reveal", label: "Nəticə açıqlaması", short: "Nəticə", icon: "medal", external: true },
-  ],
+  nav: adminNav("panel"),
   wide: true,
 });
 const bell = noticeBell($("#bellSlot"), { list: "/api/admin/notices", read: "/api/admin/notices/read" });
@@ -530,6 +525,7 @@ function renderJury() {
       <div class="row">
         <button class="btn sm primary" id="nudge" ${cur && waiting && !S.event.locked ? "" : "disabled"}>${icon("bell")}Xatırlat${cur && waiting ? ` (${waiting})` : ""}</button>
         <button class="btn sm" id="lockBtn">${icon("lock")}${S.event.locked ? "Qiymətləndirməni aç" : "Qiymətləndirməni bağla"}</button>
+        <a class="btn sm" href="/admin/qr#jurors">${icon("qr")}Bütün QR kodlar</a>
         <div class="seg" role="group" aria-label="Görünüş"><button data-jv="cards" aria-pressed="${juryView === "cards"}">${icon("users")}Kartlar</button><button data-jv="table" aria-pressed="${juryView === "table"}">${icon("sheet")}Cədvəl</button></div>
       </div>
     </div>

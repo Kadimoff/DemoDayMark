@@ -13,15 +13,11 @@ import { noticeBell } from "./lib/notices";
 import { live } from "./lib/socket";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
 import { topbar } from "./lib/topbar";
+import { adminNav } from "./lib/adminnav";
 
 const bar = topbar({
   role: "admin",
-  nav: [
-    { href: "/admin", label: "Canlı panel", short: "Panel", icon: "users" },
-    { href: "/admin/setup", label: "Quraşdırma", icon: "pencil" },
-    { href: "/admin/pult", label: "Pult", icon: "timer", current: true },
-    { href: "/stage", label: "Səhnə", icon: "expand", external: true },
-  ],
+  nav: adminNav("pult"),
 });
 const bell = noticeBell($("#bellSlot"), { list: "/api/admin/notices", read: "/api/admin/notices/read" });
 void bell.refresh();

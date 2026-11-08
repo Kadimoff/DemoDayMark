@@ -11,6 +11,8 @@ let meta: Omit<HistoryPage, "rows"> = { more: false, total: 0, jurors: [], teams
 let juror = "", team = "";
 let loading = false, err = "";
 let refreshT = 0;
+/** v4: the same card reads an archived program's history too (/api/admin/events/<id>/history). */
+let baseUrl = "/api/admin/history";
 
 const p2 = (n: number) => String(n).padStart(2, "0");
 function when(ms: number) {
@@ -25,7 +27,7 @@ function query(before?: number) {
   if (juror) q.set("juror", juror);
   if (team) q.set("team", team);
   if (before) q.set("before", String(before));
-  return `/api/admin/history?${q}`;
+  return `${baseUrl}?${q}`;
 }
 
 async function fetchPage(append: boolean) {
@@ -81,8 +83,11 @@ function render() {
 }
 
 /** Mounts the card into `el` and loads the first page. */
-export function mountHistory(el: HTMLElement) {
+export function mountHistory(el: HTMLElement, base = "/api/admin/history") {
   box = el;
+  baseUrl = base;
+  rows = []; juror = ""; team = ""; err = "";
+  meta = { more: false, total: 0, jurors: [], teams: [] };
   el.addEventListener("change", e => {
     const t = e.target as HTMLElement;
     if (t.id === "hJ") { juror = (t as HTMLSelectElement).value; void fetchPage(false); }

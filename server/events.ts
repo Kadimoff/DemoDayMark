@@ -1,12 +1,16 @@
 // v3 events: an organisation runs several events. Exactly one is active; the others are archived — read-only, with their
 // results, history and exports still available. "Yeni tədbir yarat" archives the active event and starts a new one.
 // Nothing is copied out or deleted: every row keeps its event_id, so the archived event reads exactly as it was.
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type { Config } from "./config.js";
 import type { Orgs, Scope } from "./orgs.js";
 import { eventMeta, type EventMeta, type EventsRow } from "./repo.js";
 import { adminResults } from "./views.js";
 import { DEFAULT_CRITERIA, todayDate } from "./baseline.js";
 import { applyTimerAction } from "../shared/timer.js";
+import { activeFile, materials, teamRow } from "./teamrepo.js";
 import { brandName } from "../shared/brand.js";
 
 export interface NewEventInput {
@@ -20,17 +24,27 @@ export interface NewEventInput {
   copyCriteria?: boolean;
   /** Copy team names / projects (no files, links or scores). */
   copyTeams?: boolean;
+  /** v4: which program the rubric / teams / jurors come from (default: the active one). Same organisation only. */
+  copyFrom?: number | null;
+  /** v4: new juror accounts with the same names (each gets a new QR; no scores). */
+  copyJurors?: boolean;
 }
 
 export interface EventListItem extends EventMeta {
   teams: number; jurors: number; scores: number;
   /** Winner(s) when archived (from the ranking at that moment). */
   top: Array<{ rank: number | null; name: string; score: number | null }>;
+  /** v4: the program's own date text and type. */
+  date: string; product: string;
+  /** v4: imported from a backup file (root panel "Yedəkdən import"). */
+  imported: { file: string; at: number } | null;
 }
 
 export function listEvents(orgs: Orgs, orgId: number, cfg: Config): EventListItem[] {
   const rows = orgs.db.prepare("SELECT * FROM events WHERE org_id = ? ORDER BY id DESC").all(orgId) as EventsRow[];
-  return rows.map(r => {
+  const imports = new Map((orgs.db.prepare("SELECT event_id, source_file, created_at FROM archive_imports WHERE org_id = ?").all(orgId) as Array<{ event_id: number; source_file: string; created_at: number }>)
+    .map(r => [r.event_id, { file: r.source_file, at: r.created_at }]));
+  const items = rows.map(r => {
     const n = (sql: string) => (orgs.db.prepare(sql).get(orgId, r.id) as { n: number }).n;
     let top: EventListItem["top"] = [];
     try { top = r.stats_json ? (JSON.parse(r.stats_json).top ?? []) : []; } catch { /* old row */ }
@@ -44,8 +58,50 @@ export function listEvents(orgs: Orgs, orgId: number, cfg: Config): EventListIte
       jurors: n("SELECT COUNT(*) n FROM users WHERE org_id = ? AND event_id = ? AND role = 'juror'"),
       scores: n("SELECT COUNT(*) n FROM scores WHERE org_id = ? AND event_id = ?"),
       top,
+      ...(() => { const e = orgs.eventRepo(orgId, r.id)?.getEvent(); return { date: e?.date ?? "", product: e?.product ?? "" }; })(),
+      imported: imports.get(r.id) ?? null,
     };
   });
+  // active first, then the history by when the program ran (an imported old program sorts by its own dates)
+  const when = (e: EventListItem) => e.archivedAt ?? e.createdAt;
+  return items.sort((a, b) => (a.status === "active" ? -1 : b.status === "active" ? 1 : when(b) - when(a) || b.id - a.id));
+}
+
+/**
+ * v4 "Proqramlar → Tarixçə": everything about one program of the organisation, read-only — ranking, teams with their
+ * materials (a file that is no longer in uploads says so), jurors, every juror's scores and the import origin.
+ */
+export function eventDetail(orgs: Orgs, orgId: number, eventId: number, cfg: Config) {
+  const repo = orgs.eventRepo(orgId, eventId);
+  if (!repo) return null;
+  const db = orgs.db;
+  const ev = repo.getEvent();
+  const ar = adminResults(repo, cfg);
+  const exists = (stored: string | null | undefined) => !!stored && fs.existsSync(path.join(cfg.uploadsDir, path.basename(stored)));
+  const teams = ar.teams.map(t => {
+    const row = teamRow(db, t.id)!;
+    const m = materials(db, row);
+    const pres = activeFile(db, t.id, "presentation");
+    const logo = activeFile(db, t.id, "logo");
+    return {
+      ...t, members: m.members, siteUrl: m.siteUrl, videoUrl: m.videoUrl, review: m.review,
+      presentation: m.presentation ? { ...m.presentation, missing: !exists(pres?.pdf_stored ?? pres?.stored) && !exists(pres?.stored) } : null,
+      logo: m.logo ? { ...m.logo, missing: !exists(logo?.stored) } : null,
+      scores: ar.scores.filter(s => s.teamId === t.id).length,
+    };
+  });
+  const imp = db.prepare("SELECT source_file, source_schema, created_at FROM archive_imports WHERE org_id = ? AND event_id = ?").get(orgId, eventId) as
+    { source_file: string; source_schema: number; created_at: number } | undefined;
+  return {
+    meta: repo.meta()!,
+    event: { name: ev.name, product: ev.product, displayName: ev.displayName, date: ev.date, pitchSec: ev.timer.pitchSec, qaSec: ev.timer.qaSec,
+      includeEntry: ev.includeEntry, entryMax: ev.entryMax, locked: ev.locked, finalOrder: ev.finalOrder },
+    readOnly: repo.meta()?.status === "archived",
+    ...ar,
+    teams,
+    historyTotal: repo.history({ limit: 1 }).total,
+    imported: imp ? { file: imp.source_file, schema: imp.source_schema, at: imp.created_at } : null,
+  };
 }
 
 /**
@@ -53,10 +109,13 @@ export function listEvents(orgs: Orgs, orgId: number, cfg: Config): EventListIte
  * The live `event` row (settings, timer, stage, reveal) is copied into the archived event first, then reset for the
  * new one. Jurors and teams of the archived event are signed out; their data stays.
  */
-export function createEvent(orgs: Orgs, sc: Scope, cfg: Config, actorId: number, input: NewEventInput): { archived: EventMeta; created: EventMeta } {
+export function createEvent(orgs: Orgs, sc: Scope, cfg: Config, actorId: number, input: NewEventInput, jurorHash = "!"): { archived: EventMeta; created: EventMeta } {
   const db = orgs.db;
   const orgId = sc.orgId;
   const old = sc.repo;
+  // v4: the rubric / teams / jurors may come from any program of this organisation (an archived one included)
+  const from = input.copyFrom ? orgs.eventRepo(orgId, input.copyFrom) : old;
+  if (!from) throw new Error("copyFrom: program not found");
   const kick = db.transaction(() => {
     const cur = db.prepare("SELECT * FROM events WHERE org_id = ? AND status = 'active'").get(orgId) as EventsRow | undefined;
     if (!cur) throw new Error("no active event");
@@ -89,14 +148,17 @@ export function createEvent(orgs: Orgs, sc: Scope, cfg: Config, actorId: number,
     orgs.invalidate(orgId);
     const next = orgs.scope(orgId);
     if (next.eventId !== newId) throw new Error("new event did not become active");
-    const crit = input.copyCriteria === false ? null : old.criteria();
+    const crit = input.copyCriteria === false ? null : from.criteria();
     if (crit?.length) for (const c of crit) next.repo.addCriterion({ key: c.key, name: c.name, description: c.description, maxScore: c.maxScore });
-    if (input.copyTeams) for (const t of old.teams().filter(x => x.active)) next.repo.addTeam(t.name, t.project);
+    if (input.copyTeams) for (const t of from.teams().filter(x => x.active)) next.repo.addTeam(t.name, t.project);
+    // jurors: new accounts with the same names; nobody signs in with them until the coordinator shows each one a new QR
+    if (input.copyJurors) for (const j of from.jurors().filter(x => x.active)) next.repo.createUser("juror", `juror-${randomBytes(5).toString("hex")}`, j.displayName, jurorHash);
     if (!next.repo.criteria().length) {
       // default rubric (same as a new organisation)
       for (const c of DEFAULT_CRITERIA) next.repo.addCriterion(c);
     }
-    next.repo.audit(actorId, "event.create", { archived: cur.id, created: newId, name: input.name, copyCriteria: input.copyCriteria !== false, copyTeams: !!input.copyTeams });
+    next.repo.audit(actorId, "event.create", { archived: cur.id, created: newId, name: input.name, copyCriteria: input.copyCriteria !== false, copyTeams: !!input.copyTeams,
+      copyJurors: !!input.copyJurors, copyFrom: input.copyFrom ?? cur.id });
     return { archivedId: cur.id, newId, jurors: jurors.map(j => j.id), teams: teams.map(t => t.id) };
   })();
   // realtime: drop the archived event's live sockets and refresh every screen of the organisation
