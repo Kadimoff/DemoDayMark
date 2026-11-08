@@ -7,6 +7,8 @@ import { api } from "./lib/api";
 import { $, brandHtml, esc } from "./lib/dom";
 import { live } from "./lib/socket";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
+import { openPdf, renderPage } from "./lib/pdfdeck";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 
 const strip = new StageStrip(null);
 const el = { team: $("#team"), phase: $("#phase"), time: $("#time"), arc: $<SVGCircleElement>("#arc"), next: $("#next"), brand: $("#brand"), conn: $("#conn") };
@@ -42,10 +44,39 @@ function render(v: TimerView, s: StagePayload) {
 }
 strip.onTick(render);
 
-async function load() { try { strip.set(await api<StagePayload>("/api/stage")); } catch { /* offline: keep last state */ } }
+// munsif.im: current and next slide of the team's presentation (same slide as the stage screens)
+let docUrl = "";
+let doc: PDFDocumentProxy | null = null;
+let slideSig = "";
+async function slides(s: StagePayload) {
+  const box = $("#slides");
+  const p = s.show?.pres;
+  if (!p || !s.team) { box.hidden = true; slideSig = ""; return; }
+  box.hidden = false;
+  const sig = `${p.url}|${s.show.slide}`;
+  if (sig === slideSig) return;
+  slideSig = sig;
+  try {
+    if (docUrl !== p.url) { void doc?.loadingTask.destroy(); doc = await openPdf(p.url); docUrl = p.url; }
+    const n = Math.min(doc!.numPages, s.show.slide);
+    const draw = async (sel: string, page: number | null) => {
+      const el = $(sel);
+      if (!page) { el.innerHTML = `<span>Son slayd</span>`; return; }
+      const w = el.clientWidth || 300;
+      const r = await renderPage(doc!, page, w, w * 0.5625, 2);
+      r.c.style.width = `${r.w}px`; r.c.style.height = `${r.h}px`;
+      el.replaceChildren(r.c);
+    };
+    $("#slNowCap").textContent = `İndi · ${n} / ${doc!.numPages}`;
+    await draw("#slNow", n);
+    await draw("#slNext", n < doc!.numPages ? n + 1 : null);
+  } catch { box.hidden = true; }
+}
+
+async function load() { try { const s = await api<StagePayload>("/api/stage"); strip.set(s); void slides(s); } catch { /* offline: keep last state */ } }
 live({
   on: {
-    "stage:changed": (s: StagePayload) => strip.set(s),
+    "stage:changed": (s: StagePayload) => { strip.set(s); void slides(s); },
     "timer:changed": (p: { timer: TimerState; serverNow: number }) => strip.setTimer(p.timer, p.serverNow),
     "config:changed": load,
   },

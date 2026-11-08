@@ -191,6 +191,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
       return handleUpload(ctx, req, reply, id, "team");
     });
 
+    r.get("/api/team/notices", async req => trepo.notices("team", req.team!.teamId, 50));
     r.post("/api/team/notices/read", async req => { trepo.markRead("team", req.team!.teamId); return { ok: true }; });
   });
 

@@ -8,11 +8,13 @@ themeSwitch($("#themeSw"));
 
 api<{ eventName: string }>("/api/stage").then(s => {
   $("#brand").innerHTML = brandHtml(s.eventName);
-  document.title = `Daxil ol · ${s.eventName}`;
+  document.title = `Daxil ol · ${s.eventName} · munsif.im`;
 }).catch(() => { /* offline */ });
 
 // This browser may already hold an admin and/or juror session: offer a way back instead of a re-login.
-api<{ sessions: Array<{ role: "admin" | "juror"; displayName: string }> }>("/api/auth/me").then(me => {
+// (asks /api/auth/session first: it never answers 401, so a fresh visitor gets no console error)
+api<{ admin: boolean; juror: boolean }>("/api/auth/session").then(s => (s.admin || s.juror
+  ? api<{ sessions: Array<{ role: "admin" | "juror"; displayName: string }> }>("/api/auth/me") : { sessions: [] })).then(me => {
   if (!me.sessions.length) return;
   const box = $("#already");
   box.innerHTML = `<b>Bu brauzerdə artıq daxil olmusunuz:</b><div class="row" style="margin-top:8px">${me.sessions.map(s =>

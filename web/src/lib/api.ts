@@ -23,7 +23,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
     clearTimeout(timer);
   }
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && !location.pathname.startsWith("/login") && !path.startsWith("/api/auth/")) {
+  if (res.status === 401 && !location.pathname.startsWith("/login") && !path.startsWith("/api/auth/") && !path.startsWith("/api/team/")) {
     location.href = "/login";
   }
   if (!res.ok) throw new ApiError((data as { error?: string }).error ?? `Xəta baş verdi (${res.status}).`, res.status, data);

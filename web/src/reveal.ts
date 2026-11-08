@@ -575,8 +575,8 @@ live({
   resync: load,
   status: online => { if (!online) toast("Bağlantı kəsildi — yenidən qoşulur…"); },
 });
-api<{ role: string }>("/api/auth/me?role=admin").then(me => {
-  isAdmin = me.role === "admin";
+api<{ admin: boolean }>("/api/auth/session").then(me => {
+  isAdmin = me.admin;
   el.keys.hidden = !isAdmin;
   refreshAdmin();
 }).catch(() => renderButtons());

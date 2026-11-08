@@ -8,6 +8,9 @@ import { $, esc, icon, initials, toast } from "./lib/dom";
 import { createJuror, jurorJoined, onQrChange, reissue } from "./lib/qr";
 import { live } from "./lib/socket";
 import { brandHtml, topbar } from "./lib/topbar";
+import { bindTeamAccess, teamAccessHtml, type MaterialsData } from "./lib/materials";
+import { noticeBell } from "./lib/notices";
+import type { Notice } from "../../shared/types";
 
 interface EventState {
   name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean;
@@ -24,11 +27,20 @@ const bar = topbar({
   nav: [
     { href: "/admin", label: "Canlı panel", short: "Panel", icon: "users" },
     { href: "/admin/setup", label: "Quraşdırma", icon: "pencil", current: true },
-    { href: "/timer", label: "Taymer", icon: "timer", external: true },
+    { href: "/admin/pult", label: "Pult", icon: "timer" },
+    { href: "/stage", label: "Səhnə", icon: "expand", external: true },
     { href: "/reveal", label: "Nəticə açıqlaması", short: "Nəticə", icon: "medal", external: true },
   ],
   wide: true,
 });
+const bell = noticeBell($("#bellSlot"), { list: "/api/admin/notices", read: "/api/admin/notices/read" });
+void bell.refresh();
+let MAT: MaterialsData | null = null;
+async function loadAccess() {
+  try { MAT = await api<MaterialsData>("/api/admin/materials"); } catch { /* shown on next load */ }
+  const box = document.getElementById("teamAccess");
+  if (box) box.innerHTML = teamAccessHtml(MAT);
+}
 const main = $("#main");
 
 let S: SetupState | null = null;
@@ -43,6 +55,7 @@ async function load() {
     jurors = js;
     bar.setEventName(st.stage.eventName);
     render();
+    void loadAccess();
   } catch (e) {
     main.innerHTML = `<div class="banner err">${esc((e as Error).message)}</div>`;
   }
@@ -125,6 +138,8 @@ function render() {
           </div>`).join("")}
         </div>
       </section>
+
+      <section class="card pad stack" id="teamAccess" aria-labelledby="h-tacc">${teamAccessHtml(MAT)}</section>
 
       <section class="card pad stack" aria-labelledby="h-jur">
         <div class="row between"><h3 id="h-jur">Münsiflər (${jurors.length})</h3>
@@ -471,9 +486,12 @@ live({
   on: {
     "juror:joined": (p: { jurorId: number; displayName: string }) => { jurorJoined(p); load(); },
     "presence:changed": () => { /* session counts refresh on the next load */ },
+    notice: (n: Notice) => { bell.push(n); void loadAccess(); },
+    "materials:changed": () => void loadAccess(),
   },
   resync: load,
   status: online => bar.setOnline(online),
 });
 
+bindTeamAccess(main, () => MAT, loadAccess);
 load();

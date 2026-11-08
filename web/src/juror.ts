@@ -147,6 +147,7 @@ function renderHead() {
     head.dataset.sig = sig;
     head.innerHTML = `<div class="wrap narrow">
       <div class="r1">
+        <a class="jmark" href="/" title="munsif.im"><img src="/brand/munsif-mark-flat.svg" alt="munsif.im" width="34" height="34"></a>
         <div class="ttl">
           <div class="t"><b>Canlı qiymətləndirmə</b>${onStage ? `<span class="pill live">Səhnədə</span>` : ""}</div>
           <small>Münsif: ${esc(S.me.displayName)}</small>
@@ -166,6 +167,16 @@ function renderHead() {
 }
 
 // ---------- main ----------
+/** munsif.im: links to the team's presentation and website (when the coordinator allows it). */
+function materialsHtml(teamId: number) {
+  const m = S?.materials?.find(x => x.teamId === teamId);
+  if (!m || (!m.presentation && !m.siteUrl && !m.videoUrl)) return "";
+  return `<div class="jmat">
+    ${m.presentation ? `<a class="btn sm" href="${esc(m.presentation.url)}" target="_blank" rel="noopener">${icon("doc")}Prezentasiya${m.presentation.pages ? ` · ${m.presentation.pages} slayd` : ""}</a>` : ""}
+    ${m.siteUrl ? `<a class="btn sm" href="${esc(m.siteUrl)}" target="_blank" rel="noopener noreferrer">${icon("ext")}Sayt</a>` : ""}
+    ${m.videoUrl ? `<a class="btn sm ghost" href="${esc(m.videoUrl)}" target="_blank" rel="noopener noreferrer">${icon("play")}Video</a>` : ""}
+  </div>`;
+}
 function teamOf(id: number | null): AdminTeam | null { return S?.teams.find(t => t.id === id) ?? null; }
 const fmtEntry = (v: number) => (Math.round(v * 100) / 100).toFixed(1);
 
@@ -182,7 +193,7 @@ function render() {
 
   const critSig = S.criteria.map(c => `${c.key}:${c.maxScore}:${c.name}:${c.description}`).join("|");
   const key = [team.id, team.name, team.project, team.entryScore, S.entryMax, critSig, d.base, locked, S.feedbackTags.join("|"),
-    S.stage.team?.id, S.stage.team?.name, S.showJurorTotal, S.includeEntry].join("§");
+    S.stage.team?.id, S.stage.team?.name, S.showJurorTotal, S.includeEntry, materialsHtml(team.id)].join("§");
   if (key !== formKey) {
     formKey = key;
     const other = S.stage.team && !onStage ? S.stage.team : null;
@@ -211,6 +222,7 @@ function render() {
             <small>${team.entryScore != null ? `${icon("check")}Münsif üçün açıq` : "Yazılmayıb"}</small>
           </div>` : ""}
         </div>
+        ${materialsHtml(team.id)}
         <div class="privacy"><span>${icon("shield")}Digər münsiflərin balları gizlidir</span><span id="syncln" class="${online ? "ok-t" : "warn-t"}">● ${online ? "Sinxron aktiv" : "Oflayn"}</span></div>
       </section>
       <section class="totalcard" id="total" aria-live="polite"></section>

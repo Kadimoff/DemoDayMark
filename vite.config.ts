@@ -2,7 +2,12 @@ import { defineConfig, type Plugin } from "vite";
 
 // Same clean URLs in dev as the Fastify server uses in production.
 const PAGES: Record<string, string> = {
-  "/": "/login.html",
+  "/": "/landing/index.html",
+  "/en": "/landing/en/index.html",
+  "/team": "/team.html",
+  "/stage": "/timer.html",
+  "/stage/demo": "/timer.html",
+  "/admin/pult": "/pult.html",
   "/login": "/login.html",
   "/juror": "/juror.html",
   "/admin": "/admin.html",
@@ -18,6 +23,7 @@ const cleanUrls = (): Plugin => ({
       const url = (req.url ?? "").split("?")[0].replace(/\/$/, "") || "/";
       if (PAGES[url]) req.url = PAGES[url];
       else if (/^\/j\/[^/]+$/.test(url)) req.url = "/join.html";
+      else if (/^\/t\/[^/]+$/.test(url)) req.url = "/team.html";
       next();
     });
   },
@@ -35,6 +41,7 @@ export default defineConfig({
     proxy: {
       "/api": { target: api },
       "/socket.io": { target: api, ws: true },
+      "/vendor": { target: api },
     },
   },
   build: {
@@ -50,6 +57,8 @@ export default defineConfig({
         reveal: "web/reveal.html",
         join: "web/join.html",
         speaker: "web/speaker.html",
+        team: "web/team.html",
+        pult: "web/pult.html",
       },
     },
   },

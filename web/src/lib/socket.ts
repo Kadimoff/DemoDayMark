@@ -2,7 +2,7 @@ import { io, type Socket } from "socket.io-client";
 
 export interface LiveOptions {
   /** Which session to connect with; omitted = anonymous (public room only). */
-  role?: "admin" | "juror";
+  role?: "admin" | "juror" | "team";
   on: Record<string, (payload: any) => void>;
   /** Called after every reconnect (and when the tab becomes visible again) to refetch full state. */
   resync: () => void;

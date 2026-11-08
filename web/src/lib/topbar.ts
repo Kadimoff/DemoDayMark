@@ -19,10 +19,12 @@ export function topbar(opts: TopbarOpts) {
   const navHtml = opts.nav ? `${opts.nav.map(n => `<a href="${n.href}"${n.current ? ' aria-current="page"' : ""}${n.external ? ' target="_blank" rel="noopener"' : ""}>${n.icon ? `<span class="ni">${icon(n.icon)}</span>` : ""}<span class="nl">${esc(n.label)}</span><span class="ns">${esc(n.short ?? n.label)}</span>${n.external ? `<span class="nx">${icon("ext")}</span>` : ""}</a>`).join("")}` : "";
   root.className = "top";
   root.innerHTML = `<div class="wrap${opts.wide ? " wide" : ""}">
-    <a class="brand" href="/"><span class="flame" aria-hidden="true"></span><b id="topBrand">${brandHtml(opts.eventName ?? "Hakaton")}</b><span class="role">${opts.role === "admin" ? "Koordinator paneli" : "Münsif"}</span></a>
+    <a class="brand" href="/" title="munsif.im"><img class="mlogo" src="/brand/munsif-logo.svg" alt="munsif.im" width="111" height="32"><img class="mmark" src="/brand/munsif-mark-flat.svg" alt="munsif.im" width="32" height="32"></a>
+    <span class="evpill"><b id="topBrand">${brandHtml(opts.eventName ?? "Hakaton")}</b><span class="role">${opts.role === "admin" ? "Koordinator" : "Münsif"}</span></span>
     ${navHtml ? `<nav class="nav" aria-label="Bölmələr">${navHtml}</nav>` : ""}
     <span class="spacer"></span>
     <span class="conn" id="conn">Qoşulur…</span>
+    ${opts.role === "admin" ? `<span id="bellSlot"></span>` : ""}
     <div id="themeSw"></div><span class="th1" id="themeOne">${themeToggleHtml()}</span>
     <div class="who-me"><div class="nm"><b>Koordinator</b><small>Admin sessiyası</small></div><span class="avatar" aria-hidden="true">${icon("users")}</span></div>
     ${opts.logout !== false ? `<button class="icon-btn" id="logout" title="Çıxış" aria-label="Çıxış">${icon("logout")}</button>` : ""}
@@ -45,7 +47,7 @@ export function topbar(opts: TopbarOpts) {
     setEventName(name: string) {
       $("#topBrand").innerHTML = brandHtml(name);
       const page = document.title.split(" · ")[0];
-      document.title = `${page} · ${name || "Hakaton"}`;
+      document.title = `${page} · ${name || "Hakaton"} · munsif.im`;
     },
     setOnline(online: boolean) {
       const c = $("#conn");

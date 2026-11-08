@@ -13,6 +13,9 @@ import { live } from "./lib/socket";
 import { sortable } from "./lib/sortable";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
 import { topbar } from "./lib/topbar";
+import { bindShowCtl, mountMaterials, showCtlHtml } from "./lib/materials";
+import { noticeBell } from "./lib/notices";
+import type { Notice } from "../../shared/types";
 
 interface EventState {
   name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean; includeEntry: boolean;
@@ -41,11 +44,14 @@ const bar = topbar({
   nav: [
     { href: "/admin", label: "Canlı panel", short: "Panel", icon: "users", current: true },
     { href: "/admin/setup", label: "Quraşdırma", icon: "pencil" },
-    { href: "/timer", label: "Taymer", icon: "timer", external: true },
+    { href: "/admin/pult", label: "Pult", icon: "timer" },
+    { href: "/stage", label: "Səhnə", icon: "expand", external: true },
     { href: "/reveal", label: "Nəticə açıqlaması", short: "Nəticə", icon: "medal", external: true },
   ],
   wide: true,
 });
+const bell = noticeBell($("#bellSlot"), { list: "/api/admin/notices", read: "/api/admin/notices/read" });
+void bell.refresh();
 const strip = new StageStrip(null);
 const main = $("#main");
 const dlg = $<HTMLDialogElement>("#cellDlg");
@@ -57,6 +63,7 @@ let flashKey = "";
 let rv: AdminReveal | null = null;
 let rvConfirm: "enable" | "reset" | null = null;
 let built = false;
+let materials: ReturnType<typeof mountMaterials> | null = null;
 type JuryFilter = "all" | "wait" | "busy" | "sent" | "off" | "qr";
 let juryFilter: JuryFilter = "all";
 /** Juror whose delete is awaiting confirmation; `force` once the server said they have scores. */
@@ -114,6 +121,7 @@ function build() {
       <section class="card pad-lg stagebox" id="stageCard" aria-label="Səhnə idarəsi"></section>
       <section class="card pad-lg stack" id="orderCard" aria-labelledby="h-order"></section>
     </div>
+    <section class="card pad-lg stack section-gap" id="matCard" aria-labelledby="h-mat"></section>
     <section class="card pad-lg stack section-gap" id="juryCard" aria-labelledby="h-jury"></section>
     <section class="card pad-lg stack section-gap" id="finalCard" aria-labelledby="h-final"></section>
     <section class="card pad-lg stack section-gap" id="revealCard" aria-labelledby="h-rv"></section>
@@ -133,6 +141,8 @@ function build() {
     <div class="footbar"><span id="footBrand"></span><span>Avto-sinxronizasiya: açıq</span></div>`;
   built = true;
   mountHistory($("#histCard"));
+  materials = mountMaterials($("#matCard"));
+  void materials.reload();
 }
 
 function renderAll() {
@@ -250,7 +260,8 @@ function renderStage() {
         <button type="button" data-adj="60">+1 dəq</button>
       </div></div>
     <div class="tbtns" id="tbtns"></div>
-    <div class="tmore" id="tmore"></div>`;
+    <div class="tmore" id="tmore"></div>
+    <div id="showCtl">${showCtlHtml(S.stage)}</div>`;
   renderTimerCtl();
 }
 
@@ -857,9 +868,16 @@ document.addEventListener("keydown", e => {
   else if (k === "n") nextTeam();
   else if ((k === "+" || k === "=") && has) patchEvent({ timerAdd: 30 });
   else if ((k === "-" || k === "_") && has) patchEvent({ timerAdd: -30 });
+  else if ((k === "arrowright" || k === "pagedown" || k === "arrowleft" || k === "pageup") && has && S.stage.show.pres) {
+    e.preventDefault();
+    const d = k === "arrowright" || k === "pagedown" ? 1 : -1;
+    api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body: { slide: Math.max(1, S.stage.show.slide + d) } })
+      .then(r => { if (S) { S.stage = r.stage; strip.set(r.stage); renderStage(); } }).catch(ex => toast((ex as ApiError).message, "err"));
+  }
 });
 
 onQrChange(() => load());
+bindShowCtl(main, () => S?.stage ?? null, st => { strip.set(st); if (S) { S.stage = st; const box = document.getElementById("showCtl"); if (box) box.innerHTML = showCtlHtml(st); } });
 
 live({
   role: "admin",
@@ -906,6 +924,8 @@ live({
     "event:locked": (p: { locked: boolean }) => { if (S) { S.event.locked = p.locked; renderKpis(); renderJury(); } },
     "reveal:changed": () => loadReveal(),
     "config:changed": () => { load(); refreshHistory(); },
+    "notice": (n: Notice) => { bell.push(n); void materials?.reload(); },
+    "materials:changed": () => { void materials?.reload(); },
   },
   resync: load,
   status: online => bar.setOnline(online),

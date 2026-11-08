@@ -6,12 +6,12 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#05070C">
 <meta name="robots" content="noindex">
-<title>Təqdimatçı taymeri · Hakaton</title>
-<link rel="icon" href="/timer-icon.svg">
+<title>Təqdimatçı taymeri · munsif.im</title>
+<link rel="icon" href="/favicon.svg">
 <script type="module" src="/src/speaker.ts"></script>
 </head>
 <body class="sp phase-idle">
-<header class="sp-head"><b id="brand"><i>Hakaton</i></b><span class="sp-conn" id="conn">Qoşulur…</span></header>
+<header class="sp-head"><img class="sp-mark" src="/brand/munsif-mark-flat.svg" alt="munsif.im" width="28" height="28"><b id="brand"><i>Hakaton</i></b><span class="sp-conn" id="conn">Qoşulur…</span></header>
 <main class="sp-main">
   <div class="sp-team" id="team">Səhnədə komanda yoxdur</div>
   <div class="sp-phase" id="phase">Gözləmədə</div>
@@ -20,6 +20,10 @@
     <div class="sp-time mono" id="time" role="timer" aria-live="off">—</div>
   </div>
   <div class="sp-next" id="next"></div>
+  <div class="sp-slides" id="slides" hidden>
+    <figure><div class="sp-sl" id="slNow"></div><figcaption id="slNowCap">İndi</figcaption></figure>
+    <figure class="nx"><div class="sp-sl" id="slNext"></div><figcaption>Növbəti slayd</figcaption></figure>
+  </div>
   <p class="sp-hint" id="hint">Ekranı açıq saxlayın · vaxt koordinatorun taymeri ilə eynidir</p>
 </main>
 </body>
