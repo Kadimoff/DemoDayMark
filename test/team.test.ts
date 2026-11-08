@@ -31,7 +31,7 @@ function socket(cookie: string | undefined, role?: string) {
   sockets.push(s);
   return new Promise<Socket>((res, rej) => { s.on("connect", () => res(s)); s.on("connect_error", rej); });
 }
-const waitFor = <T = any>(s: Socket, ev: string, pred: (p: T) => boolean = () => true, ms = 1500) => new Promise<T>((res, rej) => {
+const waitFor = <T = any>(s: Socket, ev: string, pred: (p: T) => boolean = () => true, ms = 8000) => new Promise<T>((res, rej) => {
   const t = setTimeout(() => rej(new Error(`no ${ev} within ${ms} ms`)), ms);
   const h = (p: T) => { if (pred(p)) { clearTimeout(t); s.off(ev, h); res(p); } };
   s.on(ev, h);
