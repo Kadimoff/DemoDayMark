@@ -93,6 +93,12 @@ Slaydlar: `←/→`, `PageUp/PageDown` (klikker, admin sessiyası olan proyektor
 
 **Backup və miqrasiya.** Sxem yalnız əlavə ilə dəyişir (v8: yeni cədvəllər `team_links`, `team_sessions`, `team_files`, `notifications`; `teams`/`event`-ə default-lu sütunlar). Server açılanda sxem köhnədirsə miqrasiyadan **əvvəl** bazanın surəti `DATA_DIR/backups/pre-v<N>-<vaxt>.db` kimi saxlanılır (better-sqlite3 `.backup()`, son 10 nüsxə). Köhnə (v7) bazanın itkisiz açılması `test/munsif-migration.test.ts`-də yoxlanılır.
 
+## Proqramlar, QR kodlar və yedəkdən import (v4)
+
+- **Proqramlar** (`/admin/programs`): proqram (tədbir) bir yarışdır. Eyni vaxtda bir proqram aktivdir. "Yeni proqram yarat" hazırkını arxivə keçirir; meyarları, komanda və münsif adlarını istənilən əvvəlki proqramdan götürmək olar (münsiflərə yeni QR verilir, ballar köçmür). "Tarixçə": arxiv proqramlar, birinə toxunanda oxuma rejimində tam baxış (yekun reytinq, komandalar və materialları, münsiflər və hər münsifin balları, qiymətləndirmə tarixçəsi, Excel/PDF).
+- **QR kodlar** (`/admin/qr`): bütün komanda giriş QR-ları (link, kod) və münsif QR-ları bir səhifədə; "Hamısını çap et" (A4, 2 sütun), "PDF yüklə", hər kartda "Linki kopyala", WhatsApp, Telegram, telefonda "Paylaş". Münsif QR-ı bir dəfə işləyir, 24 saat və ya 3 gün etibarlıdır. "Səhnə ekranında göstər" münsif QR-larını proyektora qoşulmuş öz kompüterinizdə bir-bir, böyük göstərir və münsif qoşulan kimi növbətiyə keçir (ictimai səhnə linkində QR göstərilmir: onu hər kəs aça bilər). Komanda linki çoxdəfəlikdir, ona görə səhnə ekranına çıxarılmır.
+- **Yedəkdən import** (`/root` → "Yedəkdən import"): `DATA_DIR/backups`-dakı hər `.db` faylı müvəqqəti surətdə açılır (fayl özü dəyişmir), istənilən köhnə sxem (v1…v12) cari sxemə gətirilib oxunur. Seçilmiş proqram seçilmiş təşkilata **yeni arxiv proqram** kimi düşür: komandalar, meyarlar, münsiflər (giriş edə bilməz), ballar, tarixçə, QR dəvətləri (ləğv edilmiş), fayl məlumatları (fayl `uploads`-da yoxdursa "Fayl yoxdur"), istəyə görə ballarla bağlı jurnal qeydləri. Aktiv proqrama heç nə yazılmır; bir tranzaksiya; commit-dən əvvəl reytinq mənbə ilə müqayisə olunur, fərq olsa heç nə dəyişmir; importdan əvvəl `backups/pre-import-*.db` alınır. Eyni fayl + proqram (və ya eyni məzmunlu proqram başqa fayldan) ikinci dəfə import olunmur (`archive_imports`, sxem v12). API: `GET /api/root/backups`, `POST /api/root/backups/import` (yalnız platforma sahibi).
+
 ## Bal sistemi
 
 | Hissə | Mənbə | Maksimum |
@@ -216,6 +222,8 @@ docker compose --profile caddy up -d --build
 | `BOOTSTRAP_ORG_SLUG`, `BOOTSTRAP_ORG_NAME`, `BOOTSTRAP_COORD_USERNAME`, `BOOTSTRAP_COORD_HASH_B64` | Təşkilat + koordinatoru bir dəfəlik yaratmaq ([bootstrap](#demomüştəri-koordinatorunu-env-ilə-yaratmaq-bootstrap)) | — |
 | `BACKUP_INTERVAL_MIN` | Server işləyərkən avtomatik onlayn yedək (`data/backups/auto-*.db`), dəqiqə; `0` = söndür | 10 |
 | `BACKUP_KEEP` | Saxlanılan avtomatik yedək sayı | 48 |
+| `IMPORT_ARCHIVE_MATCH` | Bir dəfəlik: startda `DATA_DIR/backups`-dakı yedəkləri oxuyur, adında bu mətn olan proqramı (ən çox balı olan, bərabərdə ən yeni fayl) arxiv proqram kimi import edir. Nəticə logda (`archive import: …`) və `/api/health` → `archiveImport`. Təkrar startda heç nə etmir | boş (söndürülüb) |
+| `IMPORT_ARCHIVE_ORG` | İmportun düşdüyü təşkilatın qısa adı | `root` |
 | `DB_SYNCHRONOUS` | `FULL` (hər bal diskə yazılmadan cavab getmir) və ya `NORMAL` — bax [docs/reliability.md](docs/reliability.md) | FULL |
 | `SOURCE_COMMIT` | `/api/health`-də görünən commit (Coolify build arg) | — |
 
