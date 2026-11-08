@@ -2032,9 +2032,25 @@ h1[id], h2[id], h3[id], details[id] { scroll-margin-top: 90px; }
 .bk-form { width: 100%; }
 .bk-imp { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; } .bk-imp .ic { color: var(--ok, #2EE59D); flex: 0 0 auto; margin-top: 2px; }
 
-/* v4: seven panel links: short labels on narrower desktops so the header stays one row */
-@media (max-width: 1640px) {
+/* v4: seven panel links. The header stays one row on every desktop width: short link labels, the link row may scroll
+   sideways instead of wrapping, and on narrower screens the role label and the three-way theme switch step back. */
+@media (min-width: 701px) {
+  .top .wrap { flex-wrap: nowrap; }
+  .top .brand, .top .conn, .top .icon-btn, .top .th1, .top #bellSlot, .top .who-me { flex: none; }
+  .top .nav { min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }
+  .top .nav::-webkit-scrollbar { display: none; }
+  .top .nav a { flex: none; padding: 7px 9px; }
   .top .nav .nl { display: none; }
   .top .nav .ns { display: inline; }
-  .top .nav a { padding: 7px 9px; }
+  .top .evpill { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+}
+@media (min-width: 701px) and (max-width: 1440px) {
+  .top .evpill .role { display: none; }
+  .top #themeSw { display: none; }
+  .top .th1 { display: inline-flex; }
+}
+@media (min-width: 1100px) {
+  /* wide enough: every link stays whole, the event pill gives way first */
+  .top .nav { flex: none; overflow: visible; }
+  .top .evpill { flex: 0 1 auto; min-width: 90px; }
 }
