@@ -90,13 +90,10 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
 // ---------- team sign-in link dialog (/t/<code>) ----------
 let dlg: HTMLDialogElement | null = null;
 export async function openTeamLink(teamId: number, teamName: string, fresh = false) {
-  let link: { code: string; path: string } | null = null;
+  let link: { code: string | null; path: string | null } | null = null;
   try {
-    link = fresh ? await api(`/api/admin/teams/${teamId}/link`, { method: "POST", body: {} })
-      : await api<{ code: string; path: string }>(`/api/admin/teams/${teamId}/link`).catch(async e => {
-        if ((e as ApiError).status === 404) return api<{ code: string; path: string }>(`/api/admin/teams/${teamId}/link`, { method: "POST", body: {} });
-        throw e;
-      });
+    if (!fresh) link = await api<{ code: string | null; path: string | null }>(`/api/admin/teams/${teamId}/link`);
+    if (fresh || !link?.code) link = await api<{ code: string; path: string }>(`/api/admin/teams/${teamId}/link`, { method: "POST", body: {} });
   } catch (e) { toast((e as ApiError).message, "err"); return; }
   const url = `${location.origin}${link!.path}`;
   const qr = await QRCode.toDataURL(url, { margin: 1, width: 640, color: { dark: "#0B0B14", light: "#FFFFFF" } });

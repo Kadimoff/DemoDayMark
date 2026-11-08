@@ -150,6 +150,8 @@ export class TeamService {
       const key = `${kind}:${t.id}:${cur}`;
       if (this.sentStage.has(key)) return;
       this.sentStage.add(key);
+      // moving the stage back and forth (or a restart) must not repeat the same reminder within 30 minutes
+      if (this.trepo.sentSince(t.id, kind, Date.now() - 30 * 60_000)) return;
       this.notifyTeam(t.id, kind, title, body);
     };
     send(0, "stage.invite", "Səhnəyə dəvət olunursunuz", `${list[ci].name}, sıra sizdədir — səhnəyə buyurun!`);

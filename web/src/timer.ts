@@ -567,6 +567,7 @@ function frame(t: number) {
 }
 requestAnimationFrame(frame);
 setInterval(() => { if (document.hidden) tick(); }, 500);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && stage) applyView(); });
 
 // ---------- data ----------
 function onStage(s: StagePayload) {
@@ -660,6 +661,6 @@ if (DEMO) {
     tick();
   }).catch(() => { /* anonymous viewer */ });
   load();
-  (window as unknown as { __munsif: unknown }).__munsif = { beat: () => finale.n, particles: () => finale.particles, view: () => view, slide: () => deck.shown, stage: () => stage };
+  (window as unknown as { __munsif: unknown }).__munsif = { beat: () => finale.n, particles: () => finale.particles, view: () => view, slide: () => deck.shown, stage: () => stage, deck };
 }
 renderButtons(false, "idle", false);

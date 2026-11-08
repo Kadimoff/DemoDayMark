@@ -185,7 +185,7 @@ h2 > .ic { color: var(--accent-2); width: 18px; height: 18px; margin-right: 8px;
 .pill.live::before, .pill.pulse::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: radar 1.6s ease-out infinite; }
 @keyframes radar { 0% { box-shadow: 0 0 0 0 currentColor; } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
 .f { display: block; font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
-textarea, input[type=text], input[type=password], input[type=number], input[type=search], select {
+textarea, input[type=text], input[type=password], input[type=number], input[type=search], input[type=url], input[type=datetime-local], input:not([type]), select {
   width: 100%; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; min-height: 44px; font-weight: 500;
 }
 input::placeholder, textarea::placeholder { color: var(--faint); }
@@ -432,13 +432,13 @@ textarea:disabled, input:disabled { opacity: .6; }
 .phases span.on.done { background: var(--live); }
 .clockbox { border-radius: var(--r-md); border: 1px solid var(--line); background: radial-gradient(ellipse at 50% 120%, rgba(124, 92, 255, .16), transparent 60%), var(--stage-bg); text-align: center; padding: 22px 12px 18px; color: #F9FAFB; }
 .clockbox .lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #9CA3AF; font-weight: 700; }
-.clockbox b { display: block; font-family: var(--f-mono); font-weight: 700; font-size: clamp(56px, 9vw, 104px); line-height: 1.05; letter-spacing: -.04em; color: #FFB5A0; font-variant-numeric: tabular-nums; margin: 6px 0; }
+.clockbox b { display: block; font-family: var(--f-mono); font-weight: 700; font-size: clamp(56px, 9vw, 104px); line-height: 1.05; letter-spacing: -.04em; color: #E4DCFF; font-variant-numeric: tabular-nums; margin: 6px 0; }
 .clockbox.warn b { color: var(--warn); }
 .clockbox.warn { animation: strobe 1s ease-in-out infinite; }
 .clockbox.over b { color: var(--live); animation: blink 1s steps(2) infinite; }
 .clockbox.idle b { color: #6B7280; }
 .clockbox .sync { font-family: var(--f-mono); font-size: 11px; color: #9CA3AF; font-weight: 600; display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
-.clockbox .sync .live-t { color: #FF8A65; letter-spacing: .06em; }
+.clockbox .sync .live-t { color: #FFB020; letter-spacing: .06em; }
 @keyframes strobe { 50% { background-color: rgba(245, 158, 11, .07); } }
 .tbtns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .tbtns .btn { min-height: 62px; }

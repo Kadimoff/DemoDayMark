@@ -22,7 +22,7 @@ const dt = (ms: number) => new Date(ms).toLocaleString("az-AZ", { day: "2-digit"
 function header(signedIn: boolean, title = "Komanda girişi") {
   head.className = "thead";
   head.innerHTML = `<div class="wrap narrow">
-    <a class="brand" href="/" title="munsif.im"><img class="mlogo" src="/brand/munsif-logo.svg" alt="munsif.im" width="111" height="32"></a>
+    <a class="brand" href="/" title="munsif.im"><img class="mlogo" src="/brand/munsif-logo.svg" alt="munsif.im" width="111" height="32"><img class="mmark" src="/brand/munsif-mark-flat.svg" alt="munsif.im" width="30" height="30"></a>
     <span class="spacer"></span>
     ${signedIn ? `<span id="bellSlot"></span>` : ""}
     <span class="th1" id="themeOne">${themeToggleHtml()}</span>
@@ -40,6 +40,7 @@ function header(signedIn: boolean, title = "Komanda girişi") {
 // ---------- signed out: link, code, registration ----------
 async function signedOut(err = "") {
   header(false);
+  headerFor = "out";
   let reg = { open: false, eventName: "" };
   try { reg = await api("/api/team/registration"); } catch { /* offline */ }
   main.innerHTML = `
@@ -169,9 +170,10 @@ function profileCard() {
   </section>`;
 }
 
+let headerFor = "";
 function render() {
   if (!S) return;
-  header(true, S.team.name);
+  if (headerFor !== "in") { header(true, S.team.name); headerFor = "in"; } else bell?.set(S.notices);
   main.innerHTML = `${statusCard()}${presCard()}${profileCard()}
     <p class="tfoot">Bal və reytinq komandalara göstərilmir. Nəticələr tədbirin sonunda səhnədə açıqlanır.</p>`;
   void thumb();
@@ -264,7 +266,9 @@ async function boot() {
     catch (e) { history.replaceState(null, "", "/team"); if (!(await load())) await signedOut((e as ApiError).message); return; }
     history.replaceState(null, "", "/team");
   }
-  if (!(await load())) { await signedOut(); return; }
+  // ask without a 401 first (a fresh visitor gets the sign-in form, and no console error)
+  const ses = await api<{ team: boolean }>("/api/auth/session").catch(() => ({ team: true }));
+  if (!ses.team || !(await load())) { await signedOut(); return; }
   if (socketOn) return;
   socketOn = true;
   live({

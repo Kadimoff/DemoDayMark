@@ -1,18 +1,44 @@
-# DemoDay — münsif sistemi + pitch taymeri
+# munsif.im — münsif sistemi, pitch taymeri və prezentasiya səhnəsi
 
-Məhsulun adı **DemoDay**-dir. Önündəki brend hissəsini (məs. "Ignite" → **Ignite DemoDay**) Quraşdırma → "Brend / prefiks" sahəsinə yazın. Boş qalsa, hər yerdə sadəcə **DemoDay** görünür.
+**munsif.im** (oxunuşu "münsifim": *Təqdimatlarınız münsifim ilə qiymətləndirilir.*) — DemoDay münsif sisteminin yeni adı və görünüşüdür.
+Mövcud funksiyaların hamısı (koordinator girişi, münsif QR girişi, bal sistemi, canlı panel, taymer, nəticə açıqlaması, Excel/PDF ixrac, backup) dəyişmədən qalır;
+üstünə munsif.im landing-i, komanda girişi, prezentasiya/sayt yükləmə, bildirişlər və prezentasiya səhnəsi (taymer bubble + son 5 saniyə effekti) əlavə olunub.
+
+Tədbirin adı Quraşdırma → "Brend / prefiks" sahəsindən gəlir (məs. "Ignite" → **Ignite DemoDay**) və paneldə tədbir nişanı kimi görünür; əsas loqo hər yerdə **munsif.im**-dir.
 
 Real vaxtda münsif qiymətləndirməsi və səhnə taymeri. 8 komanda, 4–5 münsif, hər komanda üçün 3 dəq pitch + 2 dəq sual-cavab.
 
 | Ekran | Ünvan | Kim üçün |
 |---|---|---|
+| **Landing** | `/` (AZ), `/en/` (EN) | ziyarətçi; daxil olmuş istifadəçi header-də "Panel" düyməsini görür |
 | Giriş | `/login` | koordinator (admin) |
 | Münsif QR girişi | `/j/<kod>` | münsif (QR skan edəndə açılır) |
 | Münsif paneli | `/juror` | münsiflər (telefon) |
+| **Komanda girişi** | `/t/<kod>`, `/team` | komandalar (link/QR və ya kod) |
 | Canlı panel | `/admin` | koordinator (noutbuk) |
 | Quraşdırma | `/admin/setup` | koordinator |
-| **Proyektor taymeri** | `/timer` | səhnə ekranı (girişsiz baxış; admin girişi ilə idarə) |
+| **Pult** | `/admin/pult` (`/stage/control` → buraya) | koordinatorun telefonu: start/fasilə, ±30 s, slayd, intro, sayt rejimi |
+| **Səhnə** | `/stage` (= `/timer`) | proyektor: prezentasiya + üzən taymer; prezentasiya yoxdursa böyük taymer |
+| **Səhnə demosu** | `/stage/demo` | girişsiz demo (nümunə PDF, 15 s; `?t=30`, `?slow=8`) |
+| Danışan ekranı | `/speaker` | çıxış edən: taymer + cari və növbəti slayd |
 | **Nəticə açıqlaması** | `/reveal` | proyektor; yalnız admin icazə verdikdən sonra, addım-addım |
+
+## munsif.im: komanda girişi, prezentasiyalar və səhnə
+
+**Komanda girişi.** Quraşdırma → "Komanda girişi və materiallar" (və ya canlı paneldə "Komandaların materialları" → *Link*) hər komanda üçün giriş linki + QR yaradır (`/t/ABCD-EFGH-JKMN`). Komandanın bütün üzvləri eyni linklə daxil olur; kodu `/team` səhifəsində əl ilə də yazmaq olar. "Yeni link" köhnəsini etibarsız edir, "Ləğv et" komandanın bütün sessiyalarını bağlayır. *Açıq qeydiyyat* (standart: söndürülüb) açılsa komanda `/team`-də özü qeydiyyatdan keçir, "təsdiq gözləyir" statusunda yaranır və koordinator təsdiqləyənə qədər sıraya/reytinqə düşmür.
+
+**Komanda paneli (`/team`).** Status (təsdiq / yoxlanılır / qəbul edildi / geri qaytarıldı + səbəb), çıxış sırası, deadline; prezentasiya (PDF; PPTX serverdə LibreOffice varsa avtomatik PDF-ə çevrilir, yoxdursa "PDF kimi yükləyin"), versiyalar, loqo, üzvlər, layihə saytı və demo video linki; komanda/layihə adı yalnız koordinator icazə versə dəyişir. Komanda bal və ya reytinq görmür.
+
+**Fayllar.** Maksimum 50 MB (`MAX_UPLOAD_MB`), loqo 5 MB; uzantı + magic byte yoxlanılır (PDF `%PDF-`, PPTX zip, PNG/JPEG/WebP); fayllar `DATA_DIR/uploads`-da təsadüfi adla (0600) saxlanılır — Docker-də persistent volume içindədir. Endirmə: admin hamısını, komanda yalnız özününkünü (başqasınınkı 403), münsif yalnız "Münsiflər materialları görsün" açıq olanda; girişsiz səhnə ekranı yalnız **hazırda səhnədə olan** komandanın prezentasiyasını ala bilər (`/api/stage/presentation`).
+
+**Bildirişlər** (socket.io + brauzer Notification API): koordinatora "Komanda X prezentasiya yüklədi" (toast + zəng ikonu + siyahı), canlı paneldə *Qəbul et / Geri qaytar (səbəblə)*; komandaya "Prezentasiyanız qəbul edildi / geri qaytarıldı", "Sıranız yaxınlaşır" (qabaqda 2 komanda qalanda), "Növbəti sizsiniz", "Səhnəyə dəvət olunursunuz", deadline-a 1 saat qalmış xatırlatma.
+
+**Səhnə (`/stage` = `/timer`).** Səhnədəki komandanın PDF-i pdf.js ilə tam ekranda, taymer üstündə üzən **bubble** kimi (sürüşdürülə bilər, ikiqat klik yerinə qaytarır): son 30 s amber, son 10 s qırmızı; **son 5 saniyə** (həm pitch, həm sual-cavab) bubble mərkəzə uçub ekranı örtür, rəqəmlər kiçilərək azalır, halqa/zərrəciklər hər saniyə çoxalır, ekran titrəyir; 0-da "VAXT BİTDİ" partlayışı və sual-cavab başlayır (mövcud pitch → sual-cavab → vaxt bitdi axını). Səs: köhnə siqnallar qalır, takeover zamanı tik-səsləri effektin öz səsi ilə əvəz olunur (ikiqat səs yoxdur); `M` səsi söndürür. Zəif cihazda effekt avtomatik *lite* rejimə keçir; `prefers-reduced-motion` hörmət olunur. Prezentasiyası olmayan komandada köhnə böyük taymer (yeni dizaynla) görünür.
+Slaydlar: `←/→`, `PageUp/PageDown` (klikker), sürüşdürmə, canlı panel, pult — slayd nömrəsi serverdə saxlanılır və bütün səhnə/danışan ekranlarında sinxron dəyişir. Köhnə qısayollar (Space, S, R, N, F, +/−) dəyişməyib. *Sayt rejimi*: layihə saytı iframe-də; sayt daxil edilməyə icazə vermirsə (X-Frame-Options/CSP, server yoxlayır) böyük QR kod. *Intro*: "Növbəti çıxış" ekranı + 3·2·1.
+
+**PPTX → PDF.** Server `soffice`-u PATH-da tapır (və ya `SOFFICE` env). Eyni anda bir çevirmə, 90 s limit, profil `DATA_DIR/lo-profile`. Docker image-ə `libreoffice-impress` + şriftlər əlavə olunub (~400 MB).
+
+**Backup və miqrasiya.** Sxem yalnız əlavə ilə dəyişir (v8: yeni cədvəllər `team_links`, `team_sessions`, `team_files`, `notifications`; `teams`/`event`-ə default-lu sütunlar). Server açılanda sxem köhnədirsə miqrasiyadan **əvvəl** bazanın surəti `DATA_DIR/backups/pre-v<N>-<vaxt>.db` kimi saxlanılır (better-sqlite3 `.backup()`, son 10 nüsxə). Köhnə (v7) bazanın itkisiz açılması `test/munsif-migration.test.ts`-də yoxlanılır.
 
 ## Bal sistemi
 
@@ -134,6 +160,8 @@ docker compose --profile caddy up -d --build
 | `MIN_JURORS_FOR_RANK` | Bundan az münsif qiymətləndiribsə, reytinqdə "eksik" etiketi görünür | 3 |
 | `TRUST_PROXY` | Proxy arxasında real IP üçün | true |
 | `LOG_LEVEL` | `info` sorğu loglarını açır | warn |
+| `MAX_UPLOAD_MB` | Prezentasiya faylının maksimum ölçüsü | 50 |
+| `SOFFICE` | LibreOffice yolu (boş olarsa PATH-da `soffice` axtarılır; tapılmasa PPTX çevrilmir) | avtomatik |
 
 ### Əmrlər
 
@@ -201,18 +229,21 @@ Tətbiq serverdə Coolify layihəsi **Ignite Demo Day** → tətbiq **demoday-ma
 shared/      scoring.ts (bal hesablaması, saf funksiya) · timer.ts (taymer riyaziyyatı) · types.ts
 server/      Fastify + Socket.IO + better-sqlite3
   app.ts     hook-lar (sessiya, Origin yoxlaması), səhifələr, statik fayllar
-  realtime.ts  otaqlar: public · jurors · juror:<id> · admin
+  realtime.ts  otaqlar: public · jurors · juror:<id> · admin · team:<id>
   views.ts   münsif cavabı yalnız öz sətirlərindən yığılır (gizlilik sərhədi)
-  routes/    auth · juror · admin
+  routes/    auth · juror · admin · team (komanda girişi, yükləmə) · stage (materiallar, səhnə rejimi/slayd)
+  teamrepo.ts · teams.ts · files.ts   munsif.im: komandalar, bildirişlər, fayl yoxlaması, PPTX→PDF
   export/    xlsx.ts (exceljs) · pdf.ts (pdfkit + gömülü TTF)
 web/         Vite + vanilla TS, tək styles.css (token sistemi)
 assets/fonts Manrope, Unbounded, JetBrains Mono, Noto Sans
-test/        scoring.test.ts · privacy.test.ts
+test/        scoring · privacy · team · munsif-migration · history · migration …
+assets/landing  munsif.im landing (scripts/import-landing.mjs ilə ~/projects/munsif-landing/dist-dən gəlir)
+assets/brand    munsif.im loqoları
 ```
 
 **Gizlilik serverdə təmin olunur:** münsif sessiyası ilə `/api/admin/*` 403 qaytarır. `GET /api/juror/state` yalnız münsifin öz ballarını qaytarır (`SHOW_JUROR_TOTAL=false` olanda öz yekununu da qaytarmır). Münsif socket-i yalnız `public`, `jurors` (kilid xəbəri) və öz `juror:<id>` otağına qoşulur. Bunların hamısı `test/privacy.test.ts`-də yoxlanılır.
 
-**Təhlükəsizlik:** argon2id şifrələr, imzalı httpOnly + SameSite=Lax cookie (HTTPS-də Secure), admin və münsif üçün ayrı cookie (`ij_admin`, `ij_juror`), sessiya 7 gün, bazada yalnız sessiya tokeninin SHA-256 heşi saxlanılır, POST/PUT/PATCH/DELETE və WebSocket üçün Origin yoxlaması, girişdə IP + istifadəçi adı üzrə 5 uğursuz cəhd → 5 dəq blok. Hamı eyni Wi-Fi-dan (eyni IP) gəldiyi üçün blok yalnız IP-yə görə deyil, IP + istifadəçi adına görə qoyulur. Şifrə sıfırlananda və ya münsif deaktiv ediləndə onun bütün sessiyaları bağlanır.
+**Təhlükəsizlik:** argon2id şifrələr, imzalı httpOnly + SameSite=Lax cookie (HTTPS-də Secure), admin, münsif və komanda üçün ayrı cookie (`ij_admin`, `ij_juror`, `ij_team`), sessiya 7 gün, bazada yalnız sessiya tokeninin SHA-256 heşi saxlanılır, POST/PUT/PATCH/DELETE və WebSocket üçün Origin yoxlaması, girişdə IP + istifadəçi adı üzrə 5 uğursuz cəhd → 5 dəq blok. Hamı eyni Wi-Fi-dan (eyni IP) gəldiyi üçün blok yalnız IP-yə görə deyil, IP + istifadəçi adına görə qoyulur. Şifrə sıfırlananda və ya münsif deaktiv ediləndə onun bütün sessiyaları bağlanır.
 
 ## İlkin tapşırıqdan fərqlər (qəsdən)
 

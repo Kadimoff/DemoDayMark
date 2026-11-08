@@ -75,7 +75,7 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
     r.get("/api/admin/teams/:id/link", async (req, reply) => {
       const tid = id(req.params, reply); if (!tid) return;
       const l = trepo.link(tid);
-      if (!l?.code) return reply.code(404).send({ error: "Bu komanda üçün link yaradılmayıb." });
+      if (!l?.code) return { code: null, path: null, createdAt: null }; // none yet (200: no console noise)
       return { code: prettyCode(l.code), path: `/t/${l.code}`, createdAt: l.createdAt };
     });
     r.delete("/api/admin/teams/:id/link", async (req, reply) => {

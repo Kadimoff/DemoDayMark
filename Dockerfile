@@ -14,7 +14,12 @@ RUN npm run typecheck && npm test && npm run build && npm prune --omit=dev
 FROM node:22-bookworm-slim
 WORKDIR /app
 # Coolify replaces HEALTHCHECK with its own curl/wget probe, so the image must ship curl.
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# munsif.im: libreoffice-impress converts uploaded PPTX presentations to PDF (headless `soffice`, found on PATH;
+# one conversion at a time, 90 s limit). It adds ~400 MB to the image; without it teams are asked for a PDF.
+# fonts-dejavu (+ Carlito/Liberation, metric-compatible with Calibri/Arial) keep the converted slides' layout.
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+      libreoffice-impress fonts-dejavu fonts-crosextra-carlito fonts-liberation2 \
+  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/app/data ASSETS_DIR=/app/assets WEB_DIR=/app/dist/web
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

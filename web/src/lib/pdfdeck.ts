@@ -2,11 +2,13 @@
 // rendered pages are cached and the neighbours are pre-rendered while the browser is idle.
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
+// legacy build: polyfills newer JS (e.g. Math.sumPrecise) that older projector laptops and Chrome < 147 lack —
+// without them some pages never finish rendering.
 type PdfJs = typeof import("pdfjs-dist");
 let lib: Promise<PdfJs> | null = null;
 export function pdfjs(): Promise<PdfJs> {
   lib ??= (async () => {
-    const [m, worker] = await Promise.all([import("pdfjs-dist"), import("pdfjs-dist/build/pdf.worker.min.mjs?url")]);
+    const [m, worker] = await Promise.all([import("pdfjs-dist/legacy/build/pdf.mjs") as Promise<PdfJs>, import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")]);
     m.GlobalWorkerOptions.workerSrc = worker.default;
     return m;
   })();
@@ -43,6 +45,7 @@ export class Deck {
   private front: HTMLCanvasElement;
   private back: HTMLCanvasElement;
   private tok = 0;
+  private queue: Promise<void> = Promise.resolve();
   shown = 0;
   pages = 0;
 
@@ -99,7 +102,11 @@ export class Deck {
     const key = `${this.url}|${n}|${w}x${h}`;
     let p = this.cache.get(key);
     if (!p) {
-      p = renderPage(this.doc!, n, w, h);
+      // one render at a time: neighbours are pre-rendered behind the visible slide, not in parallel with it
+      // (pdf.js continues a render on animation frames, so a hidden tab finishes its renders when it is shown again)
+      const doc = this.doc!;
+      p = this.queue.then(() => renderPage(doc, n, w, h));
+      this.queue = p.then(() => {}, () => {});
       this.cache.set(key, p);
       p.catch(() => this.cache.delete(key));
       if (this.cache.size > 12) this.cache.delete(this.cache.keys().next().value!);
@@ -113,7 +120,8 @@ export class Deck {
     n = Math.max(1, Math.min(this.pages, n));
     if (n === this.shown && !force) return;
     const tok = ++this.tok;
-    const r = await this.page(n);
+    let r: { c: HTMLCanvasElement; w: number; h: number };
+    try { r = await this.page(n); } catch { return; }
     if (tok !== this.tok) return;
     const inc = this.back, out = this.front;
     inc.width = r.c.width; inc.height = r.c.height;

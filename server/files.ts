@@ -115,8 +115,12 @@ export class Converter {
     fs.mkdirSync(out, { recursive: true, mode: 0o700 });
     const args = [`-env:UserInstallation=file://${this.profileDir}`, "--headless", "--norestore", "--nolockcheck", "--convert-to", "pdf", "--outdir", out, path.join(this.dir, stored)];
     const env = { ...process.env, HOME: this.profileDir };
-    const once = () => new Promise<void>(res => execFile(this.soffice, args, { timeout: this.timeoutMs, killSignal: "SIGKILL", env }, () => res()));
+    const once = () => new Promise<void>(res => execFile(this.soffice, args, { timeout: this.timeoutMs, killSignal: "SIGKILL", env }, err => {
+      if ((err as { killed?: boolean } | null)?.killed) console.warn(`munsif.im: soffice stopped after ${this.timeoutMs / 1000} s`);
+      res();
+    }));
     return (async () => {
+      const t0 = Date.now();
       try {
         await once();
         // A fresh LibreOffice profile sometimes exits right after creating itself: one retry.
@@ -128,6 +132,7 @@ export class Converter {
         fs.chmodSync(path.join(this.dir, name), 0o600);
         const pages = await pdfPages(path.join(this.dir, name));
         if (!pages) { fs.rmSync(path.join(this.dir, name), { force: true }); return null; }
+        if (Date.now() - t0 > 20_000) console.warn(`munsif.im: PPTX → PDF took ${Math.round((Date.now() - t0) / 1000)} s`);
         return { pdfStored: name, pages };
       } catch { return null; } finally {
         fs.rmSync(out, { recursive: true, force: true });
