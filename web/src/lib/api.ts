@@ -1,3 +1,12 @@
+import { pageOrg } from "./org";
+
+/** orgs: public pages (/o/<slug>/…) ask the API about their organisation. Session-bound APIs ignore the parameter. */
+function withOrg(path: string) {
+  const o = pageOrg();
+  if (!o || !path.startsWith("/api/") || /[?&]org=/.test(path)) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}org=${encodeURIComponent(o)}`;
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly data: Record<string, unknown> = {}) { super(message); }
   /** No response at all (Wi-Fi drop, server down) or a gateway error. */
@@ -10,7 +19,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), opts.timeoutMs ?? 15000);
   try {
-    res = await fetch(path, {
+    res = await fetch(withOrg(path), {
       method: opts.method ?? "GET",
       credentials: "same-origin",
       headers: opts.body !== undefined ? { "Content-Type": "application/json" } : undefined,

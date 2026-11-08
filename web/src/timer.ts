@@ -6,6 +6,7 @@ import "./styles.css";
 import QRCode from "qrcode";
 import { adjustTimer, applyTimerAction, fmtClock, timerView, type PhaseKind, type TimerView } from "../../shared/timer";
 import type { StagePayload, StageShow, TimerAction, TimerState } from "../../shared/types";
+import { pageOrg } from "./lib/org";
 import { api, ApiError } from "./lib/api";
 import { now as serverNow, syncClock } from "./lib/clock";
 import { $, esc, icon, reducedMotion } from "./lib/dom";
@@ -654,8 +655,9 @@ if (DEMO) {
     resync: load,
     status: online => { if (!online) toast("Bağlantı kəsildi — yenidən qoşulur…"); },
   });
-  api<{ admin: boolean }>("/api/auth/session").then(me => {
-    isAdmin = me.admin;
+  api<{ admin: boolean; adminOrg: string | null }>("/api/auth/session").then(me => {
+    // orgs: controls only for an admin of the organisation this screen shows
+    isAdmin = me.admin && me.adminOrg === (pageOrg() ?? "root");
     el.keys.hidden = !isAdmin;
     btnSig = "";
     tick();

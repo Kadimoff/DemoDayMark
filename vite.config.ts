@@ -12,6 +12,7 @@ const PAGES: Record<string, string> = {
   "/juror": "/juror.html",
   "/admin": "/admin.html",
   "/admin/setup": "/setup.html",
+  "/admin/orgs": "/orgs.html",
   "/timer": "/timer.html",
   "/reveal": "/reveal.html",
   "/speaker": "/speaker.html",
@@ -24,6 +25,7 @@ const cleanUrls = (): Plugin => ({
       if (PAGES[url]) req.url = PAGES[url];
       else if (/^\/j\/[^/]+$/.test(url)) req.url = "/join.html";
       else if (/^\/t\/[^/]+$/.test(url)) req.url = "/team.html";
+      else if (/^\/o\/[^/]+\/(timer|stage|reveal|speaker|team)$/.test(url)) req.url = PAGES[`/${url.split("/")[3]}`];
       next();
     });
   },
@@ -59,6 +61,7 @@ export default defineConfig({
         speaker: "web/speaker.html",
         team: "web/team.html",
         pult: "web/pult.html",
+        orgs: "web/orgs.html",
       },
     },
   },

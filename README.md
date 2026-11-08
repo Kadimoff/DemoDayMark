@@ -8,20 +8,59 @@ Tədbirin adı Quraşdırma → "Brend / prefiks" sahəsindən gəlir (məs. "Ig
 
 Real vaxtda münsif qiymətləndirməsi və səhnə taymeri. 8 komanda, 4–5 münsif, hər komanda üçün 3 dəq pitch + 2 dəq sual-cavab.
 
+**Təşkilatlar (multi-tenant).** munsif.im bir neçə müştəri şirkətə xidmət edir: hər təşkilatın öz tədbiri, komandaları, münsifləri, balları, faylları, bildirişləri, taymeri/səhnəsi və nəticə açıqlaması var. Təşkilatın koordinatoru yalnız öz təşkilatını görür və idarə edir. Platforma sahibi (**root**, `.env`-dəki admin) bütün təşkilatları görür. Ətraflı: [Təşkilatlar və rollar](#təşkilatlar-və-rollar).
+
 | Ekran | Ünvan | Kim üçün |
 |---|---|---|
 | **Landing** | `/` (AZ), `/en/` (EN) | ziyarətçi; daxil olmuş istifadəçi header-də "Panel" düyməsini görür |
-| Giriş | `/login` | koordinator (admin) |
+| Giriş | `/login` | koordinator (admin) və platforma sahibi (root) — eyni forma |
+| **Təşkilatlar** | `/admin/orgs` | yalnız root: təşkilat yarat / deaktiv et, koordinator hesabları, "Panelinə keç" |
 | Münsif QR girişi | `/j/<kod>` | münsif (QR skan edəndə açılır) |
 | Münsif paneli | `/juror` | münsiflər (telefon) |
 | **Komanda girişi** | `/t/<kod>`, `/team` | komandalar (link/QR və ya kod) |
 | Canlı panel | `/admin` | koordinator (noutbuk) |
 | Quraşdırma | `/admin/setup` | koordinator |
 | **Pult** | `/admin/pult` (`/stage/control` → buraya) | koordinatorun telefonu: start/fasilə, ±30 s, slayd, intro, sayt rejimi |
-| **Səhnə** | `/stage` (= `/timer`) | proyektor: prezentasiya + üzən taymer; prezentasiya yoxdursa böyük taymer |
+| **Səhnə** | `/stage` (= `/timer`) | proyektor: prezentasiya + üzən taymer; prezentasiya yoxdursa böyük taymer. Təşkilat üçün: `/o/<slug>/stage`, `/o/<slug>/timer` |
 | **Səhnə demosu** | `/stage/demo` | girişsiz demo (nümunə PDF, 15 s; `?t=30`, `?slow=8`) |
-| Danışan ekranı | `/speaker` | çıxış edən: taymer + cari və növbəti slayd |
-| **Nəticə açıqlaması** | `/reveal` | proyektor; yalnız admin icazə verdikdən sonra, addım-addım |
+| Danışan ekranı | `/speaker` (`/o/<slug>/speaker`) | çıxış edən: taymer + cari və növbəti slayd |
+| **Nəticə açıqlaması** | `/reveal` (`/o/<slug>/reveal`) | proyektor; yalnız admin icazə verdikdən sonra, addım-addım |
+
+Prefikssiz `/stage`, `/timer`, `/reveal`, `/speaker`, `/team` əsas (root) təşkilatı göstərir — köhnə proyektor linkləri dəyişmir. Hər səhifə `?org=<slug>` ilə də açılır.
+
+## Təşkilatlar və rollar
+
+| Rol | Kim | Nə edir |
+|---|---|---|
+| **root** (platforma sahibi) | `ADMIN_USERNAME` hesabı (`users.is_root = 1`, `role = 'admin'`) | Öz tədbiri (təşkilat #1, slug `root`) + `/admin/orgs`: təşkilat yaratmaq, ad dəyişmək, deaktiv/aktiv etmək, koordinator yaratmaq, koordinator parolunu sıfırlamaq, koordinatoru deaktiv etmək, istənilən təşkilatın panelinə keçmək (“Panelinə keç” — yuxarıda sarı banner, “Öz panelimə qayıt”) |
+| **admin** (təşkilat koordinatoru) | `role = 'admin'`, `is_root = 0`, `org_id` = təşkilatı | Yalnız öz təşkilatının tədbiri: komandalar, münsiflər (QR), meyarlar, ballar, ixrac, səhnə/taymer/pult, nəticə açıqlaması. `/admin/orgs` görünmür, `/api/root/*` → 403 |
+| juror / komanda | təşkilatın münsifi / komandası | QR və komanda linki yalnız öz təşkilatına aparır |
+
+- **Giriş:** koordinator da eyni `/login` formasından (istifadəçi adı + şifrə) daxil olur və öz `/admin` panelinə düşür. Header-də təşkilatın adı görünür. Hər iki rol üçün header-də **“Şifrəni dəyiş”** (açar ikonu) var: hazırkı şifrə + yeni şifrə (min. 8); digər cihazlardakı sessiyalar bağlanır.
+- **Yeni təşkilat** boş tədbirlə başlayır: standart meyarlar, pitch 3:00 + sual-cavab 2:00, komanda və münsif yoxdur, brend prefiksi = təşkilatın adı (Quraşdırmada dəyişilir).
+- **Koordinatorun proyektor linkləri** paneldə avtomatik öz təşkilatına aparır: `https://munsif.im/o/<slug>/stage`, `/o/<slug>/timer`, `/o/<slug>/reveal`, `/o/<slug>/speaker`; açıq qeydiyyat: `/o/<slug>/team`. Koordinator prefikssiz `/timer` açsa, server onu `/o/<slug>/timer`-ə yönləndirir. Başqa təşkilatın proyektor səhifəsində admin düymələri görünmür.
+- **Deaktiv təşkilat:** koordinator, münsif və komandaların sessiyaları bağlanır, giriş 403, ictimai ekranlar 404. Data silinmir; yenidən aktiv etmək olar. Əsas təşkilat (#1) deaktiv edilə bilməz.
+- **İzolyasiya serverdədir:** hər sorğu sessiyanın təşkilatı ilə süzülür (`Repo`/`TeamRepo` təşkilata bağlıdır, başqa təşkilatın id-si “tapılmadı” kimi görünür), socket otaqları təşkilata görədir (`o<id>:public|admin|jurors`), wipe təsdiq kodu, taymer, səhnə, açıqlama — hamısı təşkilata görə. Testlər: `test/orgs.test.ts` (hər API qrupu, fayllar, ixrac, socket, QR/komanda linki, root API 403, eyni anda iki taymer, bootstrap), `test/orgs-migration.test.ts` (köhnə bazanın itkisiz keçidi).
+- **Backup** bütün platformanın bazasıdır (`npm run backup`, pre-migration nüsxələri, serverdəki yedəklər) — yalnız infrastruktur/root səviyyəsində; koordinator üçün backup API-si yoxdur.
+
+### Demo/müştəri koordinatorunu env ilə yaratmaq (bootstrap)
+
+Bir dəfəlik və idempotent: hər startda təşkilat yoxdursa yaradılır, istifadəçi yoxdursa koordinator kimi yaradılır. **İstifadəçi artıq varsa — toxunulmur** (parolu üzərinə yazılmır). İstifadəçi adı root-a, münsifə və ya başqa təşkilata aiddirsə — heç nə edilmir, logda xəbərdarlıq. Yaradılma audit loguna yazılır (`org.create`, `coordinator.create`, `by: bootstrap`).
+
+```bash
+# parolun argon2id hash-ı (serverin öz parametrləri ilə); parol yalnız stdin-dən oxunur, ekrana/loga yazılmır
+node scripts/hash-password.mjs            # interaktiv: iki dəfə soruşur, gizli
+printf '%s' 'PAROL' | node scripts/hash-password.mjs   # və ya stdin ilə
+```
+
+| Dəyişən | Nümunə |
+|---|---|
+| `BOOTSTRAP_ORG_SLUG` | `demo` (kiçik latın hərfləri, rəqəm, tire; `root`, `admin`, `api`… ayrılıb) |
+| `BOOTSTRAP_ORG_NAME` | `Demo` |
+| `BOOTSTRAP_COORD_USERNAME` | `demo` |
+| `BOOTSTRAP_COORD_HASH_B64` | `hash-password.mjs`-in çıxışı (base64) |
+
+Koordinator yarandıqdan sonra env-ləri silmək olar (qalsalar da zərərsizdir). Eyni işi root `/admin/orgs` səhifəsindən də edə bilər.
 
 ## munsif.im: komanda girişi, prezentasiyalar və səhnə
 
@@ -37,6 +76,8 @@ Real vaxtda münsif qiymətləndirməsi və səhnə taymeri. 8 komanda, 4–5 m�
 Slaydlar: `←/→`, `PageUp/PageDown` (klikker), sürüşdürmə, canlı panel, pult — slayd nömrəsi serverdə saxlanılır və bütün səhnə/danışan ekranlarında sinxron dəyişir. Köhnə qısayollar (Space, S, R, N, F, +/−) dəyişməyib. *Sayt rejimi*: layihə saytı iframe-də; sayt daxil edilməyə icazə vermirsə (X-Frame-Options/CSP, server yoxlayır) böyük QR kod. *Intro*: "Növbəti çıxış" ekranı + 3·2·1.
 
 **PPTX → PDF.** Server `soffice`-u PATH-da tapır (və ya `SOFFICE` env). Eyni anda bir çevirmə, 90 s limit, profil `DATA_DIR/lo-profile`. Docker image-ə `libreoffice-impress` + şriftlər əlavə olunub (~400 MB).
+
+**Təşkilatlar miqrasiyası (v9).** Bütün mövcud cədvəllərə `org_id INTEGER NOT NULL DEFAULT 1` əlavə olunur — yəni bütün köhnə data (tədbir, komandalar, meyarlar, ballar, tarixçə, münsiflər, QR-lar, komanda linkləri/sessiyaları/faylları, bildirişlər, audit, səhnə/taymer/açıqlama vəziyyəti) təşkilat #1-də (`root`, adı = mövcud brend, məs. “TechConnect Hakaton”) qalır; mövcud admin `is_root = 1` olur. Yeni `orgs` cədvəli. İki cədvəl yenidən qurulur, çünki məhdudiyyətləri tək tədbir fərz edirdi: `event` (`CHECK (id = 1)` → `UNIQUE (org_id)`, sətir id-si 1 qalır) və `criteria` (`key` qlobal unikal → `UNIQUE (org_id, key)`). Hər ikisi eyni transaksiyada bütün sətirləri köçürür, köçürmə orijinalla müqayisə olunur, sonda `PRAGMA foreign_key_check`; hər hansı uyğunsuzluqda bütün v9 geri qaytarılır və baza v8 kimi qalır (`test/orgs-migration.test.ts`). Miqrasiyadan əvvəl `pre-v9-*.db` surəti alınır.
 
 **Backup və miqrasiya.** Sxem yalnız əlavə ilə dəyişir (v8: yeni cədvəllər `team_links`, `team_sessions`, `team_files`, `notifications`; `teams`/`event`-ə default-lu sütunlar). Server açılanda sxem köhnədirsə miqrasiyadan **əvvəl** bazanın surəti `DATA_DIR/backups/pre-v<N>-<vaxt>.db` kimi saxlanılır (better-sqlite3 `.backup()`, son 10 nüsxə). Köhnə (v7) bazanın itkisiz açılması `test/munsif-migration.test.ts`-də yoxlanılır.
 
@@ -153,7 +194,7 @@ docker compose --profile caddy up -d --build
 | Dəyişən | Təsvir | Standart |
 |---|---|---|
 | `PORT` | Server portu | 3000 |
-| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Admin hesabı (yalnız ilk açılışda istifadə olunur) | admin / — |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Platforma sahibinin (root) hesabı (yalnız ilk açılışda istifadə olunur) | admin / — |
 | `SESSION_SECRET` | Cookie imzası üçün gizli açar (production-da məcburidir) | — |
 | `ORIGIN` | İcazəli ünvan(lar), vergüllə. Boş olarsa yalnız eyni host qəbul olunur | — |
 | `SHOW_JUROR_TOTAL` | Münsif öz yekun balını görsün (bazanın ilk açılışında tətbiq olunur, sonra Quraşdırmadan dəyişdirilir) | false |
@@ -162,6 +203,7 @@ docker compose --profile caddy up -d --build
 | `LOG_LEVEL` | `info` sorğu loglarını açır | warn |
 | `MAX_UPLOAD_MB` | Prezentasiya faylının maksimum ölçüsü | 50 |
 | `SOFFICE` | LibreOffice yolu (boş olarsa PATH-da `soffice` axtarılır; tapılmasa PPTX çevrilmir) | avtomatik |
+| `BOOTSTRAP_ORG_SLUG`, `BOOTSTRAP_ORG_NAME`, `BOOTSTRAP_COORD_USERNAME`, `BOOTSTRAP_COORD_HASH_B64` | Təşkilat + koordinatoru bir dəfəlik yaratmaq ([bootstrap](#demomüştəri-koordinatorunu-env-ilə-yaratmaq-bootstrap)) | — |
 
 ### Əmrlər
 
@@ -229,14 +271,18 @@ Tətbiq serverdə Coolify layihəsi **Ignite Demo Day** → tətbiq **demoday-ma
 shared/      scoring.ts (bal hesablaması, saf funksiya) · timer.ts (taymer riyaziyyatı) · types.ts
 server/      Fastify + Socket.IO + better-sqlite3
   app.ts     hook-lar (sessiya, Origin yoxlaması), səhifələr, statik fayllar
-  realtime.ts  otaqlar: public · jurors · juror:<id> · admin · team:<id>
+  orgs.ts    təşkilatlar: Orgs (CRUD) və Scope (təşkilatın repo/trepo/rt/teams-i)
+  bootstrap.ts BOOTSTRAP_* env ilə təşkilat + koordinator
+  realtime.ts  otaqlar: o<org>:public · o<org>:jurors · juror:<id> · o<org>:admin · team:<id>
   views.ts   münsif cavabı yalnız öz sətirlərindən yığılır (gizlilik sərhədi)
-  routes/    auth · juror · admin · team (komanda girişi, yükləmə) · stage (materiallar, səhnə rejimi/slayd)
+  routes/    auth · juror · admin · team (komanda girişi, yükləmə) · stage (materiallar, səhnə rejimi/slayd) · root (təşkilatlar)
   teamrepo.ts · teams.ts · files.ts   munsif.im: komandalar, bildirişlər, fayl yoxlaması, PPTX→PDF
   export/    xlsx.ts (exceljs) · pdf.ts (pdfkit + gömülü TTF)
 web/         Vite + vanilla TS, tək styles.css (token sistemi)
 assets/fonts Manrope, Unbounded, JetBrains Mono, Noto Sans
-test/        scoring · privacy · team · munsif-migration · history · migration …
+test/        scoring · privacy · team · orgs · orgs-migration · munsif-migration · history · migration …
+             fixtures/legacy-acf187a — əvvəlki buraxılışın data qatı (köhnə bazanı köhnə kodla yazmaq üçün)
+scripts/     hash-password.mjs (BOOTSTRAP_COORD_HASH_B64) · import-landing.mjs
 assets/landing  munsif.im landing (scripts/import-landing.mjs ilə ~/projects/munsif-landing/dist-dən gəlir)
 assets/brand    munsif.im loqoları
 ```
@@ -274,4 +320,6 @@ assets/brand    munsif.im loqoları
 | Münsif çıxıb / telefonu dəyişib / QR işləmir | Canlı panel və ya Quraşdırma → həmin münsif → "Yeni QR". Ballar qorunur. |
 | Proyektorda səs yoxdur | Səhifədə bir dəfə klikləyin və ya "Səs" düyməsinə basın (brauzer qaydası). |
 | `docker build` zamanı "Temporary failure resolving 'deb.debian.org'" | Docker konteynerində DNS işləmir. `docker build --network=host -t ignite-jury .` ilə build edin və ya Docker daemon-un DNS ayarlarını düzəldin. |
-| Admin şifrəsini unutmusunuz | `data/` qovluğunun yedəyini alın, `users` cədvəlindən admin sətrini silin, serveri `.env`-dəki yeni `ADMIN_PASSWORD` ilə yenidən başladın. |
+| Admin (root) şifrəsini unutmusunuz | `data/` qovluğunun yedəyini alın, `users` cədvəlindən `is_root = 1` sətrini silin, serveri `.env`-dəki yeni `ADMIN_PASSWORD` ilə yenidən başladın. |
+| Koordinator şifrəsini unudub | Root: `/admin/orgs` → koordinator → “Şifrəni sıfırla”. |
+| `/o/<slug>/stage` 404 verir | Təşkilat deaktivdir və ya slug səhvdir (`/admin/orgs`-da yoxlayın). |

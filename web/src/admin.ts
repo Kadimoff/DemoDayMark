@@ -13,6 +13,7 @@ import { live } from "./lib/socket";
 import { sortable } from "./lib/sortable";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
 import { topbar } from "./lib/topbar";
+import { orgPath } from "./lib/org";
 import { bindShowCtl, mountMaterials, showCtlHtml } from "./lib/materials";
 import { noticeBell } from "./lib/notices";
 import type { Notice } from "../../shared/types";
@@ -712,7 +713,7 @@ main.addEventListener("click", async e => {
   if (t.closest("#heroQr") || t.closest("#addJuror")) { createJuror(); return; }
   if (t.closest("#speakerQr") || t.closest("#speakerQr2")) {
     showLinkQr({ title: "Təqdimatçı taymeri", heading: "Pitch edən tələbə skan etsin",
-      path: "/speaker", note: "Telefonda qalan vaxt böyük rəqəmlərlə görünür: proyektor taymeri ilə eyni saniyə, 30 saniyə qalanda və vaxt bitəndə titrəyir. Giriş tələb etmir, ballar görünmür." });
+      path: orgPath("/speaker"), note: "Telefonda qalan vaxt böyük rəqəmlərlə görünür: proyektor taymeri ilə eyni saniyə, 30 saniyə qalanda və vaxt bitəndə titrəyir. Giriş tələb etmir, ballar görünmür." });
     return;
   }
   const qr = t.closest<HTMLElement>("[data-qr]");

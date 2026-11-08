@@ -3,13 +3,20 @@ import { api, ApiError } from "./lib/api";
 import { $, esc } from "./lib/dom";
 import { themeSwitch } from "./lib/theme";
 import { brandHtml } from "./lib/topbar";
+import { pageOrg } from "./lib/org";
 
 themeSwitch($("#themeSw"));
 
-api<{ eventName: string }>("/api/stage").then(s => {
-  $("#brand").innerHTML = brandHtml(s.eventName);
-  document.title = `Daxil ol · ${s.eventName} · munsif.im`;
-}).catch(() => { /* offline */ });
+// orgs: one sign-in page for every organisation, so it names no event (no other customer's name on it);
+// /login?org=<slug> shows that organisation's event.
+if (pageOrg()) {
+  api<{ eventName: string }>("/api/stage").then(s => {
+    $("#brand").innerHTML = brandHtml(s.eventName);
+    document.title = `Daxil ol · ${s.eventName} · munsif.im`;
+  }).catch(() => { /* offline / unknown organisation */ });
+} else {
+  $("#brand").textContent = "Təşkilat paneli";
+}
 
 // This browser may already hold an admin and/or juror session: offer a way back instead of a re-login.
 // (asks /api/auth/session first: it never answers 401, so a fresh visitor gets no console error)

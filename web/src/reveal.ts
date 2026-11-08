@@ -3,6 +3,7 @@
 import "./styles.css";
 import { ordinal, type RevealPublic, type RevealedEntry } from "../../shared/reveal";
 import { displayParts } from "../../shared/scoring";
+import { pageOrg } from "./lib/org";
 import { api, ApiError } from "./lib/api";
 import { $, brandHtml, esc, icon, reducedMotion } from "./lib/dom";
 import { FX, rgb } from "./lib/fx";
@@ -575,8 +576,9 @@ live({
   resync: load,
   status: online => { if (!online) toast("Bağlantı kəsildi — yenidən qoşulur…"); },
 });
-api<{ admin: boolean }>("/api/auth/session").then(me => {
-  isAdmin = me.admin;
+api<{ admin: boolean; adminOrg: string | null }>("/api/auth/session").then(me => {
+  // orgs: controls only for an admin of the organisation this screen shows
+  isAdmin = me.admin && me.adminOrg === (pageOrg() ?? "root");
   el.keys.hidden = !isAdmin;
   refreshAdmin();
 }).catch(() => renderButtons());

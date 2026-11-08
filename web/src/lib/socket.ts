@@ -1,4 +1,5 @@
 import { io, type Socket } from "socket.io-client";
+import { pageOrg } from "./org";
 
 export interface LiveOptions {
   /** Which session to connect with; omitted = anonymous (public room only). */
@@ -10,7 +11,7 @@ export interface LiveOptions {
 }
 
 export function live({ role, on, resync, status }: LiveOptions): Socket {
-  const s = io({ path: "/socket.io", transports: ["websocket", "polling"], reconnectionDelayMax: 4000, auth: role ? { role } : {} });
+  const s = io({ path: "/socket.io", transports: ["websocket", "polling"], reconnectionDelayMax: 4000, auth: { ...(role ? { role } : {}), ...(pageOrg() ? { org: pageOrg()! } : {}) } });
   let connectedOnce = false;
   s.on("connect", () => {
     status?.(true);
