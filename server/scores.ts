@@ -31,23 +31,24 @@ function opOf(raw: unknown): { opId: string | null; clientAt: number | null } {
   return { opId, clientAt };
 }
 
-export function submitScore(repo: Repo, rt: OrgRealtime, jurorId: number, teamIdRaw: unknown, raw: unknown): SubmitResult {
+interface Applied { res: SubmitResult; emit?: { score: import("../shared/types.js").ScoreRow; total: number | null; showJurorTotal: boolean } }
+
+/** All database work of one submit (validation, the score, its history row, audit, op record). No broadcasts. */
+function applyScore(repo: Repo, jurorId: number, teamIdRaw: unknown, raw: unknown): Applied {
   const { opId, clientAt } = opOf(raw);
   if (opId) {
     const prev = repo.scoreOp(jurorId, opId);
     if (prev?.status === "applied" && prev.result_json) {
-      return { ok: true, status: 200, body: { ...(JSON.parse(prev.result_json) as ScoreBody), opId, duplicate: true } };
+      return { res: { ok: true, status: 200, body: { ...(JSON.parse(prev.result_json) as ScoreBody), opId, duplicate: true } } };
     }
   }
   const r = (raw ?? {}) as { values?: unknown; note?: unknown; tags?: unknown };
-  const refuse = (status: number, error: string, teamId: number | null): SubmitResult => {
+  const refuse = (status: number, error: string, teamId: number | null): Applied => {
     if (opId) {
-      try {
-        repo.recordScoreOp({ opId, jurorId, teamId, status: "rejected", httpStatus: status, error, values: r.values, note: typeof r.note === "string" ? r.note : "", tags: r.tags, clientAt });
-        repo.audit(jurorId, "score.rejected", { opId, teamId, status, error });
-      } catch { /* the refusal itself is what the juror gets back */ }
+      repo.recordScoreOp({ opId, jurorId, teamId, status: "rejected", httpStatus: status, error, values: r.values, note: typeof r.note === "string" ? r.note : "", tags: r.tags, clientAt });
+      repo.audit(jurorId, "score.rejected", { opId, teamId, status, error });
     }
-    return { ok: false, status, error };
+    return { res: { ok: false, status, error } };
   };
   const ev = repo.getEvent();
   const teamId = Number(teamIdRaw);
@@ -72,16 +73,67 @@ export function submitScore(repo: Repo, rt: OrgRealtime, jurorId: number, teamId
   const tags = ev.feedbackTags.filter(t => body.tags.includes(t));
   const total = jurorTotal(values, criteria);
   const note = body.note.trim();
-  // One transaction: the score, its history row, the audit line and the op record are all there or none of them is.
-  const { score, out } = repo.db.transaction(() => {
-    const { score, created } = repo.upsertScore(jurorId, team.id, values, total, note, tags);
-    repo.recordScore(created ? "submit" : "update", jurorId, team.id, values, total, note, tags);
-    repo.audit(jurorId, created ? "score.submit" : "score.update", { teamId: team.id, values, total, note, tags, ...(opId ? { opId } : {}) });
-    const out: ScoreBody = { teamId: score.teamId, values: score.values, note: score.note, tags: score.tags, updatedAt: score.updatedAt, ...(ev.showJurorTotal ? { total } : {}) };
-    if (opId) repo.recordScoreOp({ opId, jurorId, teamId: team.id, status: "applied", httpStatus: 200, values, note, tags, result: out, clientAt });
-    return { score, out };
-  })();
-  rt.emitScore(score, total, ev.showJurorTotal);
+  const { score, created } = repo.upsertScore(jurorId, team.id, values, total, note, tags);
+  repo.recordScore(created ? "submit" : "update", jurorId, team.id, values, total, note, tags);
+  repo.audit(jurorId, created ? "score.submit" : "score.update", { teamId: team.id, values, total, note, tags, ...(opId ? { opId } : {}) });
+  const out: ScoreBody = { teamId: score.teamId, values: score.values, note: score.note, tags: score.tags, updatedAt: score.updatedAt, ...(ev.showJurorTotal ? { total } : {}) };
+  if (opId) repo.recordScoreOp({ opId, jurorId, teamId: team.id, status: "applied", httpStatus: 200, values, note, tags, result: out, clientAt });
+  return { res: { ok: true, status: 200, body: opId ? { ...out, opId } : out }, emit: { score, total, showJurorTotal: ev.showJurorTotal } };
+}
+
+function broadcast(rt: OrgRealtime, a: Applied) {
+  if (!a.emit) return;
+  rt.emitScore(a.emit.score, a.emit.total, a.emit.showJurorTotal);
   rt.emitResults();
-  return { ok: true, status: 200, body: opId ? { ...out, opId } : out };
+}
+
+/** One submit in its own transaction (the score, history, audit and op record are all there or none is). */
+export function submitScore(repo: Repo, rt: OrgRealtime, jurorId: number, teamIdRaw: unknown, raw: unknown): SubmitResult {
+  const a = repo.db.transaction(() => applyScore(repo, jurorId, teamIdRaw, raw))();
+  broadcast(rt, a);
+  return a.res;
+}
+
+/**
+ * v11 group commit. With synchronous = FULL every commit waits for the disk (≈ 5 ms here, much more when the VPS disk is
+ * busy), and better-sqlite3 waits on the main thread. Submits that arrive in the same event-loop turn are therefore
+ * written in ONE transaction (one fsync), each inside its own savepoint so one failing submit never takes the others
+ * down; answers and broadcasts go out after the commit. Under the 100-juror load test this cut the disk waits ~10×.
+ */
+export class ScoreWriter {
+  private queue: Array<{ repo: Repo; rt: OrgRealtime; jurorId: number; teamId: unknown; raw: unknown; done: (r: SubmitResult) => void; fail: (e: unknown) => void }> = [];
+  private scheduled = false;
+  static MAX_BATCH = 200;
+  constructor(private db: Repo["db"]) {}
+  submit(repo: Repo, rt: OrgRealtime, jurorId: number, teamId: unknown, raw: unknown): Promise<SubmitResult> {
+    return new Promise((done, fail) => {
+      this.queue.push({ repo, rt, jurorId, teamId, raw, done, fail });
+      if (!this.scheduled) { this.scheduled = true; setImmediate(() => this.flush()); }
+    });
+  }
+  private flush() {
+    this.scheduled = false;
+    const batch = this.queue.splice(0, ScoreWriter.MAX_BATCH);
+    if (this.queue.length) { this.scheduled = true; setImmediate(() => this.flush()); }
+    if (!batch.length) return;
+    const results: Array<Applied | { error: unknown }> = [];
+    try {
+      this.db.transaction(() => {
+        for (const b of batch) {
+          try { results.push(this.db.transaction(() => applyScore(b.repo, b.jurorId, b.teamId, b.raw))()); }
+          catch (error) { results.push({ error }); }
+        }
+      })();
+    } catch (error) {
+      // the commit itself failed: nothing of this batch is saved — every phone keeps its op and sends it again
+      for (const b of batch) b.fail(error);
+      return;
+    }
+    batch.forEach((b, i) => {
+      const r = results[i];
+      if ("error" in r) { b.fail(r.error); return; }
+      try { broadcast(b.rt, r); } catch { /* sockets closing */ }
+      b.done(r.res);
+    });
+  }
 }

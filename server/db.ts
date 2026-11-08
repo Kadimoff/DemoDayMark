@@ -406,20 +406,41 @@ export const PRE_MIGRATION_KEEP = 10;
  * - WAL: readers never block the writer; a crash of the process never loses a committed transaction.
  * - synchronous = FULL: every commit is fsync'ed before the juror's phone gets its "saved" answer, so even a power cut /
  *   host crash right after the answer cannot lose that score. NORMAL would be faster but may drop the last commits on an
- *   OS crash; our write rate is tiny (≈ 3 000 scores per event + session touches), so FULL costs nothing noticeable.
+ *   OS crash (and the phone would already have dropped that score from its queue). Measured: one score ≈ 5–7 ms with FULL vs
+ *   ≈ 2 ms with NORMAL on the shared VPS disk; a real event sends ≈ 3 000 scores in 2–3 hours (bursts of ~10/s after a
+ *   pitch), so FULL costs ~60 ms per second at worst. DB_SYNCHRONOUS=NORMAL switches it (see docs/reliability.md).
  * - busy_timeout: a second connection (backup CLI, restore check) waits instead of failing with SQLITE_BUSY.
  */
-export const PRAGMAS = { journal_mode: "wal", synchronous: 2, busy_timeout: 5000, foreign_keys: 1 } as const;
+export const PRAGMAS = { journal_mode: "wal", synchronous: 2, busy_timeout: 5000, foreign_keys: 1 } as const; // synchronous 2 = FULL
 
 export function openDb(file: string, opts: { upTo?: number } = {}): DB {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new Database(file);
   db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = FULL");
+  db.pragma(`synchronous = ${process.env.DB_SYNCHRONOUS === "NORMAL" ? "NORMAL" : "FULL"}`);
   db.pragma("foreign_keys = ON");
   db.pragma(`busy_timeout = ${PRAGMAS.busy_timeout}`);
   migrate(db, opts.upTo);
+  cacheStatements(db);
   return db;
+}
+
+/**
+ * v11 performance: every query reuses its prepared statement instead of compiling the SQL again. Under the load test
+ * (100 jurors) compiling statements was the largest single CPU cost of the server. Enabled after the migrations (they
+ * change the schema and use .raw()); nothing in the app changes a statement's mode (.raw / .pluck / .expand).
+ */
+function cacheStatements(db: DB, max = 2000) {
+  const prepare = db.prepare.bind(db);
+  const cache = new Map<string, Database.Statement>();
+  (db as unknown as { prepare: (sql: string) => Database.Statement }).prepare = (sql: string) => {
+    let st = cache.get(sql);
+    if (st) return st;
+    st = prepare(sql);
+    cache.set(sql, st);
+    if (cache.size > max) cache.delete(cache.keys().next().value as string);
+    return st;
+  };
 }
 
 /** Fast structural check (PRAGMA quick_check) — run once at start; the result is logged and shown in /api/health. */

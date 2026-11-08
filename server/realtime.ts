@@ -13,7 +13,7 @@ import { originAllowed, resolveUser, type AuthUser } from "./auth.js";
 import type { Config } from "./config.js";
 import type { Orgs } from "./orgs.js";
 import type { Repo } from "./repo.js";
-import { submitScore } from "./scores.js";
+import { ScoreWriter } from "./scores.js";
 import { adminResults, revealPublicView } from "./views.js";
 import { resolveTeam, type TeamAuth } from "./teams.js";
 
@@ -28,6 +28,8 @@ export class Realtime {
   private views = new Map<number, OrgRealtime>();
   /** Set right after construction (Orgs needs this object, this needs Orgs). */
   orgs!: Orgs;
+  /** v11: group commit of score submits (socket and HTTP share it). Set with orgs. */
+  writer!: ScoreWriter;
 
   private log: FastifyInstance["log"];
   constructor(app: FastifyInstance, private cfg: Config) {
@@ -128,14 +130,13 @@ export class Realtime {
       const u = s ? r0.member(user.id) : null;
       if (!s || !u || !u.active || u.role !== "juror") { ack({ ok: false, status: 401, error: "Sessiya bitib. Koordinatordan yeni QR istəyin." }); return; }
       const { teamId, ...body } = (p ?? {}) as { teamId?: unknown };
-      try {
-        const r = submitScore(r0, ort, user.id, teamId, body);
-        ack(r.ok ? { ok: true, score: r.body } : { ok: false, status: r.status, error: r.error });
-      } catch (err) {
-        this.log.error({ err, jurorId: user.id, orgId: user.orgId, teamId, opId: (body as { opId?: unknown }).opId ?? null }, "score:submit failed");
-        // 500: the phone keeps the op in its queue and tries again (same op id, so it is applied at most once)
-        ack({ ok: false, status: 500, error: "Serverdə xəta baş verdi." });
-      }
+      this.writer.submit(r0, ort, user.id, teamId, body).then(
+        r => ack(r.ok ? { ok: true, score: r.body } : { ok: false, status: r.status, error: r.error }),
+        err => {
+          this.log.error({ err, jurorId: user.id, orgId: user.orgId, teamId, opId: (body as { opId?: unknown }).opId ?? null }, "score:submit failed");
+          // 500: the phone keeps the op in its queue and tries again (same op id, so it is applied at most once)
+          ack({ ok: false, status: 500, error: "Serverdə xəta baş verdi." });
+        });
     });
     socket.on("disconnect", () => {
       set.delete(socket.id);

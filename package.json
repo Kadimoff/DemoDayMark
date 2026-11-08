@@ -16,7 +16,11 @@
     "seed": "tsx server/seed.ts",
     "backup": "tsx server/backup.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit"
+    "test:load": "tsx scripts/loadtest/run.ts",
+    "test:chaos": "tsx scripts/loadtest/run.ts --chaos",
+    "test:e2e": "node e2e/run.mjs",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "restore": "tsx server/restore.ts"
   },
   "dependencies": {
     "@fastify/compress": "^8.3.1",

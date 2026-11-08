@@ -22,6 +22,7 @@ import { resolveTeam } from "./teams.js";
 import { stageRoutes } from "./routes/stage.js";
 import { teamRoutes } from "./routes/team.js";
 import { Realtime } from "./realtime.js";
+import { ScoreWriter } from "./scores.js";
 import { revealPublicView } from "./views.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
@@ -80,6 +81,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   const converter = new Converter(cfg.soffice, cfg.uploadsDir, path.join(cfg.dataDir, "lo-profile"), cfg.sofficeTimeoutMs);
   const orgs = new Orgs(db, cfg, { rt, converter });
   rt.orgs = orgs;
+  rt.writer = new ScoreWriter(db);
   await ensureBaseline(db, cfg, m => app.log.info(m));
   orgs.invalidate(ROOT_ORG_ID);
   // Session lookups and sign-in are global; org 1's repo serves them (see Repo).
