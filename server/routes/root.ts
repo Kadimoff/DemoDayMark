@@ -9,6 +9,7 @@ import { PASSWORD_MIN } from "./auth.js";
 import { adminResults } from "../views.js";
 import { listEvents } from "../events.js";
 import { sendHistory } from "./admin.js";
+import { systemStatus } from "../health.js";
 
 const slug = z.string().trim().toLowerCase()
   .refine(v => SLUG_RE.test(v), "Qısa ad (slug) yalnız kiçik latın hərfləri, rəqəmlər və tire ola bilər (2–32 simvol).")
@@ -53,6 +54,23 @@ export function rootRoutes(app: FastifyInstance, ctx: Ctx) {
     r.addHook("preHandler", requireRoot);
 
     r.get("/api/root/orgs", async () => orgs.list().map(o => view(o.id)));
+
+    // v11: "Sistem vəziyyəti" — health of the platform (database, backups, sockets, event loop) and, per organisation,
+    // live connections and how many score ops were applied / refused / retried. No names or scores.
+    r.get("/api/root/system", async () => systemStatus(ctx.sys, {
+      orgs: orgs.list().filter(o => o.active).map(o => {
+        const sc = orgs.scope(o.id);
+        return { id: o.id, slug: o.slug, name: o.name, screens: rt.roomSize(`o${o.id}:public`), jurors: rt.roomSize(`o${o.id}:jurors`), admins: rt.roomSize(`o${o.id}:admin`),
+          ops: sc.repo.scoreOpStats() };
+      }),
+    }));
+    // v11: run a backup now (before a risky change, before the reveal).
+    r.post("/api/root/backup", async (req, reply) => {
+      const f = await ctx.sys.backups.run(true);
+      if (!f) return reply.code(500).send({ error: ctx.sys.backups.status().lastError ?? "Yedək alınmadı." });
+      root.audit(req.user!.id, "system.backup", { file: f.split(/[\\/]/).pop() });
+      return systemStatus(ctx.sys);
+    });
 
     // v3: the platform panel (/root) — every organisation with its live state (stage team, timer, counts). Public stage
     // data plus counts only: no scores, names of jurors or files leave an organisation here.

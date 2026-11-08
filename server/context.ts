@@ -5,6 +5,7 @@ import type { Config } from "./config.js";
 import type { Converter } from "./files.js";
 import { ROOT_ORG_ID, type Orgs, type Scope } from "./orgs.js";
 import type { Realtime } from "./realtime.js";
+import type { HealthDeps } from "./health.js";
 
 export interface Ctx {
   cfg: Config;
@@ -14,6 +15,8 @@ export interface Ctx {
   /** orgs: organisations and their data scopes. */
   orgs: Orgs;
   converter: Converter;
+  /** v11: health / system status sources (database, backups, sockets, event loop). */
+  sys: HealthDeps;
 }
 
 /** orgs: the organisation of the signed-in admin / juror (or the team session). Route guards ran before this. */

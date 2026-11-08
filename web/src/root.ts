@@ -10,6 +10,7 @@ import { now, syncClock } from "./lib/clock";
 import { $, esc, icon, toast } from "./lib/dom";
 import { live } from "./lib/socket";
 import { topbar } from "./lib/topbar";
+import { sysCardHtml, type SystemStatus } from "./lib/syscard";
 
 interface Coord { id: number; username: string; displayName: string; active: boolean; root: boolean }
 interface OrgLive {
@@ -25,8 +26,27 @@ let orgs: OrgLive[] = [];
 let open: string | null = null;
 let confirmOff: number | null = null;
 let newOpen = false;
+let sys: SystemStatus | null = null;
+let sysErr: string | null = null;
+
+/** v11: "Sistem vəziyyəti" card (its own request: a slow / failing status never blocks the organisations list). */
+async function loadSys() {
+  try { sys = await api<SystemStatus>("/api/root/system"); sysErr = null; }
+  catch (e) { sysErr = (e as Error).message; }
+  const box = document.getElementById("sys");
+  if (box) { box.outerHTML = sysCardHtml(sys, sysErr); bindSys(); }
+}
+function bindSys() {
+  document.getElementById("sysBackup")?.addEventListener("click", async e => {
+    const b = e.currentTarget as HTMLButtonElement;
+    b.disabled = true;
+    try { await api("/api/root/backup", { method: "POST", body: {} }); toast("Yedək alındı"); await loadSys(); }
+    catch (ex) { toast((ex as ApiError).message, "err"); b.disabled = false; }
+  });
+}
 
 async function load() {
+  void loadSys();
   try { orgs = await api<OrgLive[]>("/api/root/overview"); }
   catch (e) { main.innerHTML = `<div class="banner err">${esc((e as Error).message)}</div>`; return; }
   for (const o of orgs) syncClock(o.stage.serverNow);
@@ -101,8 +121,10 @@ function render() {
       <p class="sub" style="margin:0">Yeni təşkilat boş tədbirlə başlayır: standart meyarlar, pitch 3:00 + sual-cavab 2:00. Proyektor linki <span class="mono">/o/&lt;qısa ad&gt;/stage</span>.</p>
       <p class="err-t" id="nErr" role="alert"></p>
     </section>` : ""}
-    <div class="rgrid section-gap">${orgs.map(card).join("")}</div>`;
+    <div class="rgrid section-gap">${orgs.map(card).join("")}</div>
+    ${sysCardHtml(sys, sysErr)}`;
   bind();
+  bindSys();
 }
 
 // ---------- projector preview (read-only) ----------

@@ -73,8 +73,8 @@ describe("upgrading the live 537b462 (v9) database to events (v10)", () => {
     const { cfg, snapshot, orgsOut } = await v9Database(path.join(tmp, "a"));
     const A = await buildApp(cfg);
     try {
-      expect(SCHEMA_VERSION).toBe(10);
-      const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith("pre-v10-"));
+      expect(SCHEMA_VERSION).toBe(11);
+      const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
       expect(backups.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, backups[0]), { readonly: true });
       expect(copy.pragma("user_version", { simple: true })).toBe(9);
@@ -82,7 +82,7 @@ describe("upgrading the live 537b462 (v9) database to events (v10)", () => {
       copy.close();
 
       const db = A.ctx.orgs.db;
-      expect(db.pragma("user_version", { simple: true })).toBe(10);
+      expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
       expect(db.pragma("foreign_key_check")).toEqual([]);
       expect(db.pragma("integrity_check", { simple: true })).toBe("ok");
       for (const t of TABLES) {
@@ -145,7 +145,7 @@ describe("upgrading the live 537b462 (v9) database to events (v10)", () => {
     db.exec("DROP TABLE event_files");
     db.close();
     const ok = openDb(cfg.dbFile);
-    expect(ok.pragma("user_version", { simple: true })).toBe(10);
+    expect(ok.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
     ok.close();
   });
 });

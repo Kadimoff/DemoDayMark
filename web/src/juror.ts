@@ -8,10 +8,12 @@ import { live } from "./lib/socket";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
 import { initTheme, themeToggleHtml, toggleTheme } from "./lib/theme";
 import { blinkTitle, canNotify, chime, enableNotifications, notifyPermission, systemNotify } from "./lib/alert";
+import { Outbox, type ScoreOp, type SendResult } from "./lib/outbox";
 
 initTheme();
 
-interface Draft { values: ScoreValues; note: string; tags: string[]; dirty: boolean; base: number; pending?: boolean }
+/** pending: queued in the outbox; opId: the op that carries exactly this draft (cleared by the next edit). */
+interface Draft { values: ScoreValues; note: string; tags: string[]; dirty: boolean; base: number; pending?: boolean; opId?: string }
 interface Nudge { teamId: number; teamName: string; index: number }
 
 const NOTE_MAX = 1000;
@@ -26,7 +28,8 @@ const drafts = new Map<number, Draft>();
 let selTeam: number | null = null;
 let lastStageTeam: number | null | undefined;
 let formKey = "";
-let sending = false;
+/** v11: every score goes through the outbox (localStorage queue, op ids, retries) — see lib/outbox.ts. */
+let outbox: Outbox<MyScore> | null = null;
 let justSent: number | null = null;
 let failure: { teamId: number; msg: string; network: boolean } | null = null;
 let online = false;
@@ -37,7 +40,7 @@ const lsKey = (teamId: number) => `ij.draft.${S?.me.id}.${teamId}`;
 function persist(teamId: number) {
   const d = drafts.get(teamId);
   try {
-    if (d?.dirty) localStorage.setItem(lsKey(teamId), JSON.stringify({ values: d.values, note: d.note, tags: d.tags, base: d.base, pending: !!d.pending }));
+    if (d?.dirty) localStorage.setItem(lsKey(teamId), JSON.stringify({ values: d.values, note: d.note, tags: d.tags, base: d.base, pending: !!d.pending, opId: d.opId }));
     else localStorage.removeItem(lsKey(teamId));
   } catch { /* storage unavailable */ }
 }
@@ -52,7 +55,7 @@ function restoreDrafts() {
       const saved = mine.get(t.id);
       // A newer server copy (e.g. sent from another device) wins over an old local draft.
       if (saved && saved.updatedAt > d.base) { localStorage.removeItem(lsKey(t.id)); continue; }
-      drafts.set(t.id, { values: d.values ?? {}, note: d.note ?? "", tags: d.tags ?? [], base: d.base ?? 0, dirty: true, pending: d.pending });
+      drafts.set(t.id, { values: d.values ?? {}, note: d.note ?? "", tags: d.tags ?? [], base: d.base ?? 0, dirty: true, pending: d.pending, opId: d.opId });
     } catch { /* corrupt entry */ }
   }
 }
@@ -95,6 +98,7 @@ async function load() {
   S.myScores.forEach(s => mine.set(s.teamId, s));
   document.title = `Münsif paneli · ${S.stage.eventName}`;
   restoreDrafts();
+  startOutbox();
   onStage(S.stage);
   formKey = "";
   render();
@@ -250,13 +254,15 @@ function render() {
         <button class="btn" id="reset" ${locked ? "disabled" : ""}>${icon("undo")}Sıfırla</button>
         <button class="btn" id="prev" ${idx > 0 ? "" : "disabled"}>${icon("back")}Əvvəlki komanda</button>
       </div>
-      <p class="openline${locked ? " lock" : ""}">${locked ? "Qiymətləndirmə bağlıdır" : "Səsvermə açıqdır · dəyişiklik edilə bilər"}</p>`;
+      <p class="openline${locked ? " lock" : ""}">${locked ? "Qiymətləndirmə bağlıdır" : "Səsvermə açıqdır · dəyişiklik edilə bilər"}</p>
+      <details class="oplog" id="oplog" hidden></details>`;
     strip.tick();
   }
   renderNudge();
   renderTags();
   renderTotal();
   renderDock();
+  renderOpLog();
 }
 
 /** Up to 10 points: one button per point. Above that (20, 30…) a phone can't fit the buttons: big value, −/+, slider, quick picks. */
@@ -370,90 +376,140 @@ function renderDock() {
   const all = S.criteria.length;
   const filled = filledCount(d);
   const complete = filled === all;
+  // v11: the outbox state of this team's score (queued / sending / refused)
+  const op = outbox?.pendingFor(selTeam) ?? null;
+  const last = outbox?.lastFor(selTeam) ?? null;
+  const inFlight = !!op && !!d.opId && op.opId === d.opId;
   let cls: string, title: string, line: string;
-  if (S.locked) { cls = "warn"; title = `${icon("lock")}Bağlıdır`; line = "Ballara yalnız baxa bilərsiniz."; }
-  else if (failure && failure.teamId === selTeam) {
-    cls = "err"; title = `${icon("warn")}Göndərilmədi`;
-    line = failure.network ? "Bağlantı yoxdur. Qaralama bu cihazda saxlanılıb." : esc(failure.msg);
+  if (inFlight && op!.status === "sending" && op!.tries <= 1) { cls = "warn"; title = `${icon("cloud")}Göndərilir…`; line = "Bal bu cihazda saxlanılıb."; }
+  else if (inFlight) {
+    cls = "warn"; title = `${icon("cloud")}${online ? "Növbədə" : "Oflayn — növbədə"}`;
+    line = `Bal bu cihazda saxlanılıb, şəbəkə qayıdanda özü göndəriləcək${op!.tries > 1 ? ` (${op!.tries} cəhd)` : ""}.`;
   }
+  else if (S.locked) { cls = "warn"; title = `${icon("lock")}Bağlıdır`; line = d.dirty && last?.status === "rejected" ? "Göndərilmədi — ballarınız bu cihazda saxlanılıb." : "Ballara yalnız baxa bilərsiniz."; }
+  else if (failure && failure.teamId === selTeam) { cls = "err"; title = `${icon("warn")}Rədd edildi`; line = `${esc(failure.msg)} Ballar bu cihazda saxlanılıb.`; }
   else if (d.dirty) { cls = "warn"; title = `${icon("cloud")}Qaralama saxlanıldı`; line = `${filled}/${all} meyar · hələ göndərilməyib`; }
-  else if (saved && isComplete(saved.values, S.criteria)) { cls = "ok"; title = `${icon("check")}Göndərilib`; line = `Son sinx: ${hhmm(saved.updatedAt)}`; }
+  else if (saved && isComplete(saved.values, S.criteria)) { cls = "ok"; title = `${icon("check")}Saxlanıldı`; line = `Son sinx: ${hhmm(saved.updatedAt)}`; }
   else if (saved) { cls = "warn"; title = `${icon("warn")}Yenidən qiymətləndirin`; line = "Meyarlar dəyişib, bütün meyarlara yenidən bal verin."; }
   else { cls = "mute"; title = "Qiymətləndirilməyib"; line = `${filled}/${all} meyar doldurulub`; }
 
-  const can = !S.locked && !sending && complete && (d.dirty || !!(failure && failure.teamId === selTeam));
+  const can = !S.locked && !inFlight && complete && (d.dirty || !!(failure && failure.teamId === selTeam));
   let label = `${saved ? "Yenilə və göndər" : "Təsdiqlə və göndər"} ${icon("send")}`;
   let bcls = "btn primary";
-  if (sending) label = "Göndərilir…";
+  if (inFlight) label = op!.status === "sending" ? "Göndərilir…" : "Növbədədir";
   else if (justSent === selTeam) { label = `Göndərildi ${icon("check")}`; bcls += " sent"; }
-  else if (failure && failure.teamId === selTeam && failure.network) label = `${icon("retry")} Yenidən cəhd et`;
   else if (saved && !d.dirty && isComplete(saved.values, S.criteria)) label = `Göndərilib ${icon("check")}`;
   dock.hidden = false;
   dock.innerHTML = `<div class="wrap narrow">
-    <div class="st ${cls}" role="status"><b>${title}</b><small>${line}</small></div>
+    <div class="st ${cls}" role="status" data-op="${inFlight ? op!.status : last?.status ?? ""}"><b>${title}</b><small>${line}</small></div>
     <button class="${bcls}" id="submit" ${can ? "" : "disabled"}>${label}</button>
   </div>`;
 }
 
-// ---------- submit ----------
-async function submit(teamId: number, quiet = false) {
-  if (!S || sending) return;
+// ---------- submit (v11: through the outbox) ----------
+function submit(teamId: number) {
+  if (!S || !outbox) return;
   const d = draftFor(teamId);
   if (!isComplete(d.values, S.criteria)) { toast("Bütün meyarlara bal verin.", "err"); return; }
   const values: ScoreValues = {};
   S.criteria.forEach(c => { values[c.key] = d.values[c.key]; });
-  sending = true;
   failure = null;
-  renderDock();
-  try {
-    const saved = await sendScore(teamId, { values, note: d.note.slice(0, 2000), tags: d.tags });
-    mine.set(teamId, saved);
-    drafts.set(teamId, { values: { ...saved.values }, note: saved.note, tags: [...(saved.tags ?? [])], dirty: false, base: saved.updatedAt });
-    persist(teamId);
-    justSent = teamId;
-    setTimeout(() => { if (justSent === teamId) { justSent = null; renderDock(); } }, 1800);
-    if (!quiet) toast("Qiymət göndərildi");
-    if (nudge?.teamId === teamId) nudge = null;
-    formKey = "";
-  } catch (e) {
-    const err = e as ApiError;
-    if (err.status === 423) { S.locked = true; toast(err.message, "err"); formKey = ""; }
-    else {
-      failure = { teamId, msg: err.message, network: err.network };
-      d.pending = err.network;
+  const op = outbox.enqueue(teamId, { values, note: d.note.slice(0, 2000), tags: d.tags });
+  d.pending = true;
+  d.opId = op.opId;
+  persist(teamId);
+  render();
+}
+
+function startOutbox() {
+  if (!S || outbox) return;
+  outbox = new Outbox<MyScore>({
+    storage: (() => { try { return localStorage; } catch { return null; } })(),
+    key: `ij.outbox.${S.me.id}`,
+    send: sendOp,
+    onChange: () => { renderHead(); renderDock(); renderOpLog(); },
+    onSaved: (op, saved) => {
+      mine.set(op.teamId, saved);
+      const d = drafts.get(op.teamId);
+      // the draft is done only if it was not edited after this op was queued
+      if (!d || d.opId === op.opId || !d.dirty) {
+        drafts.set(op.teamId, { values: { ...saved.values }, note: saved.note, tags: [...(saved.tags ?? [])], dirty: false, base: saved.updatedAt });
+        persist(op.teamId);
+      }
+      justSent = op.teamId;
+      setTimeout(() => { if (justSent === op.teamId) { justSent = null; renderDock(); } }, 1800);
+      toast(op.tries > 1 ? `${teamOf(op.teamId)?.name ?? "Komanda"}: növbədəki bal göndərildi` : "Qiymət göndərildi");
+      if (nudge?.teamId === op.teamId) nudge = null;
+      formKey = "";
+      render();
+    },
+    onRejected: op => {
+      const d = drafts.get(op.teamId);
+      if (d && d.opId === op.opId) { d.pending = false; persist(op.teamId); }
+      if (op.httpStatus === 423 && S) S.locked = true;
+      failure = { teamId: op.teamId, msg: op.error ?? "Göndərilmədi.", network: false };
+      toast(`${op.error ?? "Göndərilmədi."} Ballarınız bu cihazda saxlanılıb.`, "err");
+      formKey = "";
+      render();
+    },
+  });
+  // drafts an older version of this page marked "pending" (sent while offline) go through the outbox now
+  for (const [teamId, d] of drafts) {
+    if (d.dirty && d.pending && !outbox.pendingFor(teamId) && isComplete(d.values, S.criteria)) {
+      const op = outbox.enqueue(teamId, { values: { ...d.values }, note: d.note.slice(0, 2000), tags: d.tags });
+      d.opId = op.opId;
       persist(teamId);
-      if (!quiet) toast(err.network ? "Bağlantı yoxdur. Qaralama saxlanıldı, yenidən cəhd edin." : err.message, "err");
     }
-  } finally {
-    sending = false;
-    render();
   }
+  outbox.resume();
 }
 
 /**
- * Socket first: it is already open and kept alive by pings, so a score never goes into an HTTP connection that the
- * venue Wi-Fi dropped while the juror was filling the form. HTTP (with timeout and one retry) only as a fallback.
- * Saving is an upsert, so a retry after a lost answer cannot duplicate anything.
+ * One try of one op. Socket first: it is already open and kept alive by pings, so a score never goes into an HTTP
+ * connection that the venue Wi-Fi dropped while the juror was filling the form; HTTP as the fallback. The same op id goes
+ * with both, so a score that arrived but whose answer got lost is not applied twice.
  */
-async function sendScore(teamId: number, body: { values: ScoreValues; note: string; tags: string[] }): Promise<MyScore> {
+async function sendOp(op: ScoreOp): Promise<SendResult<MyScore>> {
+  const payload = { ...op.body, opId: op.opId, clientAt: op.createdAt };
+  const verdict = (status: number, error: string): SendResult<MyScore> =>
+    status === 401 ? { ok: false, kind: "auth", error } : status >= 500 || status === 0 || status === 429 ? { ok: false, kind: "network", error } : { ok: false, kind: "rejected", status, error };
   if (sock.connected) {
     try {
-      const r = await sock.timeout(7000).emitWithAck("score:submit", { teamId, ...body }) as
+      const r = await sock.timeout(7000).emitWithAck("score:submit", { teamId: op.teamId, ...payload }) as
         { ok: true; score: MyScore } | { ok: false; status: number; error: string };
-      if (r.ok) return r.score;
-      throw new ApiError(r.error, r.status);
-    } catch (e) {
-      if (e instanceof ApiError) throw e; // the server answered: a real refusal (locked, invalid…)
-      // no ack in time: fall through to HTTP
-    }
+      if (r.ok) return { ok: true, score: r.score };
+      return verdict(r.status, r.error);
+    } catch { /* no ack in time: try HTTP */ }
   }
-  const put = () => api<MyScore>(`/api/juror/scores/${teamId}`, { method: "PUT", body, timeoutMs: 10000 });
-  try { return await put(); }
-  catch (e) {
-    if (!(e as ApiError).network) throw e;
-    await new Promise(r => setTimeout(r, 600));
-    return put(); // a fresh connection usually goes through
+  try {
+    return { ok: true, score: await api<MyScore>(`/api/juror/scores/${op.teamId}`, { method: "PUT", body: payload, timeoutMs: 10000 }) };
+  } catch (e) {
+    const err = e as ApiError;
+    return verdict(err.network ? 0 : err.status, err.message);
   }
+}
+
+/** Scores refused while scoring was closed go again once the coordinator opens it (if the juror has not changed them). */
+function resendAfterUnlock() {
+  if (!S || !outbox || S.locked) return;
+  for (const [teamId, d] of drafts) {
+    const last = outbox.lastFor(teamId);
+    if (d.dirty && d.opId && last?.opId === d.opId && last.status === "rejected" && last.httpStatus === 423 && isComplete(d.values, S.criteria)) submit(teamId);
+  }
+}
+
+const OP_LABEL: Record<ScoreOp["status"], string> = { queued: "növbədə", sending: "göndərilir", saved: "saxlanıldı", rejected: "rədd edildi" };
+/** v11: the juror's send log (this device): what is queued, what got in, what was refused. */
+function renderOpLog() {
+  const box = document.getElementById("oplog");
+  if (!box || !outbox) return;
+  const rows = [...outbox.ops.slice().reverse(), ...outbox.log].slice(0, 12);
+  if (!rows.length) { box.hidden = true; return; }
+  box.hidden = false;
+  const offline = !online && outbox.size > 0;
+  box.innerHTML = `<summary>${outbox.size ? `${outbox.size} bal ${offline ? "növbədə (oflayn)" : "göndərilir"}` : "Göndərmə tarixçəsi"}</summary>
+    <ul>${rows.map(o => `<li class="op-${o.status}"><b>${esc(teamOf(o.teamId)?.name ?? `#${o.teamId}`)}</b><span>${hhmm(o.doneAt ?? o.createdAt)}</span>
+      <span class="st">${OP_LABEL[o.status]}${o.status === "queued" && o.tries > 0 ? ` · ${o.tries} cəhd` : ""}</span>${o.status === "rejected" && o.error ? `<small>${esc(o.error)}</small>` : ""}</li>`).join("")}</ul>`;
 }
 
 // ---------- reminder modal ----------
@@ -473,19 +529,12 @@ function showNudgeModal(p: Nudge) {
 }
 function closeNudgeModal() { document.getElementById("nudgeModal")?.remove(); }
 
-async function retryPending() {
-  if (!S || S.locked) return;
-  for (const [teamId, d] of drafts) {
-    if (d.dirty && d.pending && isComplete(d.values, S.criteria)) {
-      await submit(teamId, true);
-      if (!drafts.get(teamId)?.dirty) toast("Saxlanılmış qaralama göndərildi");
-    }
-  }
-}
-
 function touched(teamId: number) {
   const d = draftFor(teamId);
   d.dirty = true;
+  // an edit after "send": this draft is newer than the queued op (it goes with the next send)
+  d.pending = false;
+  d.opId = undefined;
   if (failure?.teamId === teamId) failure = null;
   persist(teamId);
   reportProgress(teamId);
@@ -573,7 +622,7 @@ main.addEventListener("input", e => {
 dock.addEventListener("click", e => {
   if ((e.target as HTMLElement).closest("#submit") && selTeam != null) submit(selTeam);
 });
-window.addEventListener("online", () => retryPending());
+window.addEventListener("online", () => outbox?.resume());
 
 const sock = live({
   role: "juror",
@@ -586,7 +635,7 @@ const sock = live({
       toast(p.locked ? "Qiymətləndirmə bağlandı" : "Qiymətləndirmə açıldı");
       formKey = "";
       render();
-      if (!p.locked) retryPending();
+      if (!p.locked) { outbox?.resume(); resendAfterUnlock(); }
     },
     "my-score:saved": (s: MyScore) => {
       mine.set(s.teamId, s);
@@ -608,10 +657,13 @@ const sock = live({
     },
     "config:changed": () => load(),
   },
-  resync: async () => { await load(); retryPending(); },
+  resync: async () => { outbox?.resume(); await load(); outbox?.resume(); },
   status: o => {
     online = o;
+    if (o) outbox?.resume();
     if (!S) return;
+    renderDock();
+    renderOpLog();
     renderHead();
     const ln = document.getElementById("syncln");
     if (ln) { ln.className = o ? "ok-t" : "warn-t"; ln.textContent = `● ${o ? "Sinxron aktiv" : "Oflayn"}`; }
@@ -628,4 +680,4 @@ async function wake() {
 document.addEventListener("visibilitychange", wake);
 wake();
 
-load().then(retryPending);
+void load();

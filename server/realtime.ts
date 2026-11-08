@@ -29,7 +29,9 @@ export class Realtime {
   /** Set right after construction (Orgs needs this object, this needs Orgs). */
   orgs!: Orgs;
 
+  private log: FastifyInstance["log"];
   constructor(app: FastifyInstance, private cfg: Config) {
+    this.log = app.log;
     this.io = new Server(app.server, {
       path: "/socket.io",
       serveClient: false,
@@ -73,6 +75,8 @@ export class Realtime {
     return v;
   }
   isOnline(jurorId: number) { return (this.online.get(jurorId)?.size ?? 0) > 0; }
+  /** v11: sockets in one room (system card: screens / jurors / admins per organisation). */
+  roomSize(room: string) { return this.io.sockets.adapter.rooms.get(room)?.size ?? 0; }
   lastSeenOf(jurorId: number) { return this.lastSeen.get(jurorId) ?? null; }
 
   private onConnect(socket: Socket) {
@@ -127,7 +131,9 @@ export class Realtime {
       try {
         const r = submitScore(r0, ort, user.id, teamId, body);
         ack(r.ok ? { ok: true, score: r.body } : { ok: false, status: r.status, error: r.error });
-      } catch {
+      } catch (err) {
+        this.log.error({ err, jurorId: user.id, orgId: user.orgId, teamId, opId: (body as { opId?: unknown }).opId ?? null }, "score:submit failed");
+        // 500: the phone keeps the op in its queue and tries again (same op id, so it is applied at most once)
         ack({ ok: false, status: 500, error: "Serverdə xəta baş verdi." });
       }
     });

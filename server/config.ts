@@ -51,6 +51,10 @@ export interface Config {
   soffice: string;
   sofficeTimeoutMs: number;
   teamSessionTtlMs: number;
+  /** v11: periodic online backup into backupDir (0 = off). */
+  backupIntervalMs: number;
+  /** v11: how many periodic (auto-*) backups are kept. */
+  backupKeep: number;
 }
 
 export function loadConfig(overrides: Partial<Config> = {}): Config {
@@ -87,6 +91,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     soffice: process.env.SOFFICE ?? findSoffice(),
     sofficeTimeoutMs: 90_000,
     teamSessionTtlMs: 30 * 24 * 3600 * 1000,
+    backupIntervalMs: Math.max(0, Number(process.env.BACKUP_INTERVAL_MIN ?? 10)) * 60_000,
+    backupKeep: Math.max(1, Number(process.env.BACKUP_KEEP ?? 48)),
     ...overrides,
   };
 }

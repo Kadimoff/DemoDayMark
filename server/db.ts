@@ -244,10 +244,38 @@ const MIGRATIONS: Array<string | ((db: DB) => void)> = [
   // row), an `event_id` column on every per-event table (filled with that active event), the event's own presentations
   // (`event_files`) and the new stage / timer settings on `event` (all with defaults). Nothing is copied or dropped.
   db => migrateEvents(db),
+  // v11 (reliability): idempotent score submits. Every score a juror's phone sends carries a client-generated op id; the
+  // server applies an op at most once (a retry after a lost answer returns the stored result) and keeps refused ops
+  // (scoring closed, invalid) with their values. Additive only: one new table.
+  `
+  CREATE TABLE score_ops (
+    id           INTEGER PRIMARY KEY,
+    op_id        TEXT NOT NULL,
+    org_id       INTEGER NOT NULL,
+    event_id     INTEGER NOT NULL,
+    juror_id     INTEGER NOT NULL,
+    team_id      INTEGER,
+    status       TEXT NOT NULL CHECK (status IN ('applied','rejected')),
+    http_status  INTEGER NOT NULL DEFAULT 200,
+    error        TEXT NOT NULL DEFAULT '',
+    values_json  TEXT NOT NULL DEFAULT '{}',
+    note         TEXT NOT NULL DEFAULT '',
+    tags_json    TEXT NOT NULL DEFAULT '[]',
+    result_json  TEXT,
+    tries        INTEGER NOT NULL DEFAULT 1,
+    client_at    INTEGER,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    UNIQUE (juror_id, op_id)
+  );
+  CREATE INDEX score_ops_event ON score_ops(org_id, event_id, status, id);
+  `,
 ];
 
 /** Tables whose rows belong to one event of an organisation (v10). */
 export const EVENT_TABLES = ["users", "teams", "criteria", "scores", "score_history", "juror_invites", "team_links", "team_sessions", "team_files", "notifications"] as const;
+/** v11: per-event tables created after v10 (they carry event_id from the start). */
+export const EVENT_TABLES_V11 = ["score_ops"] as const;
 
 function migrateEvents(db: DB) {
   db.exec(`
@@ -373,14 +401,37 @@ export const SCHEMA_VERSION = MIGRATIONS.length;
 /** How many pre-migration copies are kept in DATA_DIR/backups. */
 export const PRE_MIGRATION_KEEP = 10;
 
+/**
+ * SQLite settings (reliability):
+ * - WAL: readers never block the writer; a crash of the process never loses a committed transaction.
+ * - synchronous = FULL: every commit is fsync'ed before the juror's phone gets its "saved" answer, so even a power cut /
+ *   host crash right after the answer cannot lose that score. NORMAL would be faster but may drop the last commits on an
+ *   OS crash; our write rate is tiny (≈ 3 000 scores per event + session touches), so FULL costs nothing noticeable.
+ * - busy_timeout: a second connection (backup CLI, restore check) waits instead of failing with SQLITE_BUSY.
+ */
+export const PRAGMAS = { journal_mode: "wal", synchronous: 2, busy_timeout: 5000, foreign_keys: 1 } as const;
+
 export function openDb(file: string, opts: { upTo?: number } = {}): DB {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new Database(file);
   db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = FULL");
   db.pragma("foreign_keys = ON");
-  db.pragma("busy_timeout = 5000");
+  db.pragma(`busy_timeout = ${PRAGMAS.busy_timeout}`);
   migrate(db, opts.upTo);
   return db;
+}
+
+/** Fast structural check (PRAGMA quick_check) — run once at start; the result is logged and shown in /api/health. */
+export function quickCheck(db: DB): { ok: boolean; errors: string[]; ms: number } {
+  const t0 = Date.now();
+  try {
+    const rows = db.pragma("quick_check") as Array<{ quick_check: string }>;
+    const errors = rows.map(r => r.quick_check).filter(v => v !== "ok");
+    return { ok: errors.length === 0, errors: errors.slice(0, 20), ms: Date.now() - t0 };
+  } catch (e) {
+    return { ok: false, errors: [(e as Error).message], ms: Date.now() - t0 };
+  }
 }
 
 /**

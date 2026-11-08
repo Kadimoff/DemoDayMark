@@ -14,7 +14,9 @@ import { rootRoutes } from "./routes/root.js";
 import { ensureBaseline } from "./baseline.js";
 import type { Config } from "./config.js";
 import type { Ctx } from "./context.js";
-import { backupBeforeMigrate, openDb } from "./db.js";
+import { backupBeforeMigrate, openDb, quickCheck, type DB } from "./db.js";
+import { applyRestoreRequest, BackupScheduler } from "./backups.js";
+import { LoopMonitor, publicHealth, type HealthDeps } from "./health.js";
 import { createRequire } from "node:module";
 import { resolveTeam } from "./teams.js";
 import { stageRoutes } from "./routes/stage.js";
@@ -61,9 +63,19 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   // silently; otherwise a juror who spent two minutes on the form could send their score into a dead connection.
   const app = Fastify({ logger: opts.logger ? { level: process.env.LOG_LEVEL ?? "warn" } : false, trustProxy: cfg.trustProxy, bodyLimit: 256 * 1024,
     keepAliveTimeout: 4000 });
+  const startedAt = Date.now();
+  // v11: a restore requested with `restore.js <backup>` happens here, before anything opens the database.
+  applyRestoreRequest(cfg.dataDir, cfg.dbFile, cfg.backupDir, m => app.log.warn(m));
   // Keep a copy of an existing database before any schema upgrade touches it.
   await backupBeforeMigrate(cfg.dbFile, cfg.backupDir, m => (opts.logger ? console.log(m) : undefined));
   const db = openDb(cfg.dbFile);
+  // v11: fast structural check at every start; a problem is logged and shown in /api/health (the server still starts:
+  // refusing to start during an event would be worse than serving from a database with e.g. one broken index).
+  const integrity = quickCheck(db);
+  if (!integrity.ok) app.log.error({ errors: integrity.errors }, "database quick_check FAILED — take a backup and see docs/runbook.md");
+  const backups = new BackupScheduler(db, cfg.backupDir, { intervalMs: cfg.backupIntervalMs, keep: cfg.backupKeep },
+    (level, m) => (level === "error" ? app.log.error(m) : app.log.info(m)));
+  const loop = new LoopMonitor();
   const rt = new Realtime(app, cfg);
   const converter = new Converter(cfg.soffice, cfg.uploadsDir, path.join(cfg.dataDir, "lo-profile"), cfg.sofficeTimeoutMs);
   const orgs = new Orgs(db, cfg, { rt, converter });
@@ -89,7 +101,10 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     global: true, threshold: 1024, encodings: ["br", "gzip"],
     brotliOptions: { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } },
   });
-  const ctx: Ctx = { cfg, rt, limiter: new LoginLimiter(cfg.loginMaxFails, cfg.loginLockMs), orgs, converter };
+  const sys: HealthDeps = { db, dbFile: cfg.dbFile, integrity, backups, sockets: () => rt.io.engine?.clientsCount ?? 0, loop, startedAt };
+  const ctx: Ctx = { cfg, rt, limiter: new LoginLimiter(cfg.loginMaxFails, cfg.loginLockMs), orgs, converter, sys };
+  backups.start();
+  resumeConversions(db, converter, m => app.log.warn(m));
 
   app.decorateRequest("user", null);
   app.decorateRequest("team", null);
@@ -119,8 +134,21 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     if (!reply.getHeader("X-Frame-Options")) reply.header("X-Frame-Options", "DENY");
   });
 
-  // Touches the database so the container healthcheck fails if SQLite is unreadable.
-  app.get("/api/health", async () => ({ ok: !!repo.db.prepare("SELECT 1 AS ok").get(), time: Date.now() }));
+  // v11: errors get their context in the log (route, method, who) — the answer itself stays as Fastify sends it.
+  app.addHook("onError", async (req, _reply, err) => {
+    const code = (err as { statusCode?: number }).statusCode ?? 500;
+    if (code < 500) return;
+    req.log.error({ err, method: req.method, url: req.url.split("?")[0], userId: req.user?.id ?? null, orgId: req.user?.orgId ?? req.team?.orgId ?? null,
+      teamId: req.team?.teamId ?? null }, "request failed");
+  });
+
+  // Touches the database so the container healthcheck fails if SQLite is unreadable (503 then).
+  // v11: plus liveness numbers (uptime, version, last backup, open sockets, event loop lag) — nothing secret.
+  app.get("/api/health", async (_req, reply) => {
+    const h = publicHealth(sys);
+    reply.header("Cache-Control", "no-store");
+    return h.ok ? h : reply.code(503).send(h);
+  });
   // Public: only what the projector timer shows (orgs: ?org=<slug>, default organisation without it).
   app.get("/api/stage", async (req, reply) => {
     const sc = publicScope(ctx, req);
@@ -239,6 +267,39 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   return {
     app,
     ctx,
-    close: async () => { clearInterval(deadlineTimer); await rt.close(); await app.close(); db.close(); },
+    close: async () => {
+      clearInterval(deadlineTimer);
+      backups.stop();
+      loop.stop();
+      await rt.close();
+      await app.close();
+      try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch { /* still closes */ }
+      db.close();
+    },
   };
+}
+
+/**
+ * v11: a PPTX conversion that was running when the server stopped stays "running" forever otherwise: start it again.
+ * Files whose original is gone are marked failed.
+ */
+function resumeConversions(db: DB, converter: Converter, log: (m: string) => void) {
+  const tables = [
+    { t: "team_files", where: "active = 1 AND kind = 'presentation'" },
+    { t: "event_files", where: "deleted_at IS NULL" },
+  ];
+  for (const { t, where } of tables) {
+    const rows = db.prepare(`SELECT id, stored FROM ${t} WHERE ${where} AND conv IN ('running','pending') AND ext = 'pptx'`).all() as Array<{ id: number; stored: string }>;
+    for (const r of rows) {
+      if (!converter.available) { db.prepare(`UPDATE ${t} SET conv = 'unavailable' WHERE id = ?`).run(r.id); continue; }
+      log(`resuming PPTX conversion (${t} #${r.id}) after a restart`);
+      db.prepare(`UPDATE ${t} SET conv = 'running' WHERE id = ?`).run(r.id);
+      void converter.convert(r.stored).then(res => {
+        try {
+          db.prepare(`UPDATE ${t} SET conv = ?, pdf_stored = COALESCE(?, pdf_stored), pages = COALESCE(?, pages) WHERE id = ?`)
+            .run(res ? "done" : "failed", res?.pdfStored ?? null, res?.pages ?? null, r.id);
+        } catch { /* database closed meanwhile */ }
+      });
+    }
+  }
 }

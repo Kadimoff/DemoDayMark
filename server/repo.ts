@@ -98,6 +98,13 @@ export interface EventState {
   stageSound: boolean;
 }
 
+/** v11: one juror op (a score sent from a phone) and what happened to it. */
+export interface ScoreOpRow {
+  id: number; op_id: string; org_id: number; event_id: number; juror_id: number; team_id: number | null;
+  status: "applied" | "rejected"; http_status: number; error: string; values_json: string; note: string; tags_json: string;
+  result_json: string | null; tries: number; client_at: number | null; created_at: number; updated_at: number;
+}
+
 /** v3 (events): one event of an organisation. */
 export interface EventMeta { id: number; orgId: number; name: string; status: "active" | "archived"; createdAt: number; archivedAt: number | null }
 export interface EventsRow { id: number; org_id: number; name: string; status: string; created_at: number; archived_at: number | null; settings_json: string | null; stats_json: string | null }
@@ -432,6 +439,39 @@ export class Repo {
     const teams = this.db.prepare(`SELECT team_id id, team_name name FROM score_history WHERE org_id = ? AND event_id = ? AND team_id IS NOT NULL AND kind IN ('submit','update')
       AND id IN (SELECT MAX(id) FROM score_history WHERE org_id = ? AND event_id = ? AND team_id IS NOT NULL AND kind IN ('submit','update') GROUP BY team_id) ORDER BY name COLLATE NOCASE`).all(...E, ...E) as HistoryPage["teams"];
     return { rows: rows.slice(0, limit).map(mapHistory), more, total, jurors, teams };
+  }
+
+  // ---------- v11: idempotent score ops ----------
+  /** The stored outcome of a juror's op (client-generated id), or null when this op was never seen. */
+  scoreOp(jurorId: number, opId: string): ScoreOpRow | null {
+    return (this.db.prepare("SELECT * FROM score_ops WHERE juror_id = ? AND op_id = ?").get(jurorId, opId) as ScoreOpRow | undefined) ?? null;
+  }
+  /** Records an op's outcome. A refused op may be tried again later (and then applied); an applied op is final. */
+  recordScoreOp(o: { opId: string; jurorId: number; teamId: number | null; status: "applied" | "rejected"; httpStatus: number; error?: string;
+    values?: unknown; note?: string; tags?: unknown; result?: unknown; clientAt?: number | null }) {
+    const now = Date.now();
+    this.db.prepare(`INSERT INTO score_ops (op_id, org_id, event_id, juror_id, team_id, status, http_status, error, values_json, note, tags_json, result_json, client_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (juror_id, op_id) DO UPDATE SET status = excluded.status, http_status = excluded.http_status, error = excluded.error,
+        result_json = excluded.result_json, tries = score_ops.tries + 1, updated_at = excluded.updated_at
+      WHERE score_ops.status <> 'applied'`)
+      .run(o.opId, this.orgId, this.eventId, o.jurorId, o.teamId, o.status, o.httpStatus, o.error ?? "", JSON.stringify(o.values ?? {}).slice(0, 20000),
+        String(o.note ?? "").slice(0, 2000), JSON.stringify(o.tags ?? []).slice(0, 4000), o.result == null ? null : JSON.stringify(o.result), o.clientAt ?? null, now, now);
+  }
+  /** Counts for the health / system card. */
+  scoreOpStats() {
+    const r = this.db.prepare(`SELECT SUM(status = 'applied') applied, SUM(status = 'rejected') rejected, SUM(tries - 1) retries
+      FROM score_ops WHERE org_id = ? AND event_id = ?`).get(this.orgId, this.eventId) as { applied: number | null; rejected: number | null; retries: number | null };
+    return { applied: r.applied ?? 0, rejected: r.rejected ?? 0, retries: r.retries ?? 0 };
+  }
+  /** Refused ops of this event, newest first (the coordinator sees which scores did not get in, with their values). */
+  rejectedOps(limit = 100) {
+    return (this.db.prepare(`SELECT o.*, u.display_name juror_name, t.name team_name FROM score_ops o LEFT JOIN users u ON u.id = o.juror_id
+      LEFT JOIN teams t ON t.id = o.team_id WHERE o.org_id = ? AND o.event_id = ? AND o.status = 'rejected' ORDER BY o.id DESC LIMIT ?`)
+      .all(this.orgId, this.eventId, limit) as Array<ScoreOpRow & { juror_name: string | null; team_name: string | null }>).map(r => ({
+      opId: r.op_id, jurorId: r.juror_id, jurorName: r.juror_name ?? "", teamId: r.team_id, teamName: r.team_name ?? "", httpStatus: r.http_status,
+      error: r.error, values: parseJson<Record<string, number>>(r.values_json, {}), note: r.note, tries: r.tries, at: r.updated_at,
+    }));
   }
 
   // ---------- audit ----------
