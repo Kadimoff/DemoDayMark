@@ -32,7 +32,7 @@ function must(s, from, to, label) {
 const CTA = {
   az: { login: "Daxil ol", team: "Komanda girişi", demo: "Demo səhnə", panel: "Panel",
     q1: ["munsif.im və munsif.az arasında fərq nədir?", "Platformaya necə daxil olunur?"],
-    a1: "Koordinator “Daxil ol” düyməsi ilə girir. Münsiflər koordinatorun göstərdiyi QR kodu skan edir, komandalar isə koordinatorun göndərdiyi linki açır. Hamısı bu saytdadır." },
+    a1: "Koordinator \"Daxil ol\" düyməsi ilə girir. Münsiflər koordinatorun göstərdiyi QR kodu skan edir, komandalar isə koordinatorun göndərdiyi linki açır. Hamısı bu saytdadır." },
   en: { login: "Sign in", team: "Team sign-in", demo: "Demo stage", panel: "Dashboard",
     q1: ["What is the difference between munsif.im and munsif.az?", "How do people sign in?"],
     a1: "Coordinators use “Sign in”. Judges scan the QR code the coordinator shows them, and teams open the link the coordinator sends. It all happens on this site." },

@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>munsif.im — pitch yarışları, demo day və hakatonlar üçün taymer və münsif balları</title>
+<title>Münsifim ilə tədbirləriniz sürətli qiymətləndirilir | munsif.im</title>
 <meta name="description" content="Komandalar prezentasiyanı öz linki ilə yükləyir, taymer slaydın küncündə gedir, münsiflər QR kodla girib telefondan bal verir. Ortalama və reytinqi sistem hesablayır.">
 <meta name="theme-color" content="#0B0B14">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
+<script>try{var t=localStorage.getItem("ij.theme");if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t;if(t==="light")document.querySelector('meta[name="theme-color"]').content="#F6F5FB"}catch(e){}</script>
 <link rel="canonical" href="https://munsif.im/">
 <link rel="alternate" hreflang="az" href="https://munsif.im/">
 <link rel="alternate" hreflang="en" href="https://munsif.im/en/">
@@ -15,13 +16,13 @@
 <meta property="og:site_name" content="munsif.im">
 <meta property="og:locale" content="az_AZ">
 <meta property="og:url" content="https://munsif.im/">
-<meta property="og:title" content="munsif.im — Təqdimatlarınız münsifim ilə qiymətləndirilir.">
+<meta property="og:title" content="Münsifim ilə tədbirləriniz sürətli qiymətləndirilir.">
 <meta property="og:description" content="Komandalar prezentasiyanı öz linki ilə yükləyir, taymer slaydın küncündə gedir, münsiflər QR kodla girib telefondan bal verir. Ortalama və reytinqi sistem hesablayır.">
 <meta property="og:image" content="https://munsif.im/brand/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="munsif.im — Təqdimatlarınız münsifim ilə qiymətləndirilir.">
+<meta name="twitter:title" content="Münsifim ilə tədbirləriniz sürətli qiymətləndirilir.">
 <meta name="twitter:description" content="Komandalar prezentasiyanı öz linki ilə yükləyir, taymer slaydın küncündə gedir, münsiflər QR kodla girib telefondan bal verir. Ortalama və reytinqi sistem hesablayır.">
 <meta name="twitter:image" content="https://munsif.im/brand/og-image.png">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
@@ -35,7 +36,7 @@
 <link rel="preload" href="/landing/fonts/unbounded-azn.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/brand/munsif-logo.svg" as="image" type="image/svg+xml" fetchpriority="high">
 <link rel="preload" as="image" type="image/avif" imagesrcset="/landing/img/hero-640.avif 640w, /landing/img/hero-1280.avif 1280w, /landing/img/hero-1920.avif 1920w, /landing/img/hero-2560.avif 2560w" imagesizes="(max-width: 700px) 250vw, 100vw" fetchpriority="high">
-<link rel="stylesheet" href="/landing/css/site.css?v=15e2c76411">
+<link rel="stylesheet" href="/landing/css/site.css?v=c725045d72">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"munsif.im","applicationCategory":"BusinessApplication","operatingSystem":"Web","url":"https://munsif.im/","description":"Komandalar prezentasiyanı öz linki ilə yükləyir, taymer slaydın küncündə gedir, münsiflər QR kodla girib telefondan bal verir. Ortalama və reytinqi sistem hesablayır.","inLanguage":"az","offers":[{"@type":"Offer","name":"Start","price":"0","priceCurrency":"AZN","description":"İlk tədbir və ya sınaq üçün","url":"https://munsif.im/#pricing"},{"@type":"Offer","name":"Pro","price":"49","priceCurrency":"AZN","description":"Bir böyük tədbir üçün (tədbir)","url":"https://munsif.im/#pricing"},{"@type":"Offer","name":"Universitet","price":"149","priceCurrency":"AZN","description":"İl boyu tədbir keçirənlər üçün (ay)","url":"https://munsif.im/#pricing"}]}</script>
 </head>
 <body>
@@ -45,12 +46,14 @@
 
 <header class="nav" id="nav">
   <div class="nav-in">
-    <a class="brand" href="/" aria-label="munsif.im"><img src="/brand/munsif-logo.svg" alt="munsif.im" width="139" height="40" fetchpriority="high"></a>
+    <a class="brand" href="/" aria-label="munsif.im"><img class="logo-d" src="/brand/munsif-logo.svg" alt="munsif.im" width="139" height="40" fetchpriority="high"><img class="logo-l" src="/brand/munsif-logo-light.svg" alt="" width="139" height="40"></a>
     <nav class="links" aria-label="primary">
-      <a href="#how">Necə işləyir</a><a href="#demo">Demo</a><a href="#features">İmkanlar</a><a href="#who">Kim üçün</a><a href="#pricing">Paketlər</a><a href="#faq">Suallar</a>
+      <a href="#how">Necə işləyir</a><a href="#demo">Demo</a><a href="#features">İmkanlar</a><a href="#pricing">Paketlər</a><a href="#faq">Suallar</a>
     </nav>
     <div class="nav-r">
-      <a class="nav-pricing" href="#pricing">Paketlər</a>
+      <a class="nav-pill nav-pricing" href="#pricing">Paketlər</a>
+      <a class="nav-pill nav-team" href="#team"><span class="lg">Komanda girişi</span><span class="sm">Giriş</span></a>
+      <button class="theme-btn" id="themeBtn" type="button" data-light="Açıq temaya keç" data-dark="Tünd temaya keç" aria-label="Açıq temaya keç" title="Açıq temaya keç"><svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg></button>
       <div class="lang" role="group" aria-label="Language">
         <span class="on" aria-current="true">AZ</span><a href="/en/" hreflang="en" title="Switch to English">EN</a>
       </div>
@@ -61,7 +64,7 @@
 
 <main id="main">
 <!-- HERO -->
-<section class="hero" id="top">
+<section class="hero dk" id="top">
   <div class="hero-media" id="heroMedia">
     <picture>
       <source type="image/avif" srcset="/landing/img/hero-640.avif 640w, /landing/img/hero-1280.avif 1280w, /landing/img/hero-1920.avif 1920w, /landing/img/hero-2560.avif 2560w" sizes="(max-width: 700px) 250vw, 100vw">
@@ -78,8 +81,8 @@
   </div>
   <div class="hero-shade" aria-hidden="true"></div>
   <div class="hero-copy wrap">
-    <p class="eyebrow hv" style="--d:0s"><span class="live-dot"></span>Pitch · Demo day · Hakaton</p>
-    <h1 class="hero-title"><span class="ln hv" style="--d:.06s">Təqdimatlarınız</span><span class="ln l2"><span class="grad hv" style="--d:.14s"></span><span class="logo-chip hv" style="--d:.14s"><img src="/brand/munsif-logo.svg" alt="munsif.im" width="834" height="240" fetchpriority="high"></span><span class="grad hv" style="--d:.18s">ilə</span></span><span class="ln grad hv" style="--d:.24s">qiymətləndirilir.</span></h1>
+    <p class="eyebrow hv" style="--d:0s"><span class="live-dot"></span>Pitch yarışları, demo day və hakatonlar</p>
+    <h1 class="hero-title hv" style="--d:.08s"><span class="grad">Münsifim</span> ilə tədbirləriniz sürətli qiymətləndirilir.</h1>
     <p class="hero-sub hv" style="--d:.32s">Komandalar prezentasiyanı öz linki ilə yükləyir, münsiflər QR kodla girib telefondan bal verir. Taymer slaydın küncündə gedir, ortalamanı sistem özü hesablayır.</p>
     <div class="cta-row hv" style="--d:.4s">
       <a class="btn btn-primary magnetic" href="/stage/demo"><span class="ring-ico" aria-hidden="true"></span>Demo səhnəni aç</a>
@@ -117,17 +120,17 @@
         <p class="kicker rv">Demo</p>
         <h2 class="h2 rv">Son 5 saniyəyə özünüz baxın.</h2>
       </div>
-      <p class="lead rv">“Başlat”ı basın, 10 saniyəlik çıxış başlayacaq. Taymer küncdə gedir, son 5 saniyədə ekranın ortasına keçir.</p>
+      <p class="lead rv">&quot;Başlat&quot; düyməsini basın, 10 saniyəlik çıxış başlayacaq. Taymer küncdə gedir, son 5 saniyədə ekranın ortasına keçir.</p>
     </div>
     <div class="stage-frame rv" id="stageFrame">
-      <div class="stage" id="stage">
+      <div class="stage dk" id="stage">
         <picture>
           <source type="image/avif" srcset="/landing/img/team-640.avif 640w, /landing/img/team-1280.avif 1280w, /landing/img/team-1920.avif 1920w" sizes="(max-width: 1280px) 100vw, 1200px">
           <source type="image/webp" srcset="/landing/img/team-640.webp 640w, /landing/img/team-1280.webp 1280w, /landing/img/team-1920.webp 1920w" sizes="(max-width: 1280px) 100vw, 1200px">
           <img class="stage-img" src="/landing/img/team-1280.webp" alt="" width="2752" height="1536" loading="lazy" decoding="async">
         </picture>
         <div class="stage-dim" id="stageDim"></div>
-        <div class="stage-hud"><span class="rec"></span>Komanda 07 · Slayd 6/12</div>
+        <div class="stage-hud"><span class="rec"></span>Komanda 07, slayd 6/12</div>
         <canvas id="demoCanvas" aria-hidden="true"></canvas>
         <p class="sr-only" aria-live="polite" id="demoLive"></p>
       </div>
@@ -146,14 +149,42 @@
     <picture>
       <source type="image/avif" srcset="/landing/img/final5-640.avif 640w, /landing/img/final5-1280.avif 1280w, /landing/img/final5-1920.avif 1920w, /landing/img/final5-2560.avif 2560w" sizes="(max-width: 700px) 100vw, 75vw">
       <source type="image/webp" srcset="/landing/img/final5-640.webp 640w, /landing/img/final5-1280.webp 1280w, /landing/img/final5-1920.webp 1920w, /landing/img/final5-2560.webp 2560w" sizes="(max-width: 700px) 100vw, 75vw">
-      <img src="/landing/img/final5-1920.webp" alt="Səhnədə çıxış edən natiq, arxasındakı böyük ekranda geri sayım: “3”." width="2752" height="1536" loading="lazy" decoding="async">
+      <img src="/landing/img/final5-1920.webp" alt="Səhnədə çıxış edən natiq, arxasındakı böyük ekranda geri sayım 3 saniyədədir." width="2752" height="1536" loading="lazy" decoding="async">
     </picture>
   </div>
   <div class="wrap f5-copy">
     <p class="kicker amber rv">Son 5 saniyə</p>
     <h2 class="h2 rv">Natiq vaxtı ekranda görür.</h2>
-    <p class="lead rv">Çıxış boyu taymer küncdə kiçik dairə kimi durur və slaydı örtmür. Son 30 saniyədə sarı, son 10 saniyədə qırmızı olur. Son 5 saniyədə ekranın ortasına keçib saniyələri iri rəqəmlərlə sayır. Münsif çıxışı kəsib “vaxtınız bitdi” deməli olmur.</p>
+    <p class="lead rv">Çıxış boyu taymer küncdə kiçik dairə kimi durur və slaydı örtmür. Son 30 saniyədə sarı, son 10 saniyədə qırmızı olur. Son 5 saniyədə ekranın ortasına keçib saniyələri iri rəqəmlərlə sayır. Münsif çıxışı kəsib &quot;vaxtınız bitdi&quot; deməli olmur.</p>
     <ul class="f5-list rv"><li>Prezentasiyanın üstündə</li><li>Telefondan idarə olunur</li><li>Bütün ekranlarda eyni saniyə</li></ul>
+  </div>
+</section>
+
+<!-- PHONES -->
+<section class="phones sec" id="phones">
+  <div class="wrap">
+    <div class="ph-head">
+      <div><p class="kicker rv">Ekranlar</p><h2 class="h2 rv">Telefonda belə görünür.</h2></div>
+      <p class="lead rv">Münsif, komanda və koordinator işini telefondan görür. Proqram yükləmək lazım deyil, hər şey brauzerdə açılır. Şəkillər platformanın özündəndir, komanda adları nümunədir.</p>
+    </div>
+    <ul class="ph-row" aria-label="Ekranlar" tabindex="0">
+      <li class="ph rv">
+        <div class="device dk"><div class="device-screen"><picture><source type="image/avif" srcset="/landing/img/ph-juror-dark-300.avif 300w, /landing/img/ph-juror-dark-600.avif 600w" data-dark="/landing/img/ph-juror-dark-300.avif 300w, /landing/img/ph-juror-dark-600.avif 600w" data-light="/landing/img/ph-juror-light-300.avif 300w, /landing/img/ph-juror-light-600.avif 600w" sizes="(max-width: 700px) 64vw, 260px"><source type="image/webp" srcset="/landing/img/ph-juror-dark-300.webp 300w, /landing/img/ph-juror-dark-600.webp 600w" data-dark="/landing/img/ph-juror-dark-300.webp 300w, /landing/img/ph-juror-dark-600.webp 600w" data-light="/landing/img/ph-juror-light-300.webp 300w, /landing/img/ph-juror-light-600.webp 600w" sizes="(max-width: 700px) 64vw, 260px"><img src="/landing/img/ph-juror-dark-600.webp" data-dark="/landing/img/ph-juror-dark-600.webp" data-light="/landing/img/ph-juror-light-600.webp" alt="Münsif ekranı: Pycore komandası səhnədədir, meyarlar üzrə bal formu açıqdır." width="390" height="844" loading="lazy" decoding="async"></picture></div></div>
+        <h3>Münsif</h3><p>QR kodu skan edir və hər meyar üzrə bal verir. Başqa münsiflərin ballarını görmür.</p>
+      </li>
+      <li class="ph rv">
+        <div class="device dk"><div class="device-screen"><picture><source type="image/avif" srcset="/landing/img/ph-team-dark-300.avif 300w, /landing/img/ph-team-dark-600.avif 600w" data-dark="/landing/img/ph-team-dark-300.avif 300w, /landing/img/ph-team-dark-600.avif 600w" data-light="/landing/img/ph-team-light-300.avif 300w, /landing/img/ph-team-light-600.avif 600w" sizes="(max-width: 700px) 64vw, 260px"><source type="image/webp" srcset="/landing/img/ph-team-dark-300.webp 300w, /landing/img/ph-team-dark-600.webp 600w" data-dark="/landing/img/ph-team-dark-300.webp 300w, /landing/img/ph-team-dark-600.webp 600w" data-light="/landing/img/ph-team-light-300.webp 300w, /landing/img/ph-team-light-600.webp 600w" sizes="(max-width: 700px) 64vw, 260px"><img src="/landing/img/ph-team-dark-600.webp" data-dark="/landing/img/ph-team-dark-600.webp" data-light="/landing/img/ph-team-light-600.webp" alt="Komanda ekranı: Səhnədəsiniz yazısı, slayd 1/6 və irəli, geri düymələri." width="390" height="844" loading="lazy" decoding="async"></picture></div></div>
+        <h3>Səhnədəki komanda</h3><p>Slaydları öz telefonundan çevirir, səhnə ekranı dərhal dəyişir.</p>
+      </li>
+      <li class="ph rv">
+        <div class="device dk"><div class="device-screen"><picture><source type="image/avif" srcset="/landing/img/ph-pult-dark-300.avif 300w, /landing/img/ph-pult-dark-600.avif 600w" data-dark="/landing/img/ph-pult-dark-300.avif 300w, /landing/img/ph-pult-dark-600.avif 600w" data-light="/landing/img/ph-pult-light-300.avif 300w, /landing/img/ph-pult-light-600.avif 600w" sizes="(max-width: 700px) 64vw, 260px"><source type="image/webp" srcset="/landing/img/ph-pult-dark-300.webp 300w, /landing/img/ph-pult-dark-600.webp 600w" data-dark="/landing/img/ph-pult-dark-300.webp 300w, /landing/img/ph-pult-dark-600.webp 600w" data-light="/landing/img/ph-pult-light-300.webp 300w, /landing/img/ph-pult-light-600.webp 600w" sizes="(max-width: 700px) 64vw, 260px"><img src="/landing/img/ph-pult-dark-600.webp" data-dark="/landing/img/ph-pult-dark-600.webp" data-light="/landing/img/ph-pult-light-600.webp" alt="Koordinator pultu: 3:00 taymer, Başlat düyməsi, sual-cavab, ±30 saniyə və slayd düymələri." width="390" height="844" loading="lazy" decoding="async"></picture></div></div>
+        <h3>Koordinator pultu</h3><p>Taymeri və slaydları idarə edir, növbəti komandanı səhnəyə çıxarır.</p>
+      </li>
+      <li class="ph rv">
+        <div class="device dk"><div class="device-screen"><picture><source type="image/avif" srcset="/landing/img/ph-tlogin-dark-300.avif 300w, /landing/img/ph-tlogin-dark-600.avif 600w" data-dark="/landing/img/ph-tlogin-dark-300.avif 300w, /landing/img/ph-tlogin-dark-600.avif 600w" data-light="/landing/img/ph-tlogin-light-300.avif 300w, /landing/img/ph-tlogin-light-600.avif 600w" sizes="(max-width: 700px) 64vw, 260px"><source type="image/webp" srcset="/landing/img/ph-tlogin-dark-300.webp 300w, /landing/img/ph-tlogin-dark-600.webp 600w" data-dark="/landing/img/ph-tlogin-dark-300.webp 300w, /landing/img/ph-tlogin-dark-600.webp 600w" data-light="/landing/img/ph-tlogin-light-300.webp 300w, /landing/img/ph-tlogin-light-600.webp 600w" sizes="(max-width: 700px) 64vw, 260px"><img src="/landing/img/ph-tlogin-dark-600.webp" data-dark="/landing/img/ph-tlogin-dark-600.webp" data-light="/landing/img/ph-tlogin-light-600.webp" alt="Komanda girişi ekranı: komanda kodu sahəsi və Daxil ol düyməsi." width="390" height="844" loading="lazy" decoding="async"></picture></div></div>
+        <h3>Komanda girişi</h3><p>Komanda linki açır və ya kodu yazır, prezentasiyanı buradan yükləyir.</p>
+      </li>
+    </ul>
   </div>
 </section>
 
@@ -163,7 +194,7 @@
     <p class="kicker rv">İmkanlar</p>
     <h2 class="h2 rv">Hamısı bir paneldədir.</h2>
     <div class="bento">
-      <article class="tile t-jury rv">
+      <article class="tile t-jury dk rv">
         <picture>
           <source type="image/avif" srcset="/landing/img/jury-640.avif 640w, /landing/img/jury-1280.avif 1280w" sizes="(max-width: 900px) 100vw, 700px">
           <source type="image/webp" srcset="/landing/img/jury-640.webp 640w, /landing/img/jury-1280.webp 1280w" sizes="(max-width: 900px) 100vw, 700px">
@@ -192,7 +223,7 @@
         <div class="tile-txt"><h3>Səhnə taymeri</h3><p>Slaydın küncündə kiçik dairədir. Son 5 saniyədə ekranın ortasına keçir.</p></div>
       </article>
       <article class="tile t-remote rv">
-        <div class="phone" aria-hidden="true"><div class="ph-time" id="phTime">02:00</div><div class="ph-btns"><span class="go">Başlat</span><span>Fasilə</span><span>+30</span><span>Növbəti</span></div></div>
+        <div class="phone dk" aria-hidden="true"><div class="ph-time" id="phTime">02:00</div><div class="ph-btns"><span class="go">Başlat</span><span>Fasilə</span><span>+30</span><span>Növbəti</span></div></div>
         <div class="tile-txt"><h3>Telefon pultu</h3><p>Başlat, fasilə, ±30 saniyə, slaydlar və növbəti komanda telefonunuzdadır.</p></div>
       </article>
       <article class="tile t-queue rv">
@@ -255,17 +286,17 @@
         <p class="plan-for">Bir böyük tədbir üçün</p>
         <p class="plan-price"><span class="amt">49</span><span class="cur">₼</span><span class="per">/ tədbir</span></p>
         <p class="plan-bill">bir tədbir üçün birdəfəlik ödəniş</p>
-        <a class="btn btn-ghost plan-cta" href="mailto:hello@munsif.im?subject=munsif.im%20%E2%80%94%20Pro%20paketi">Paketi seç</a>
+        <a class="btn btn-ghost plan-cta" href="mailto:hello@munsif.im?subject=munsif.im%20Pro%20paketi">Paketi seç</a>
         <p class="plan-lead">Start paketindəkilər və:</p>
         <ul class="plan-feats"><li>30 komandaya qədər</li><li>10 münsif</li><li>Prezentasiya yükləmə (PDF/PPTX)</li><li>Son 5 saniyə effekti</li><li>Nəticə açıqlaması</li><li>Excel/PDF ixrac</li><li>Komanda linkləri</li></ul>
       </li>
-      <li class="plan plan-hot rv">
+      <li class="plan plan-hot dk rv">
         <p class="plan-badge">Tövsiyə edirik</p>
         <h3 class="plan-name">Universitet</h3>
         <p class="plan-for">İl boyu tədbir keçirənlər üçün</p>
         <p class="plan-price"><span class="amt">149</span><span class="cur">₼</span><span class="per">/ ay</span></p>
         <p class="plan-bill">aylıq abunə</p>
-        <a class="btn btn-primary plan-cta" href="mailto:hello@munsif.im?subject=munsif.im%20%E2%80%94%20Universitet%20paketi">Paketi seç</a>
+        <a class="btn btn-primary plan-cta" href="mailto:hello@munsif.im?subject=munsif.im%20Universitet%20paketi">Paketi seç</a>
         <p class="plan-lead">Pro paketindəkilər və:</p>
         <ul class="plan-feats"><li>Limitsiz tədbir</li><li>Hər tədbirdə 60 komanda</li><li>20 münsif</li><li>Öz brend adınız və loqonuz</li><li>Bir neçə koordinator</li><li>Qiymətləndirmə tarixçəsi (Excel)</li><li>Prioritet dəstək</li></ul>
       </li>
@@ -274,7 +305,7 @@
         <p class="plan-for">Şirkətlər və böyük festivallar üçün</p>
         <p class="plan-price"><span class="amt word">Fərdi</span></p>
         <p class="plan-bill">müqavilə əsasında</p>
-        <a class="btn btn-ghost plan-cta" href="mailto:hello@munsif.im?subject=munsif.im%20%E2%80%94%20Business">Əlaqə saxla</a>
+        <a class="btn btn-ghost plan-cta" href="mailto:hello@munsif.im?subject=munsif.im%20Business">Əlaqə saxla</a>
         <p class="plan-lead">Universitet paketindəkilər və:</p>
         <ul class="plan-feats"><li>Limitsiz tədbir, komanda və münsif</li><li>Öz domeniniz</li><li>SSO və müqavilə</li><li>SLA</li><li>Tədbir günü texniki dəstək</li><li>Fərdi meyarlar və inteqrasiyalar</li></ul>
       </li>
@@ -283,12 +314,44 @@
   </div>
 </section>
 
+<!-- TEAM SIGN-IN -->
+<section class="team sec" id="team">
+  <div class="wrap">
+    <div class="team-head">
+      <div><p class="kicker rv">Komandalar üçün</p><h2 class="h2 rv">Komandanızla daxil olun.</h2></div>
+      <p class="lead rv">Koordinator hər komandaya ayrıca link və QR kod verir. Komandanın bütün üzvləri eyni linklə daxil olur.</p>
+    </div>
+    <div class="team-grid">
+      <div class="tcard rv">
+        <span class="tnum" aria-hidden="true">1</span>
+        <h3>Link və ya QR kod</h3><p>Koordinatorun göndərdiyi linki açın və ya QR kodu telefonun kamerası ilə skan edin.</p>
+        <div class="qr-art" aria-hidden="true"><i></i><i></i><i></i><b></b></div>
+      </div>
+      <form class="tcard rv" id="codeForm" novalidate>
+        <span class="tnum" aria-hidden="true">2</span>
+        <h3>Kodla giriş</h3><p>Linkdəki kodu və ya linkin özünü yazın.</p>
+        <label class="fl" for="teamCode">Komanda kodu və ya link</label>
+        <div class="field"><input id="teamCode" name="code" class="mono" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH-JKMN" aria-describedby="codeErr"><button class="btn btn-primary" type="submit">Daxil ol</button></div>
+        <p class="ferr" id="codeErr" role="alert" data-msg="Kod 12 simvoldur, məsələn ABCD-EFGH-JKMN. Linki olduğu kimi də yapışdıra bilərsiniz."></p>
+      </form>
+      <form class="tcard rv" id="regForm" novalidate>
+        <span class="tnum" aria-hidden="true">3</span>
+        <h3>Qeydiyyat</h3><p>Koordinator qeydiyyatı açıbsa, tədbirin kodunu yazın və komandanızı əlavə edin. Koordinator təsdiqləyəndən sonra çıxış sırasına düşürsünüz.</p>
+        <label class="fl" for="regSlug">Tədbirin kodu</label>
+        <div class="field"><input id="regSlug" name="slug" class="mono" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="demoday" aria-describedby="regErr"><button class="btn btn-ghost" type="submit">Qeydiyyata keç</button></div>
+        <p class="ferr" id="regErr" role="alert" data-msg="Tədbirin kodunu koordinatordan alın: kiçik hərflər, rəqəmlər və defis."></p>
+      </form>
+    </div>
+    <p class="team-foot rv">Koordinatorsunuz? <a class="coord-link" id="coordLink" href="/login">Koordinator girişi</a><span class="sep" aria-hidden="true"></span>Münsiflər koordinatorun göstərdiyi QR kodla daxil olur.</p>
+  </div>
+</section>
+
 <!-- FAQ -->
 <section class="faq sec" id="faq">
   <div class="wrap faq-grid">
     <div><p class="kicker rv">Suallar</p><h2 class="h2 rv">Tez-tez soruşulanlar</h2></div>
     <div class="qa">
-      <details class="rv"><summary>Platformaya necə daxil olunur?</summary><p>Koordinator “Daxil ol” düyməsi ilə girir. Münsiflər koordinatorun göstərdiyi QR kodu skan edir, komandalar isə koordinatorun göndərdiyi linki açır. Hamısı bu saytdadır.</p></details>
+      <details class="rv"><summary>Platformaya necə daxil olunur?</summary><p>Koordinator "Daxil ol" düyməsi ilə girir. Münsiflər koordinatorun göstərdiyi QR kodu skan edir, komandalar isə koordinatorun göndərdiyi linki açır. Hamısı bu saytdadır.</p></details>
       <details class="rv"><summary>Komandalar nə yükləyir?</summary><p>PDF və ya PPTX prezentasiya (50 MB-a qədər) və layihə saytının linki. İstəsələr, demo video linki və loqo da əlavə edirlər. Son tarixə qədər faylı yeniləmək olar.</p></details>
       <details class="rv"><summary>Səhnə ekranı üçün nə lazımdır?</summary><p>Brauzeri olan istənilən kompüter və proyektor və ya LED ekran. Səhnə linkini brauzerdə açıb tam ekran edirsiniz, heç nə quraşdırmaq lazım deyil.</p></details>
       <details class="rv"><summary>Taymeri necə idarə edirəm?</summary><p>Telefonunuzdakı pultdan: başlat, fasilə ver, vaxt əlavə et, növbəti komandaya keç. Qoşulan bütün ekranlar eyni anda yenilənir.</p></details>
@@ -302,7 +365,7 @@
 <section class="cta-final" id="start">
   <div class="cta-ring" aria-hidden="true"><svg viewBox="0 0 512 512"><defs><linearGradient id="crg" x1="96" y1="420" x2="420" y2="96" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7C5CFF"/><stop offset=".55" stop-color="#D46BC4"/><stop offset="1" stop-color="#FFB020"/></linearGradient></defs><path d="M256 88A168 168 0 1 1 96.22 204.09" fill="none" stroke="url(#crg)" stroke-width="10" stroke-linecap="round" pathLength="1" class="cr-path"/></svg></div>
   <div class="wrap cta-in">
-    <h2 class="h2 big final-title rv">Növbəti tədbiriniz <span class="nw"><span class="logo-chip"><img src="/brand/munsif-logo.svg" alt="munsif.im" width="834" height="240" loading="lazy"></span> ilə</span> qiymətləndirilsin.</h2>
+    <h2 class="h2 big final-title rv">Növbəti tədbiriniz <span class="grad">Münsifim</span> ilə qiymətləndirilsin.</h2>
     <p class="lead rv">Demo səhnəyə baxın və ya ilk tədbirinizi pulsuz Start paketi ilə yaradın.</p>
     <div class="cta-row center rv">
       <a class="btn btn-primary btn-lg magnetic" href="/stage/demo"><span class="ring-ico" aria-hidden="true"></span>Demo səhnəni aç</a>
@@ -314,14 +377,14 @@
 
 <footer class="foot">
   <div class="wrap foot-grid">
-    <div class="foot-brand"><img src="/brand/munsif-logo.svg" alt="munsif.im" width="167" height="48" loading="lazy"><p>Pitch yarışları, demo day və hakatonlar üçün taymer və münsif balları.</p></div>
-    <div><h4>Məhsul</h4><a href="#how">Necə işləyir</a><a href="#demo">Demo</a><a href="#features">İmkanlar</a><a href="#pricing">Paketlər</a><a href="#faq">Suallar</a></div>
+    <div class="foot-brand"><img class="logo-d" src="/brand/munsif-logo.svg" alt="munsif.im" width="167" height="48" loading="lazy"><img class="logo-l" src="/brand/munsif-logo-light.svg" alt="munsif.im" width="167" height="48" loading="lazy"><p>Pitch yarışları, demo day və hakatonlar üçün taymer və münsif balları.</p></div>
+    <div><h4>Məhsul</h4><a href="#how">Necə işləyir</a><a href="#demo">Demo</a><a href="#features">İmkanlar</a><a href="#who">Kim üçün</a><a href="#pricing">Paketlər</a><a href="#team">Komanda girişi</a><a href="#faq">Suallar</a></div>
     <div><h4>Platforma</h4><a href="https://munsif.im/">munsif.im</a><a href="/login">Daxil ol</a><a href="/team">Komanda girişi</a><a href="/stage/demo">Demo səhnəni aç</a></div>
     <div><h4>Əlaqə</h4><a href="mailto:hello@munsif.im">hello@munsif.im</a><a href="/en/" hreflang="en">Switch to English</a></div>
   </div>
   <div class="wrap foot-base"><span>© 2026 munsif.im. Bütün hüquqlar qorunur.</span><span class="foot-mark" aria-hidden="true">munsif.im</span></div>
 </footer>
-<script src="/landing/js/site.js?v=15e2c76411" defer></script>
+<script src="/landing/js/site.js?v=c725045d72" defer></script>
 <script src="/landing/js/session.js" defer></script>
 </body>
 </html>

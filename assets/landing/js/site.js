@@ -1,4 +1,4 @@
-/* munsif.im — interactions + interactive stage demo
+/* munsif.im: interactions, theme switch, team sign-in forms and the interactive stage demo
    Performance rules: nothing heavy before the first paint; heavy effects start on idle (html.fx);
    every timer/loop runs only while its section is on screen; scroll work is passive + one rAF per frame. */
 (() => {
@@ -30,6 +30,73 @@
   const nav = $('#nav');
   let navOn = null;
   const onScrollNav = () => { const s = scrollY > 40; if (s !== navOn) { navOn = s; nav.classList.toggle('scrolled', s); } };
+  // A narrow phone or a big system font can make the header row wider than the screen. Drop items step by step
+  // (t1: section links + pricing pill, t2: current-language label, t3: short team label, t4: logo mark only,
+  // t5: team pill) until it fits.
+  const navIn = $('.nav-in'), NAV_STEPS = ['t1', 't2', 't3', 't4', 't5'];
+  const fitNav = () => {
+    nav.classList.remove(...NAV_STEPS);
+    for (const c of NAV_STEPS) { if (navIn.scrollWidth <= navIn.clientWidth + 1) break; nav.classList.add(c); }
+  };
+  let fitRaf = 0;
+  const fitSoon = () => { if (!fitRaf) fitRaf = requestAnimationFrame(() => { fitRaf = 0; fitNav(); }); };
+  fitNav();
+  addEventListener('resize', fitSoon, { passive: true });
+  if (document.fonts) document.fonts.ready.then(fitSoon);
+  addEventListener('load', () => { fitSoon(); setTimeout(fitSoon, 1500); }, { once: true });
+
+  /* ---------- theme: light / dark, key shared with the app; the inline head script already set data-theme ---------- */
+  const THEME_KEY = 'ij.theme';
+  const themeBtn = $('#themeBtn'), metaTheme = $('meta[name="theme-color"]');
+  const curTheme = () => (html.dataset.theme === 'light' ? 'light' : 'dark');
+  // phone screenshots follow the theme; they are lazy, so swapping before they load costs nothing
+  const phoneSrc = (t) => $$('.device-screen [data-' + t + ']').forEach((el) => {
+    const v = el.dataset[t];
+    if (el.tagName === 'SOURCE') { if (el.getAttribute('srcset') !== v) el.setAttribute('srcset', v); }
+    else if (el.getAttribute('src') !== v) el.setAttribute('src', v);
+  });
+  const applyTheme = (t) => {
+    html.dataset.theme = t;
+    if (metaTheme) metaTheme.setAttribute('content', t === 'light' ? '#F6F5FB' : '#0B0B14');
+    if (themeBtn) { const l = themeBtn.dataset[t === 'light' ? 'dark' : 'light']; themeBtn.setAttribute('aria-label', l); themeBtn.title = l; }
+    phoneSrc(t);
+  };
+  applyTheme(curTheme());
+  if (themeBtn) themeBtn.addEventListener('click', () => {
+    const t = curTheme() === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem(THEME_KEY, t); } catch (e) { /* private mode */ }
+    applyTheme(t);
+  });
+  const sysLight = matchMedia('(prefers-color-scheme: light)');
+  const onSys = () => { let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) { /* */ } if (s !== 'light' && s !== 'dark') applyTheme(sysLight.matches ? 'light' : 'dark'); };
+  if (sysLight.addEventListener) sysLight.addEventListener('change', onSys);
+
+  /* ---------- team sign-in: code -> /t/<code>, event code -> /o/<slug>/team (app routes) ---------- */
+  // The app origin comes from the coordinator link, so the same file works here and when served by the app itself.
+  const appBase = (() => { const a = $('#coordLink'); try { return new URL(a.getAttribute('href'), location.href).origin; } catch (e) { return location.origin; } })();
+  const formGo = (form, inputSel, errSel, parse, path) => {
+    if (!form) return;
+    const inp = $(inputSel, form), err = $(errSel, form);
+    inp.addEventListener('input', () => { err.textContent = ''; inp.removeAttribute('aria-invalid'); });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = parse(inp.value.trim());
+      if (!v) { err.textContent = err.dataset.msg; inp.setAttribute('aria-invalid', 'true'); inp.focus(); return; }
+      location.href = appBase + path(v);
+    });
+  };
+  // same rules as the app: a pasted link or a bare code, spaces/dashes ignored, 12 letters/digits
+  formGo($('#codeForm'), '#teamCode', '#codeErr', (s) => {
+    const m = s.match(/(?:\/t\/)?([A-Za-z0-9][A-Za-z0-9 -]{10,30})\/?(?:[?#].*)?$/);
+    const c = m ? m[1].replace(/[\s-]/g, '').toUpperCase() : '';
+    return /^[A-Z0-9]{12}$/.test(c) ? c : '';
+  }, (c) => '/t/' + c);
+  // event code = the organisation slug from /o/<slug>/..., a pasted registration link works too
+  formGo($('#regForm'), '#regSlug', '#regErr', (s) => {
+    const m = s.match(/\/o\/([^/?#\s]+)/);
+    const slug = (m ? m[1] : s).toLowerCase();
+    return /^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$/.test(slug) ? slug : '';
+  }, (s) => '/o/' + encodeURIComponent(s) + '/team');
 
   /* ---------- reveal (once) ---------- */
   const groups = new Map();
@@ -178,7 +245,7 @@
   }, 3200);
 
   /* =========================================================
-     INTERACTIVE STAGE DEMO — canvas; draws only while visible (or running)
+     INTERACTIVE STAGE DEMO: canvas, draws only while visible (or running)
      ========================================================= */
   const stage = $('#stage'), cv = $('#demoCanvas'), ctx = cv.getContext('2d');
   const btn = $('#demoStart'), btnLbl = $('.lbl', btn), sndBtn = $('#demoSound'), live = $('#demoLive');
