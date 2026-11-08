@@ -71,7 +71,7 @@ describe("upgrading the live acf187a (v8) database to organisations (v9)", () =>
     try {
       // a consistent copy of the v8 file was made first
       const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
-      expect(SCHEMA_VERSION).toBe(11); // v8 → v9 (orgs) → v10 (events) → v11 (score ops) in one start
+      expect(SCHEMA_VERSION).toBe(12); // v8 → v9 (orgs) → v10 (events) → v11 (score ops) → v12 (archive imports) in one start
       expect(backups.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, backups[0]), { readonly: true });
       expect(copy.pragma("user_version", { simple: true })).toBe(8);

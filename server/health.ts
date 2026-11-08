@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
+import type { AutoImportStatus } from "./archive.js";
 import type { BackupScheduler } from "./backups.js";
 import type { DB } from "./db.js";
 import { SCHEMA_VERSION } from "./db.js";
@@ -48,6 +49,8 @@ export interface HealthDeps {
   sockets: () => number;
   loop: LoopMonitor;
   startedAt: number;
+  /** v4: result of the IMPORT_ARCHIVE_MATCH start-up import (null when the env is not set). */
+  archiveImport?: AutoImportStatus | null;
 }
 
 function dbPing(db: DB): { ok: boolean; ms: number; error?: string } {
@@ -70,6 +73,9 @@ export function publicHealth(d: HealthDeps) {
   if (b.enabled && backupAge != null && backupAge > (3 * b.intervalMs) / 1000 + 60) warnings.push("backup-old");
   const lag = d.loop.lag();
   if (lag.p99 > 200) warnings.push("event-loop-lag");
+  const ai = d.archiveImport;
+  if (ai?.status === "error") warnings.push("archive-import-failed");
+  if (ai?.status === "not-found") warnings.push("archive-import-not-found");
   return {
     ok: ping.ok,
     time: now,
@@ -82,6 +88,9 @@ export function publicHealth(d: HealthDeps) {
     sockets: d.sockets(),
     eventLoopLagMs: lag,
     warnings,
+    // v4: counts and the program name only (no team, juror or score data)
+    ...(ai ? { archiveImport: { match: ai.match, org: ai.org, status: ai.status, at: ai.at, event: ai.event ?? null, file: ai.file ?? null,
+      teams: ai.teams ?? null, jurors: ai.jurors ?? null, scores: ai.scores ?? null, scanned: ai.scanned ?? null } } : {}),
   };
 }
 

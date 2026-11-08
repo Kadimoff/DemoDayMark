@@ -55,6 +55,10 @@ export interface Config {
   backupIntervalMs: number;
   /** v11: how many periodic (auto-*) backups are kept. */
   backupKeep: number;
+  /** v4: IMPORT_ARCHIVE_MATCH — at start, import the program whose name contains this text from the backups (once). */
+  importArchiveMatch: string;
+  /** v4: IMPORT_ARCHIVE_ORG — slug of the organisation that receives it (default root). */
+  importArchiveOrg: string;
 }
 
 export function loadConfig(overrides: Partial<Config> = {}): Config {
@@ -93,6 +97,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     teamSessionTtlMs: 30 * 24 * 3600 * 1000,
     backupIntervalMs: Math.max(0, Number(process.env.BACKUP_INTERVAL_MIN ?? 10)) * 60_000,
     backupKeep: Math.max(1, Number(process.env.BACKUP_KEEP ?? 48)),
+    importArchiveMatch: (process.env.IMPORT_ARCHIVE_MATCH ?? "").trim(),
+    importArchiveOrg: (process.env.IMPORT_ARCHIVE_ORG ?? "root").trim() || "root",
     ...overrides,
   };
 }

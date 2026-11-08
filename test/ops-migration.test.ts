@@ -60,15 +60,15 @@ describe("upgrading the live 468f2a0 (v10) database to score ops (v11)", () => {
     const { cfg, snapshot, ranking, reveal, stage } = await v10Database(path.join(tmp, "a"));
     const A = await buildApp(cfg);
     try {
-      expect(SCHEMA_VERSION).toBe(11);
-      const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith("pre-v11-"));
+      expect(SCHEMA_VERSION).toBe(12);
+      const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
       expect(backups.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, backups[0]), { readonly: true });
       expect(copy.pragma("user_version", { simple: true })).toBe(10);
       expect(copy.prepare("SELECT * FROM scores ORDER BY rowid").all()).toEqual(snapshot.scores);
       copy.close();
       const db = A.ctx.orgs.db;
-      expect(db.pragma("user_version", { simple: true })).toBe(11);
+      expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
       expect(db.pragma("integrity_check", { simple: true })).toBe("ok");
       expect(db.pragma("foreign_key_check")).toEqual([]);
       for (const t of TABLES) expect(db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(snapshot[t]);

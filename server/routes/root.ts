@@ -10,6 +10,8 @@ import { adminResults } from "../views.js";
 import { listEvents } from "../events.js";
 import { sendHistory } from "./admin.js";
 import { systemStatus } from "../health.js";
+import { importArchive, ImportError, importLedger, scanBackups } from "../archive.js";
+import { onlineBackup } from "../backups.js";
 
 const slug = z.string().trim().toLowerCase()
   .refine(v => SLUG_RE.test(v), "Qısa ad (slug) yalnız kiçik latın hərfləri, rəqəmlər və tire ola bilər (2–32 simvol).")
@@ -24,6 +26,10 @@ const patchBody = z.object({ name: orgName.optional(), active: z.boolean().optio
 const resetBody = z.object({ password });
 const userPatch = z.object({ active: z.boolean() });
 const impersonateBody = z.object({ orgId: z.number().int().positive().nullable() });
+const importBody = z.object({
+  file: z.string().min(1).max(220), sourceOrgId: z.number().int().positive(), sourceEventId: z.number().int().positive(),
+  targetOrgId: z.number().int().positive(), audit: z.boolean().optional(),
+});
 
 export function rootRoutes(app: FastifyInstance, ctx: Ctx) {
   const { orgs, cfg, rt } = ctx;
@@ -70,6 +76,29 @@ export function rootRoutes(app: FastifyInstance, ctx: Ctx) {
       if (!f) return reply.code(500).send({ error: ctx.sys.backups.status().lastError ?? "Yedək alınmadı." });
       root.audit(req.user!.id, "system.backup", { file: f.split(/[\\/]/).pop() });
       return systemStatus(ctx.sys);
+    });
+
+    // v4: "Yedəkdən import" — every backup file with a summary of its programs (names and counts only; the files are
+    // copied to a temp file and read there, the backups themselves are never opened in place).
+    r.get("/api/root/backups", async () => ({
+      files: scanBackups(cfg.backupDir),
+      imports: importLedger(orgs.db),
+      auto: ctx.sys.archiveImport ?? null,
+    }));
+    // Imports one program of a backup into an organisation as a new ARCHIVED program (never into the active one).
+    r.post("/api/root/backups/import", async (req, reply) => {
+      const b = parseBody(importBody, req.body, reply); if (!b) return;
+      if (!orgs.byId(b.targetOrgId)) return reply.code(404).send({ error: "Təşkilat tapılmadı." });
+      try {
+        // a consistent copy of the live database first (pre-import-*.db), then the import in one transaction
+        await onlineBackup(orgs.db, cfg.backupDir, "pre-import");
+        const res = importArchive(orgs.db, cfg, { ...b, actorId: req.user!.id });
+        orgs.scope(b.targetOrgId).rt.to("admin").emit("events:changed", {});
+        return res;
+      } catch (e) {
+        if (e instanceof ImportError) return reply.code(e.status).send({ error: e.message, ...e.extra });
+        throw e;
+      }
     });
 
     // v3: the platform panel (/root) — every organisation with its live state (stage team, timer, counts). Public stage

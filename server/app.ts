@@ -16,6 +16,7 @@ import type { Config } from "./config.js";
 import type { Ctx } from "./context.js";
 import { backupBeforeMigrate, openDb, quickCheck, type DB } from "./db.js";
 import { applyRestoreRequest, BackupScheduler } from "./backups.js";
+import { autoImport, type AutoImportStatus } from "./archive.js";
 import { LoopMonitor, publicHealth, type HealthDeps } from "./health.js";
 import { createRequire } from "node:module";
 import { resolveTeam } from "./teams.js";
@@ -88,6 +89,12 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   const { repo, trepo } = orgs.root;
   // orgs: one-time, idempotent coordinator account from BOOTSTRAP_* env (never overwrites an existing user)
   bootstrapOrg(orgs, cfg, m => (opts.logger ? console.warn(m) : undefined));
+  // v4: IMPORT_ARCHIVE_MATCH — one-time import of a program from the backups as an archived program (see archive.ts)
+  let archiveImport: AutoImportStatus | null = null;
+  if (cfg.importArchiveMatch) {
+    archiveImport = await autoImport(db, cfg, cfg.importArchiveMatch, cfg.importArchiveOrg, m => (opts.logger ? console.log(m) : undefined));
+    orgs.invalidate(ROOT_ORG_ID);
+  }
   repo.purgeSessions(Date.now() - cfg.sessionTtlMs);
   trepo.purgeSessions(Date.now() - cfg.teamSessionTtlMs);
   // Upload deadline reminders, every organisation.
@@ -103,7 +110,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     global: true, threshold: 1024, encodings: ["br", "gzip"],
     brotliOptions: { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } },
   });
-  const sys: HealthDeps = { db, dbFile: cfg.dbFile, integrity, backups, sockets: () => rt.io.engine?.clientsCount ?? 0, loop, startedAt };
+  const sys: HealthDeps = { db, dbFile: cfg.dbFile, integrity, backups, sockets: () => rt.io.engine?.clientsCount ?? 0, loop, startedAt, archiveImport };
   const ctx: Ctx = { cfg, rt, limiter: new LoginLimiter(cfg.loginMaxFails, cfg.loginLockMs), orgs, converter, sys };
   backups.start();
   resumeConversions(db, converter, m => app.log.warn(m));

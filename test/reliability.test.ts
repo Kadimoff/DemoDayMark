@@ -300,7 +300,7 @@ describe("backups, restore, health, integrity", () => {
     const s = await sock(base);
     const h = await c.get("/api/health");
     expect(h.status).toBe(200);
-    expect(h.body).toMatchObject({ ok: true, schema: 11, db: { ok: true, integrity: "ok" }, backup: { enabled: true }, warnings: [] });
+    expect(h.body).toMatchObject({ ok: true, schema: 12, db: { ok: true, integrity: "ok" }, backup: { enabled: true }, warnings: [] });
     expect(h.body.sockets).toBeGreaterThanOrEqual(1);
     expect(typeof h.body.uptimeSec).toBe("number");
     expect(h.body.eventLoopLagMs).toHaveProperty("p99");

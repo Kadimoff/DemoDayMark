@@ -270,6 +270,29 @@ const MIGRATIONS: Array<string | ((db: DB) => void)> = [
   );
   CREATE INDEX score_ops_event ON score_ops(org_id, event_id, status, id);
   `,
+  // v12 (archive import): ledger of programs imported from a backup file as archived events (server/archive.ts). Makes the
+  // import idempotent: the same source file + event never lands twice, and the same program content (content_key) is
+  // recognised even when it comes from another backup file. Additive only: one new table.
+  `
+  CREATE TABLE archive_imports (
+    id              INTEGER PRIMARY KEY,
+    org_id          INTEGER NOT NULL REFERENCES orgs(id),
+    event_id        INTEGER NOT NULL REFERENCES events(id),
+    source_file     TEXT NOT NULL,
+    source_sha256   TEXT NOT NULL,
+    source_schema   INTEGER NOT NULL,
+    source_org_id   INTEGER NOT NULL,
+    source_event_id INTEGER NOT NULL,
+    source_name     TEXT NOT NULL DEFAULT '',
+    content_key     TEXT NOT NULL,
+    auto_match      TEXT,
+    stats_json      TEXT NOT NULL DEFAULT '{}',
+    actor_id        INTEGER,
+    created_at      INTEGER NOT NULL,
+    UNIQUE (org_id, source_sha256, source_org_id, source_event_id)
+  );
+  CREATE INDEX archive_imports_key ON archive_imports(org_id, content_key);
+  `,
 ];
 
 /** Tables whose rows belong to one event of an organisation (v10). */
