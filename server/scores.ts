@@ -52,7 +52,7 @@ function applyScore(repo: Repo, jurorId: number, teamIdRaw: unknown, raw: unknow
   };
   const ev = repo.getEvent();
   const teamId = Number(teamIdRaw);
-  if (ev.locked) return refuse(423, "Qiymətləndirmə koordinator tərəfindən bağlanıb.", Number.isInteger(teamId) ? teamId : null);
+  if (ev.locked) return refuse(423, "Koordinator qiymətləndirməni bağlayıb.", Number.isInteger(teamId) ? teamId : null);
   const team = Number.isInteger(teamId) ? repo.team(teamId) : null;
   if (!team || !team.active) return refuse(404, "Komanda tapılmadı.", Number.isInteger(teamId) ? teamId : null);
   const parsed = scoreBody.safeParse(raw ?? {});

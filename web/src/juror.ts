@@ -254,9 +254,10 @@ function render() {
         <button class="btn" id="reset" ${locked ? "disabled" : ""}>${icon("undo")}Sıfırla</button>
         <button class="btn" id="prev" ${idx > 0 ? "" : "disabled"}>${icon("back")}Əvvəlki komanda</button>
       </div>
-      <p class="openline${locked ? " lock" : ""}">${locked ? "Qiymətləndirmə bağlıdır" : "Səsvermə açıqdır · dəyişiklik edilə bilər"}</p>
-      <details class="oplog" id="oplog" hidden></details>`;
+      <p class="openline${locked ? " lock" : ""}">${locked ? "Qiymətləndirmə bağlıdır" : "Səsvermə açıqdır · dəyişiklik edilə bilər"}</p>`;
     strip.tick();
+    // v11: the send log (outbox) under the form
+    main.insertAdjacentHTML("beforeend", `<details class="oplog" id="oplog" hidden></details>`);
   }
   renderNudge();
   renderTags();

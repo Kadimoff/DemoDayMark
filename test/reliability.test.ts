@@ -113,7 +113,7 @@ describe("idempotent score ops", () => {
     const body = { values: fullValues(crit, 2), note: "bağlı ikən", tags: [], opId: "op-locked-00001" };
     const r = await c.put(`/api/juror/scores/${team}`, j.cookie).send(body);
     expect(r.status).toBe(423);
-    expect(r.body.error).toMatch(/bağlanıb/);
+    expect(r.body.error).toMatch(/bağla/);
     const db = A.ctx.orgs.db;
     const row = db.prepare("SELECT status, http_status, values_json, note FROM score_ops WHERE op_id = ?").get("op-locked-00001") as any;
     expect(row).toMatchObject({ status: "rejected", http_status: 423, note: "bağlı ikən" });
