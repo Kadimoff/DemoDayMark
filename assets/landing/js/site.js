@@ -1,4 +1,6 @@
-/* munsif.im — interactions + interactive stage demo */
+/* munsif.im — interactions + interactive stage demo
+   Performance rules: nothing heavy before the first paint; heavy effects start on idle (html.fx);
+   every timer/loop runs only while its section is on screen; scroll work is passive + one rAF per frame. */
 (() => {
   'use strict';
   const $ = (s, r = document) => r.querySelector(s);
@@ -6,126 +8,145 @@
   const html = document.documentElement;
   const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   const finePointer = matchMedia('(hover:hover) and (pointer:fine)').matches;
+  const small = () => innerWidth <= 700;
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const pad = (n) => String(n).padStart(2, '0');
+  const idle = (fn, timeout = 1500) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout }) : setTimeout(fn, 200));
+
+  /* ---------- visibility helper: run callbacks only while an element is near the viewport ---------- */
+  const watchers = new Map();
+  const vio = new IntersectionObserver((ents) => ents.forEach((e) => { const w = watchers.get(e.target); if (w) { w.on = e.isIntersecting; w.cb && w.cb(w.on); } }), { rootMargin: '120px 0px' });
+  function watch(el, cb) { if (!el) return { on: false }; const w = { on: false, cb }; watchers.set(el, w); vio.observe(el); return w; }
+  // one shared 1-second clock for every ticking widget; each widget declares the section it lives in
+  const tickers = [];
+  setInterval(() => { if (document.hidden) return; for (const t of tickers) if (t.w.on) t.fn(); }, 1000);
+  const every1s = (el, fn) => tickers.push({ w: watch(el), fn });
+
+  /* ---------- heavy effects after the first paint ---------- */
+  const startFx = () => { if (!reduce()) html.classList.add('fx'); };
+  if (document.readyState === 'complete') idle(startFx); else addEventListener('load', () => idle(startFx), { once: true });
 
   /* ---------- nav ---------- */
   const nav = $('#nav');
-  const onScrollNav = () => nav.classList.toggle('scrolled', scrollY > 40);
+  let navOn = null;
+  const onScrollNav = () => { const s = scrollY > 40; if (s !== navOn) { navOn = s; nav.classList.toggle('scrolled', s); } };
 
-  /* ---------- reveal ---------- */
+  /* ---------- reveal (once) ---------- */
   const groups = new Map();
   $$('.rv').forEach((el) => {
     const p = el.parentElement;
     const i = groups.get(p) || 0;
     groups.set(p, i + 1);
-    el.style.setProperty('--d', Math.min(i * 0.08, 0.5) + 's');
+    el.style.setProperty('--d', Math.min(i * 0.07, 0.42) + 's');
   });
   const io = new IntersectionObserver((ents) => {
     ents.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
   }, { rootMargin: '0px 0px -8% 0px', threshold: 0.12 });
   $$('.rv, .cta-final').forEach((el) => io.observe(el));
-  // hero reveals immediately
-  requestAnimationFrame(() => $$('.hero .rv').forEach((el) => el.classList.add('in')));
 
-  /* ---------- hero overlays mapped onto the photo ---------- */
+  /* ---------- hero: overlays are placed by CSS (container units); JS only as a fallback ---------- */
   const media = $('#heroMedia');
-  const heroImg = $('.hero-img');
-  const IW = 3168, IH = 1344;
-  function layoutHero() {
-    const cw = media.clientWidth, ch = media.clientHeight;
-    const s = Math.max(cw / IW, ch / IH);
-    const iw = IW * s, ih = IH * s;
-    const pos = getComputedStyle(heroImg).objectPosition.split(' ');
-    const px = parseFloat(pos[0]) / 100 || 0, py = parseFloat(pos[1] || '30') / 100;
-    const ox = (cw - iw) * (isNaN(px) ? 0.5 : px), oy = (ch - ih) * py;
-    $$('.hero-anchor', media).forEach((a) => {
-      const x = +a.dataset.x, y = +a.dataset.y, r = +a.dataset.r;
-      a.style.left = ox + x * s + 'px';
-      a.style.top = oy + y * s + 'px';
-      a.style.setProperty('--fs', (r * s * 0.235).toFixed(1) + 'px');
-      a.style.setProperty('--lw', (r * s * 1.7).toFixed(1) + 'px');
-    });
+  if (!(window.CSS && CSS.supports('width', '1cqw'))) {
+    const heroImg = $('.hero-img'), IW = 3168, IH = 1344;
+    const layoutHero = () => {
+      const cw = media.clientWidth, ch = media.clientHeight, s = Math.max(cw / IW, ch / IH);
+      const px = innerWidth > 1080 ? 0.04 : 0.5;
+      const ox = (cw - IW * s) * px, oy = (ch - IH * s) * 0.3;
+      $$('.hero-anchor', media).forEach((a) => {
+        const r = +a.dataset.r;
+        a.style.left = ox + +a.dataset.x * s + 'px';
+        a.style.top = oy + +a.dataset.y * s + 'px';
+        a.style.setProperty('--fs', (r * s * 0.235).toFixed(1) + 'px');
+        a.style.setProperty('--lw', (r * s * 1.7).toFixed(1) + 'px');
+      });
+    };
+    requestAnimationFrame(layoutHero);
+    addEventListener('resize', layoutHero);
+    if (heroImg && !heroImg.complete) heroImg.addEventListener('load', layoutHero);
   }
   const heroTime = $('#heroTime');
   let heroLeft = 4 * 60 + 59;
-  setInterval(() => {
+  every1s($('#top'), () => {
     heroLeft = heroLeft <= 0 ? 299 : heroLeft - 1;
     heroTime.textContent = `00:${pad(Math.floor(heroLeft / 60))}:${pad(heroLeft % 60)}`;
-  }, 1000);
+  });
 
-  /* ---------- scroll-driven bits ---------- */
-  const f5Media = $('#f5Media'), f5 = $('#final5');
+  /* ---------- ticker runs only on screen ---------- */
+  const ticker = $('.ticker');
+  watch(ticker, (on) => ticker.classList.toggle('off', !on));
+
+  /* ---------- scroll-driven bits ----------
+     Where the browser supports scroll timelines, the hero parallax and the steps line run in CSS (compositor);
+     otherwise: one passive listener, one rAF per frame, no layout reads (geometry is cached). */
   const stepsFill = $('#stepsFill'), stepsSec = $('#how');
-  let ticking = false;
+  const cssScroll = !!(window.CSS && CSS.supports('animation-timeline: scroll()'));
+  if (cssScroll) html.classList.add('sda');
+  // hero parallax: desktop with a fine pointer only (touch scrolling + main-thread parallax = jitter)
+  const parallax = !cssScroll && finePointer && !small();
+  let geo = null;
+  const measure = () => { const r = stepsSec.getBoundingClientRect(); geo = { top: r.top + scrollY, h: r.height }; };
+  const stepsW = watch(stepsSec, (on) => { if (on && !cssScroll) measure(); });
+  addEventListener('resize', () => { geo = null; }, { passive: true });
+  let ticking = false, lastP = -1;
   function onScroll() {
     if (ticking) return;
     ticking = true;
     requestAnimationFrame(() => {
       ticking = false;
       onScrollNav();
-      if (reduce()) return;
+      if (cssScroll || reduce()) return;
       const y = scrollY, vh = innerHeight;
-      if (y < vh * 1.2) media.style.translate = `0 ${(y * 0.28).toFixed(1)}px`;
-      const r = f5.getBoundingClientRect();
-      if (r.bottom > 0 && r.top < vh) {
-        const p = (vh - r.top) / (vh + r.height); // 0..1
-        f5Media.style.translate = `0 ${((p - 0.5) * -120).toFixed(1)}px`;
-        f5Media.style.scale = (1.12 - p * 0.1).toFixed(3);
+      if (parallax && y < vh * 1.2) media.style.translate = `0 ${(y * 0.28).toFixed(1)}px`;
+      if (stepsW.on) {
+        if (!geo) measure();
+        const sp = +clamp((vh * 0.85 - (geo.top - y)) / (geo.h * 0.9), 0, 1).toFixed(3);
+        if (sp !== lastP) { lastP = sp; stepsFill.style.setProperty('--p', sp); }
       }
-      const sr = stepsSec.getBoundingClientRect();
-      const sp = clamp((vh * 0.85 - sr.top) / (sr.height * 0.9), 0, 1);
-      stepsFill.style.setProperty('--p', sp.toFixed(3));
     });
   }
   addEventListener('scroll', onScroll, { passive: true });
-  addEventListener('resize', () => { layoutHero(); onScroll(); });
-  layoutHero(); onScroll();
-  if (heroImg && !heroImg.complete) heroImg.addEventListener('load', layoutHero);
+  onScrollNav();
 
-  /* ---------- final-5 countdown rail ---------- */
-  const f5spans = $$('.f5-count span');
-  let f5i = 0;
-  setInterval(() => {
-    f5spans.forEach((s, i) => s.classList.toggle('on', i === f5i));
-    f5i = (f5i + 1) % (f5spans.length + 1);
-  }, 1000);
-
-  /* ---------- pointer: magnetic, cursor glow, tile spotlight ---------- */
-  if (finePointer) {
+  /* ---------- pointer: magnetic buttons, cursor glow, tile spotlight (desktop only, after idle) ---------- */
+  if (finePointer) idle(() => {
     document.body.classList.add('has-cursor');
     const glow = $('.cursor-glow');
-    let gx = innerWidth / 2, gy = innerHeight / 2, tx = gx, ty = gy;
-    addEventListener('pointermove', (e) => { tx = e.clientX; ty = e.clientY; }, { passive: true });
-    (function loop() {
-      gx += (tx - gx) * 0.14; gy += (ty - gy) * 0.14;
-      glow.style.transform = `translate(${gx.toFixed(1)}px,${gy.toFixed(1)}px)`;
-      requestAnimationFrame(loop);
-    })();
+    let gx = innerWidth / 2, gy = innerHeight / 2, tx = gx, ty = gy, glowRaf = 0;
+    const glowLoop = () => {
+      gx += (tx - gx) * 0.16; gy += (ty - gy) * 0.16;
+      glow.style.transform = `translate3d(${gx.toFixed(1)}px,${gy.toFixed(1)}px,0)`;
+      glowRaf = Math.abs(tx - gx) + Math.abs(ty - gy) > 0.6 ? requestAnimationFrame(glowLoop) : 0;
+    };
+    addEventListener('pointermove', (e) => { tx = e.clientX; ty = e.clientY; if (!glowRaf && html.classList.contains('fx')) glowRaf = requestAnimationFrame(glowLoop); }, { passive: true });
     $$('.magnetic').forEach((b) => {
+      let r = null;
+      b.addEventListener('pointerenter', () => { r = b.getBoundingClientRect(); });
       b.addEventListener('pointermove', (e) => {
-        if (reduce()) return;
-        const r = b.getBoundingClientRect();
+        if (reduce() || !r) return;
         b.style.setProperty('--mx', ((e.clientX - r.left - r.width / 2) * 0.22).toFixed(1) + 'px');
         b.style.setProperty('--my', ((e.clientY - r.top - r.height / 2) * 0.3).toFixed(1) + 'px');
-      });
-      b.addEventListener('pointerleave', () => { b.style.setProperty('--mx', '0px'); b.style.setProperty('--my', '0px'); });
+      }, { passive: true });
+      b.addEventListener('pointerleave', () => { r = null; b.style.setProperty('--mx', '0px'); b.style.setProperty('--my', '0px'); });
     });
-    $$('.tile').forEach((t) => t.addEventListener('pointermove', (e) => {
-      const r = t.getBoundingClientRect();
-      t.style.setProperty('--x', e.clientX - r.left + 'px');
-      t.style.setProperty('--y', e.clientY - r.top + 'px');
-    }));
-  }
+    $$('.tile').forEach((t) => {
+      let raf = 0, ex = 0, ey = 0;
+      t.addEventListener('pointermove', (e) => {
+        ex = e.clientX; ey = e.clientY;
+        if (raf) return;
+        raf = requestAnimationFrame(() => { raf = 0; const r = t.getBoundingClientRect(); t.style.setProperty('--x', ex - r.left + 'px'); t.style.setProperty('--y', ey - r.top + 'px'); });
+      }, { passive: true });
+    });
+  });
 
-  /* ---------- bento live bits ---------- */
+  /* ---------- bento live bits (only while the features section is on screen) ---------- */
+  const feat = $('#features');
   const miniArc = $('#miniArc'), miniTime = $('#miniTime'), phTime = $('#phTime');
   let mini = 120;
   const dl = $('#dl');
   let dlLeft = 2 * 3600 + 14 * 60 + 9;
   const scrT = $$('.scr .st');
   let sync = 42;
-  setInterval(() => {
+  every1s(feat, () => {
     mini = mini <= 0 ? 120 : mini - 1;
     const t = `${pad(Math.floor(mini / 60))}:${pad(mini % 60)}`;
     miniTime.textContent = t; phTime.textContent = t;
@@ -134,60 +155,69 @@
     dl.textContent = `${pad(Math.floor(dlLeft / 3600))}:${pad(Math.floor((dlLeft % 3600) / 60))}:${pad(dlLeft % 60)}`;
     sync = sync <= 0 ? 60 : sync - 1;
     scrT.forEach((s) => (s.textContent = `00:${pad(sync)}`));
-  }, 1000);
-  // leaderboard: gentle live re-ranking (FLIP)
+  });
+  // leaderboard: gentle live re-ranking (FLIP), only when visible
   const lb = $('#lb');
+  const lbW = watch(lb);
   setInterval(() => {
-    if (document.hidden || reduce()) return;
+    if (document.hidden || reduce() || !lbW.on) return;
     const items = $$('li', lb);
-    const first = new Map(items.map((li) => [li, li.getBoundingClientRect().top]));
+    const first = new Map(items.map((li) => [li, li.offsetTop]));
     const pick = items[Math.floor(Math.random() * items.length)];
-    let s = clamp(+pick.dataset.s + (Math.random() < 0.6 ? 0.2 : -0.1), 6.5, 9.6);
+    const s = clamp(+pick.dataset.s + (Math.random() < 0.6 ? 0.2 : -0.1), 6.5, 9.6);
     pick.dataset.s = s.toFixed(1);
     pick.querySelector('span').textContent = s.toFixed(1);
     pick.querySelector('em').style.setProperty('--w', (s / 10).toFixed(2));
     items.sort((a, b) => b.dataset.s - a.dataset.s).forEach((li, i) => { li.querySelector('b').textContent = i + 1; lb.appendChild(li); });
     items.forEach((li) => {
-      const dy = first.get(li) - li.getBoundingClientRect().top;
+      const dy = first.get(li) - li.offsetTop;
       if (!dy) return;
       li.style.transition = 'none'; li.style.transform = `translateY(${dy}px)`;
-      requestAnimationFrame(() => { li.style.transition = ''; li.style.transform = ''; });
+      requestAnimationFrame(() => requestAnimationFrame(() => { li.style.transition = ''; li.style.transform = ''; }));
     });
   }, 3200);
 
   /* =========================================================
-     INTERACTIVE STAGE DEMO — canvas, 60fps
+     INTERACTIVE STAGE DEMO — canvas; draws only while visible (or running)
      ========================================================= */
   const stage = $('#stage'), cv = $('#demoCanvas'), ctx = cv.getContext('2d');
   const btn = $('#demoStart'), btnLbl = $('.lbl', btn), sndBtn = $('#demoSound'), live = $('#demoLive');
   const T = { up: html.dataset.timesUp, next: html.dataset.next, on: html.dataset.soundOn, off: html.dataset.soundOff, start: html.dataset.start, reset: html.dataset.reset };
   const DUR = 10;
+  // lite mode: phones and low-core devices get fewer particles and a lower canvas resolution
+  const lite = small() || (navigator.hardwareConcurrency || 8) <= 4;
+  const PMAX = lite ? 900 : 2000, PK = lite ? 0.5 : 1;
   let W = 0, H = 0, DPR = 1;
-  let state = 'idle', t0 = 0, tBoom = 0, lastSec = 11, visible = false, raf = 0;
+  let state = 'idle', t0 = 0, tBoom = 0, lastSec = 11, visible = false, raf = 0, lastDraw = 0;
   let parts = [], waves = [], flash = 0, pulse = 0, rot = 0, lastNow = 0;
-  let bub = { x: 0, y: 0, r: 0 };
+  const bub = { x: 0, y: 0, r: 0, k: 0 };
   const COLORS = ['#7C5CFF', '#D46BC4', '#FFB020', '#FFE2A8'];
 
-  // pre-rendered glow sprites
+  // pre-rendered glow sprites (replace costly shadowBlur)
   const sprites = COLORS.map((c) => {
     const s = document.createElement('canvas'); s.width = s.height = 64;
     const g = s.getContext('2d'), rg = g.createRadialGradient(32, 32, 0, 32, 32, 32);
     rg.addColorStop(0, '#fff'); rg.addColorStop(0.18, c); rg.addColorStop(0.5, c + '55'); rg.addColorStop(1, c + '00');
     g.fillStyle = rg; g.fillRect(0, 0, 64, 64); return s;
   });
+  const halo = (() => {
+    const s = document.createElement('canvas'); s.width = s.height = 128;
+    const g = s.getContext('2d'), rg = g.createRadialGradient(64, 64, 20, 64, 64, 64);
+    rg.addColorStop(0, 'rgba(124,92,255,.55)'); rg.addColorStop(0.6, 'rgba(124,92,255,.18)'); rg.addColorStop(1, 'rgba(124,92,255,0)');
+    g.fillStyle = rg; g.fillRect(0, 0, 128, 128); return s;
+  })();
 
   function resize() {
     const r = stage.getBoundingClientRect();
-    DPR = Math.min(devicePixelRatio || 1, 2);
+    DPR = Math.min(devicePixelRatio || 1, lite ? 1.5 : 2);
     W = Math.round(r.width * DPR); H = Math.round(r.height * DPR);
-    cv.width = W; cv.height = H;
-    if (state === 'idle') draw(performance.now());
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    if (state === 'idle' && visible) draw(performance.now());
   }
   new ResizeObserver(resize).observe(stage);
 
   const ease = {
     outCubic: (p) => 1 - Math.pow(1 - p, 3),
-    inOut: (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2),
     outBack: (p) => { const c1 = 1.5, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); },
   };
 
@@ -221,6 +251,7 @@
 
   // ---- particles
   function spawnRing(n, level) {
+    n = Math.round(n * PK);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = (0.25 + Math.random() * 0.9) * bub.r * (0.6 + level * 0.18);
@@ -229,6 +260,7 @@
     }
   }
   function spawnBurst(n) {
+    n = Math.round(n * PK);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, sp = (0.3 + Math.pow(Math.random(), 0.6) * 2.4) * H * 0.55;
       parts.push({ x: W / 2, y: H / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.9 + Math.random() * 1.6, s: (3 + Math.random() * 9) * DPR, c: (Math.random() * 4) | 0, drag: 1.6 });
@@ -243,7 +275,7 @@
 
   async function start() {
     if (state === 'run') return;
-    try { await document.fonts.load('800 100px Unbounded', '0123456789:' + T.up); } catch (e) {}
+    try { await document.fonts.load('800 100px Unbounded', '0123456789:' + T.up); } catch (e) { /* fallback font */ }
     if (ac && ac.state === 'suspended') ac.resume();
     state = 'run'; t0 = performance.now(); lastSec = 11; parts = []; waves = []; flash = 0;
     stage.classList.add('running'); stage.classList.remove('final', 'shake');
@@ -259,23 +291,27 @@
 
   function kick() { if (!raf) { lastNow = performance.now(); raf = requestAnimationFrame(frame); } }
   new IntersectionObserver((e) => { visible = e[0].isIntersecting; if (visible) kick(); }, { threshold: 0.05 }).observe(stage);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && visible) kick(); });
 
   function frame(now) {
     raf = 0;
+    if (document.hidden) return;
     const dt = Math.min(0.05, (now - lastNow) / 1000); lastNow = now;
-    update(now, dt); draw(now);
-    if (visible || state === 'run') raf = requestAnimationFrame(frame);
+    update(now, dt);
+    // the idle bubble only breathes: 30 fps is plenty; the countdown itself renders every frame
+    if (state !== 'idle' || now - lastDraw > 31) { draw(now); lastDraw = now; }
+    if (visible || state === 'run' || state === 'boom') raf = requestAnimationFrame(frame);
   }
 
   function geometry(remaining) {
     const r0 = H * 0.115, m = H * 0.055;
-    const small = { x: W - r0 - m, y: H - r0 - m, r: r0 };
+    const sm = { x: W - r0 - m, y: H - r0 - m, r: r0 };
     const big = { x: W / 2, y: H / 2, r: H * 0.33 };
     let k = 0;
     if (state === 'run') k = clamp((5.15 - remaining) / 0.55, 0, 1);
     if (state === 'boom' || state === 'done') k = 1;
     const e = reduce() ? (k > 0 ? 1 : 0) : ease.outBack(k);
-    return { x: small.x + (big.x - small.x) * Math.min(e, 1), y: small.y + (big.y - small.y) * Math.min(e, 1), r: small.r + (big.r - small.r) * e, k };
+    return { x: sm.x + (big.x - sm.x) * Math.min(e, 1), y: sm.y + (big.y - sm.y) * Math.min(e, 1), r: sm.r + (big.r - sm.r) * e, k };
   }
 
   function update(now, dt) {
@@ -298,7 +334,7 @@
       if (remaining <= 5 && !rm) {
         const L = 6 - Math.max(1, Math.ceil(remaining));
         const rate = 18 * L * L + 40; // per second
-        spawnRing(Math.round(rate * dt + Math.random()), L);
+        spawnRing(rate * dt + Math.random(), L);
       } else if (!rm && Math.random() < dt * 6) spawnRing(1, 0);
       if (remaining <= 0) {
         state = 'boom'; tBoom = now; flash = 1;
@@ -328,7 +364,7 @@
       p.x += p.vx * dt; p.y += p.vy * dt;
     }
     parts = parts.filter((p) => p.life < p.max);
-    if (parts.length > 2200) parts.splice(0, parts.length - 2200);
+    if (parts.length > PMAX) parts.splice(0, parts.length - PMAX);
   }
 
   function arcGrad(x, y, r, warm) {
@@ -356,14 +392,13 @@
       ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
     }
 
-    // shock waves
+    // shock waves + particles
     ctx.globalCompositeOperation = 'lighter';
     for (const w of waves) {
       if (w.delay > 0) continue;
       ctx.beginPath(); ctx.arc(state === 'boom' || state === 'done' ? W / 2 : x, state === 'boom' || state === 'done' ? H / 2 : y, w.r, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(255,190,90,${Math.max(0, w.a) * 0.8})`; ctx.lineWidth = w.w; ctx.stroke();
     }
-    // particles
     for (const p of parts) {
       const a = 1 - p.life / p.max;
       ctx.globalAlpha = a * a;
@@ -371,9 +406,13 @@
       ctx.drawImage(sprites[p.c], p.x - s / 2, p.y - s / 2, s, s);
     }
     ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
 
-    if (state === 'boom' || state === 'done') { drawTimesUp(now); return; }
+    if (state === 'boom' || state === 'done') { ctx.globalCompositeOperation = 'source-over'; drawTimesUp(now); return; }
+
+    // bubble glow (sprite instead of shadowBlur)
+    const hs = r * 3.1;
+    ctx.globalAlpha = 0.85; ctx.drawImage(halo, x - hs / 2, y - hs / 2, hs, hs); ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
 
     // orbit rings (multiply each second in final)
     const L = k > 0.5 ? 6 - Math.max(1, Math.ceil(remaining)) : 0;
@@ -389,24 +428,24 @@
 
     // bubble body
     const body = ctx.createRadialGradient(x - r * 0.3, y - r * 0.4, r * 0.1, x, y, r);
-    body.addColorStop(0, 'rgba(40,34,72,.92)'); body.addColorStop(1, 'rgba(11,11,20,.88)');
-    ctx.shadowColor = 'rgba(124,92,255,.55)'; ctx.shadowBlur = r * 0.5;
+    body.addColorStop(0, 'rgba(40,34,72,.94)'); body.addColorStop(1, 'rgba(11,11,20,.9)');
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = body; ctx.fill();
-    ctx.shadowBlur = 0;
     ctx.lineWidth = Math.max(1, DPR); ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.stroke();
 
-    // track + progress arc
+    // track + progress arc (glow = a wide translucent stroke under the arc)
     const lw = r * (k > 0.5 ? 0.075 : 0.1);
     const ar = r - lw * 1.1;
     ctx.beginPath(); ctx.arc(x, y, ar, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = lw; ctx.stroke();
     const frac = clamp(remaining / DUR, 0, 1);
     const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * frac;
     if (frac > 0.001) {
-      ctx.save();
-      ctx.shadowColor = k > 0.5 ? 'rgba(255,150,40,.9)' : 'rgba(255,176,32,.6)'; ctx.shadowBlur = r * (0.18 + pulse * 0.3);
-      ctx.beginPath(); ctx.arc(x, y, ar, a0, a1); ctx.strokeStyle = arcGrad(x, y, r, k); ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
-      ctx.restore();
-      // leading spark
+      const grad = arcGrad(x, y, r, k);
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.22 + pulse * 0.25;
+      ctx.beginPath(); ctx.arc(x, y, ar, a0, a1); ctx.strokeStyle = grad; ctx.lineWidth = lw * 2.6; ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(x, y, ar, a0, a1); ctx.lineWidth = lw; ctx.stroke();
+      ctx.lineCap = 'butt';
       const sx = x + Math.cos(a1) * ar, sy = y + Math.sin(a1) * ar, ss = lw * 4;
       ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(sprites[3], sx - ss / 2, sy - ss / 2, ss, ss); ctx.globalCompositeOperation = 'source-over';
     }
@@ -431,7 +470,6 @@
       const fs = r * 1.05 * sc;
       ctx.save();
       ctx.globalAlpha = al;
-      // ghost trail
       if (!rm) {
         ctx.globalCompositeOperation = 'lighter';
         ctx.font = `800 ${Math.round(fs * 1.18)}px Unbounded, sans-serif`;
@@ -442,13 +480,12 @@
       ctx.font = `800 ${Math.round(fs)}px Unbounded, sans-serif`;
       const g = ctx.createLinearGradient(x, y - fs / 2, x, y + fs / 2);
       g.addColorStop(0, '#FFF3D6'); g.addColorStop(0.55, '#FFB020'); g.addColorStop(1, '#FF6A3D');
-      ctx.shadowColor = 'rgba(255,140,40,.9)'; ctx.shadowBlur = r * 0.35;
+      ctx.shadowColor = 'rgba(255,140,40,.9)'; ctx.shadowBlur = lite ? 0 : r * 0.3;
       ctx.fillStyle = g; ctx.fillText(String(sec), x, y + fs * 0.04);
       ctx.restore();
     }
 
     if (state === 'idle') {
-      // breathing halo
       const br = 0.5 + 0.5 * Math.sin(now / 700);
       ctx.beginPath(); ctx.arc(x, y, r * (1.08 + br * 0.05), 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(124,92,255,${0.15 + br * 0.2})`; ctx.lineWidth = 2 * DPR; ctx.stroke();
@@ -469,7 +506,7 @@
     if ('letterSpacing' in ctx) ctx.letterSpacing = `${Math.round(fs * (0.02 + (1 - e) * 0.2))}px`;
     const g = ctx.createLinearGradient(-fs * 3, 0, fs * 3, 0);
     g.addColorStop(0, '#9A7BFF'); g.addColorStop(0.5, '#FFD27A'); g.addColorStop(1, '#FFB020');
-    ctx.shadowColor = 'rgba(255,150,40,.8)'; ctx.shadowBlur = fs * 0.5;
+    ctx.shadowColor = 'rgba(255,150,40,.8)'; ctx.shadowBlur = lite ? fs * 0.2 : fs * 0.5;
     ctx.fillStyle = g; ctx.fillText(T.up, 0, 0);
     ctx.restore();
     if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
@@ -482,5 +519,4 @@
       ctx.globalAlpha = 1;
     }
   }
-  resize(); kick();
 })();
