@@ -40,7 +40,7 @@ export function sysCardHtml(s: SystemStatus | null, err: string | null): string 
       ${cell("Baza ölçüsü", `${mb(s.dbBytes)}${s.walBytes ? ` + WAL ${mb(s.walBytes)}` : ""}`)}
       ${cell("Versiya", `${esc(s.version)} · ${esc(s.commit)} · v${s.schema}`)}
     </div>
-    ${s.orgs?.length ? `<table class="systab"><thead><tr><th>Təşkilat</th><th>Ekran</th><th>Münsif</th><th>Bal (saxlanıldı / rədd / təkrar)</th></tr></thead>
+    ${s.orgs?.length ? `<table class="systab"><thead><tr><th>Təşkilat</th><th>Ekran</th><th>Münsif</th><th>Bal: saxlanıldı / rədd / təkrar</th></tr></thead>
       <tbody>${s.orgs.map(o => `<tr><td>${esc(o.name)}</td><td>${o.screens}</td><td>${o.jurors}</td><td class="mono">${o.ops.applied} / ${o.ops.rejected} / ${o.ops.retries}</td></tr>`).join("")}</tbody></table>` : ""}
   </section>`;
 }
