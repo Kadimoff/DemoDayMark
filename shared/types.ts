@@ -72,6 +72,8 @@ export interface StageTeam {
 /** auto = the team's presentation when it has one, otherwise the big timer; timer = always the big timer; site = the team's website. */
 export type StageMode = "auto" | "timer" | "site";
 export const STAGE_MODES: readonly StageMode[] = ["auto", "timer", "site"];
+/** v3: the projector shows the team on stage, or the event's own presentation (opening, break, sponsors, rules). */
+export type StageScene = "team" | "event";
 
 /**
  * Presentation stage (munsif): what the projector shows besides the timer. Public, like the rest of the
@@ -92,6 +94,23 @@ export interface StageShow {
   members: string[];
   /** The team after the one on stage (for the intro and the idle screen). */
   next: { name: string; project: string } | null;
+  /** v3: team on stage, or the event's own presentation. */
+  scene: StageScene;
+  /** v3: the event presentation on stage (scene "event"); its URL is public only while it is on stage. */
+  eventPres: { fileId: number; url: string; pages: number | null; title: string } | null;
+  /** v3: slide of the event presentation. */
+  eventSlide: number;
+  /** v3: timer bubble over the event presentation. */
+  bubble: boolean;
+  /** v3: projector effects set by the coordinator (last-5-seconds takeover, sounds). */
+  fx: { last5: boolean; sound: boolean };
+  /** v3: the team on stage may turn its own slides from its phone. */
+  teamSlides: boolean;
+}
+
+/** v3: one of the event's own presentations (coordinator only; the stage gets a public URL while it is shown). */
+export interface EventFile {
+  id: number; title: string; name: string; ext: string; size: number; pages: number | null; conv: string | null; viewable: boolean; createdAt: number; url: string;
 }
 
 /** What every client (even anonymous projector screens) may see. */
@@ -157,7 +176,11 @@ export interface TeamStatePayload {
   team: { id: number; name: string; project: string; active: boolean };
   materials: TeamMaterials;
   history: TeamFile[];
-  event: { displayName: string; date: string; deadline: number | null; uploadsOpen: boolean; canRename: boolean; pitchSec: number; qaSec: number };
+  event: { displayName: string; date: string; deadline: number | null; uploadsOpen: boolean; canRename: boolean; pitchSec: number; qaSec: number;
+    /** v3: this team's own deadline (an extension the coordinator gave it), when later than the event's. */
+    extendedUntil: number | null };
+  /** v3: the team is on stage with its presentation and may turn its slides now. */
+  slideControl: { allowed: boolean; reason: string | null; slide: number; pages: number | null };
   queue: TeamQueue;
   notices: Notice[];
   stage: StagePayload;

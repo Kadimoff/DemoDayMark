@@ -36,6 +36,8 @@ const PAGES: Record<string, { file: string; role?: "admin" | "juror" }> = {
   "/admin/pult": { file: "pult.html", role: "admin" },
   // orgs: platform owner only (coordinators are sent back to /admin)
   "/admin/orgs": { file: "orgs.html", role: "admin" },
+  // v3: the platform owner's own panel (organisations, live state, projector preview, intervention)
+  "/root": { file: "root.html", role: "admin" },
   "/timer": { file: "timer.html" },
   // munsif: the presentation stage is the projector timer page (same server timer); /stage/demo needs no login.
   "/stage": { file: "timer.html" },
@@ -45,6 +47,9 @@ const PAGES: Record<string, { file: string; role?: "admin" | "juror" }> = {
   // munsif: team panel (team session or the "Komanda girişi" form) — guarded by the team API, not by role.
   "/team": { file: "team.html" },
 };
+
+/** v3: pages the platform panel shows in its projector preview (same origin only). */
+const FRAMEABLE = new Set(["timer.html", "reveal.html"]);
 
 const PDFJS_DIR = (() => {
   try { return path.dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json")); } catch { return ""; }
@@ -63,9 +68,10 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   const converter = new Converter(cfg.soffice, cfg.uploadsDir, path.join(cfg.dataDir, "lo-profile"), cfg.sofficeTimeoutMs);
   const orgs = new Orgs(db, cfg, { rt, converter });
   rt.orgs = orgs;
+  await ensureBaseline(db, cfg, m => app.log.info(m));
+  orgs.invalidate(ROOT_ORG_ID);
   // Session lookups and sign-in are global; org 1's repo serves them (see Repo).
   const { repo, trepo } = orgs.root;
-  await ensureBaseline(repo, cfg, m => app.log.info(m));
   // orgs: one-time, idempotent coordinator account from BOOTSTRAP_* env (never overwrites an existing user)
   bootstrapOrg(orgs, cfg, m => (opts.logger ? console.warn(m) : undefined));
   repo.purgeSessions(Date.now() - cfg.sessionTtlMs);
@@ -109,7 +115,8 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   app.addHook("onSend", async (_req, reply) => {
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Referrer-Policy", "same-origin");
-    reply.header("X-Frame-Options", "DENY");
+    // v3: projector pages may be framed by our own pages (the platform panel's projector preview); everything else: never.
+    if (!reply.getHeader("X-Frame-Options")) reply.header("X-Frame-Options", "DENY");
   });
 
   // Touches the database so the container healthcheck fails if SQLite is unreadable.
@@ -130,7 +137,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     const unsign = (v: string) => req.unsignCookie(v);
     const admin = resolveUser(repo, cfg, req.cookies, unsign, "admin");
     const juror = resolveUser(repo, cfg, req.cookies, unsign, "juror");
-    const panel = admin ? "/admin" : juror ? "/juror" : req.team ? "/team" : null;
+    const panel = admin ? (admin.isRoot && admin.orgId === admin.homeOrgId ? "/root" : "/admin") : juror ? "/juror" : req.team ? "/team" : null;
     // orgs: which organisation the admin session acts in — projector pages show their controls only for their own one.
     const adminOrg = admin ? orgs.byId(admin.orgId)?.slug ?? null : null;
     return { admin: !!admin, juror: !!juror, team: !!req.team, panel, adminOrg, root: !!admin?.isRoot };
@@ -189,7 +196,8 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
       if (page.role && req.user?.role !== page.role) {
         return reply.redirect(req.user ? (req.user.role === "admin" ? "/admin" : "/juror") : "/login");
       }
-      if (url === "/admin/orgs" && !req.user?.isRoot) return reply.redirect("/admin");
+      if ((url === "/admin/orgs" || url === "/root") && !req.user?.isRoot) return reply.redirect("/admin");
+      if (url === "/admin/orgs") return reply.redirect("/root");
       // A coordinator opening a bare projector link gets their own organisation's screen.
       const q = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
       if (ORG_PAGES.has(url) && url !== "/team" && req.user?.role === "admin" && req.user.orgId !== ROOT_ORG_ID && !/[?&]org=/.test(q)) {
@@ -198,6 +206,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
       }
       if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
       reply.header("Cache-Control", "no-cache");
+      if (FRAMEABLE.has(page.file)) reply.header("X-Frame-Options", "SAMEORIGIN");
       return reply.sendFile(page.file);
     });
   }
@@ -207,6 +216,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     if (!ORG_PAGES.has(url) || !o || !o.active) return reply.code(404).type("text/plain; charset=utf-8").send("404 · Səhifə tapılmadı");
     if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
     reply.header("Cache-Control", "no-cache");
+    if (FRAMEABLE.has(PAGES[url].file)) reply.header("X-Frame-Options", "SAMEORIGIN");
     return reply.sendFile(PAGES[url].file);
   });
   // Team sign-in link: public page; the code itself is checked by /api/auth/team/:code.

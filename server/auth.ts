@@ -47,8 +47,14 @@ export function userFromToken(repo: Repo, cfg: Config, token: string | null | un
   if (!u || !u.active) return null;
   // A deactivated organisation signs its coordinators and jurors out (the platform owner is never affected).
   if (!u.is_root && !orgActive(repo, u.org_id)) return null;
+  // v3 events: a juror belongs to one event; once it is archived the juror's sessions no longer work.
+  if (u.role === "juror" && u.event_id !== activeEventOf(repo, u.org_id)) return null;
   return toAuthUser(u, sid);
 }
+
+/** v3 events: the organisation's active event id (0 = none). */
+export const activeEventOf = (r: { db: DB }, orgId: number) =>
+  (r.db.prepare("SELECT id FROM events WHERE org_id = ? AND status = 'active'").get(orgId) as { id: number } | undefined)?.id ?? 0;
 
 export const orgActive = (r: { db: DB }, orgId: number) =>
   !!(r.db.prepare("SELECT active FROM orgs WHERE id = ?").get(orgId) as { active: number } | undefined)?.active;

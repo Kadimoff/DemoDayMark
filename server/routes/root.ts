@@ -6,6 +6,9 @@ import { hashPassword } from "../baseline.js";
 import { idParam, parseBody, type Ctx } from "../context.js";
 import { orgOut, RESERVED_SLUGS, ROOT_ORG_ID, SLUG_RE } from "../orgs.js";
 import { PASSWORD_MIN } from "./auth.js";
+import { adminResults } from "../views.js";
+import { listEvents } from "../events.js";
+import { sendHistory } from "./admin.js";
 
 const slug = z.string().trim().toLowerCase()
   .refine(v => SLUG_RE.test(v), "Qısa ad (slug) yalnız kiçik latın hərfləri, rəqəmlər və tire ola bilər (2–32 simvol).")
@@ -50,6 +53,40 @@ export function rootRoutes(app: FastifyInstance, ctx: Ctx) {
     r.addHook("preHandler", requireRoot);
 
     r.get("/api/root/orgs", async () => orgs.list().map(o => view(o.id)));
+
+    // v3: the platform panel (/root) — every organisation with its live state (stage team, timer, counts). Public stage
+    // data plus counts only: no scores, names of jurors or files leave an organisation here.
+    r.get("/api/root/overview", async () => orgs.list().map(o => {
+      const sc = orgs.scope(o.id);
+      const st = orgs.stats(o.id);
+      const stage = sc.repo.stage();
+      const ids = new Set(sc.repo.jurors().filter(j => j.active).map(j => j.id));
+      return {
+        ...view(o.id), events: st.events, eventId: sc.eventId, stage,
+        jurorsOnline: [...ids].filter(id => rt.isOnline(id)).length,
+        progress: (() => { const r0 = adminResults(sc.repo, cfg).results; return { done: r0.done, need: r0.need }; })(),
+      };
+    }));
+    // "Proyektoruna bax": the organisation's stage as its projector sees it (read-only).
+    r.get("/api/root/orgs/:id/stage", async (req, reply) => {
+      const p = idParam.safeParse(req.params); if (!p.success) return reply.code(400).send({ error: "Yanlış identifikator." });
+      if (!orgs.byId(p.data.id)) return reply.code(404).send({ error: "Təşkilat tapılmadı." });
+      return orgs.scope(p.data.id).repo.stage();
+    });
+    // Score history / events of any organisation (root only).
+    r.get("/api/root/orgs/:id/events", async (req, reply) => {
+      const p = idParam.safeParse(req.params); if (!p.success) return reply.code(400).send({ error: "Yanlış identifikator." });
+      if (!orgs.byId(p.data.id)) return reply.code(404).send({ error: "Təşkilat tapılmadı." });
+      return listEvents(orgs, p.data.id, cfg);
+    });
+    r.get<{ Querystring: { event?: string } }>("/api/root/orgs/:id/history.xlsx", async (req, reply) => {
+      const p = idParam.safeParse(req.params); if (!p.success) return reply.code(400).send({ error: "Yanlış identifikator." });
+      if (!orgs.byId(p.data.id)) return reply.code(404).send({ error: "Təşkilat tapılmadı." });
+      const ev = req.query.event && /^\d+$/.test(req.query.event) ? Number(req.query.event) : orgs.activeEventId(p.data.id);
+      const repo = orgs.eventRepo(p.data.id, ev);
+      if (!repo) return reply.code(404).send({ error: "Tədbir tapılmadı." });
+      return sendHistory(reply, repo);
+    });
 
     r.post("/api/root/orgs", async (req, reply) => {
       const b = parseBody(createBody, req.body, reply); if (!b) return;
@@ -121,6 +158,7 @@ export function rootRoutes(app: FastifyInstance, ctx: Ctx) {
       const b = parseBody(impersonateBody, req.body, reply); if (!b) return;
       if (b.orgId == null || b.orgId === req.user!.homeOrgId) {
         reply.clearCookie(ORG_COOKIE, { path: "/" });
+        if (b.orgId != null) orgs.scope(b.orgId).repo.audit(req.user!.id, "org.impersonate", { by: req.user!.username, own: true });
         return { ok: true, redirect: "/admin" };
       }
       const o = orgs.byId(b.orgId);

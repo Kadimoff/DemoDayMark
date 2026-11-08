@@ -239,7 +239,74 @@ const MIGRATIONS: Array<string | ((db: DB) => void)> = [
   // `event` (CHECK id = 1 → one row per org) and `criteria` (key unique per org) — which are rebuilt here by copying
   // every row inside this transaction; the copy is compared with the original before the old table is dropped.
   db => migrateOrgs(db),
+  // v10 (events): an organisation can run several events. Additive only: a new `events` table (one active event per
+  // organisation; the existing event of every organisation becomes its active event, with the same id as its `event`
+  // row), an `event_id` column on every per-event table (filled with that active event), the event's own presentations
+  // (`event_files`) and the new stage / timer settings on `event` (all with defaults). Nothing is copied or dropped.
+  db => migrateEvents(db),
 ];
+
+/** Tables whose rows belong to one event of an organisation (v10). */
+export const EVENT_TABLES = ["users", "teams", "criteria", "scores", "score_history", "juror_invites", "team_links", "team_sessions", "team_files", "notifications"] as const;
+
+function migrateEvents(db: DB) {
+  db.exec(`
+  CREATE TABLE events (
+    id            INTEGER PRIMARY KEY,
+    org_id        INTEGER NOT NULL REFERENCES orgs(id),
+    name          TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+    created_at    INTEGER NOT NULL,
+    archived_at   INTEGER,
+    settings_json TEXT,                        -- archived: the event row (settings, reveal) as it was when archived
+    stats_json    TEXT                         -- archived: counts and the ranking at that moment (for the list)
+  );
+  CREATE UNIQUE INDEX events_one_active ON events(org_id) WHERE status = 'active';
+  CREATE INDEX events_org ON events(org_id, id);
+  CREATE TABLE event_files (
+    id          INTEGER PRIMARY KEY,
+    org_id      INTEGER NOT NULL REFERENCES orgs(id),
+    event_id    INTEGER NOT NULL REFERENCES events(id),
+    title       TEXT NOT NULL DEFAULT '',
+    stored      TEXT NOT NULL,
+    pdf_stored  TEXT,
+    orig_name   TEXT NOT NULL,
+    ext         TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    pages       INTEGER,
+    conv        TEXT,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    deleted_at  INTEGER,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX event_files_event ON event_files(org_id, event_id, deleted_at, order_index);
+  ALTER TABLE event ADD COLUMN stage_scene TEXT NOT NULL DEFAULT 'team';        -- team | event (the event's own presentation)
+  ALTER TABLE event ADD COLUMN stage_event_file INTEGER;
+  ALTER TABLE event ADD COLUMN event_slide INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE event ADD COLUMN event_bubble INTEGER NOT NULL DEFAULT 0;         -- timer bubble over the event presentation
+  ALTER TABLE event ADD COLUMN team_slide_control INTEGER NOT NULL DEFAULT 1;   -- the team on stage may turn its own slides
+  ALTER TABLE event ADD COLUMN last5_fx INTEGER NOT NULL DEFAULT 1;             -- last-5-seconds effect on the projector
+  ALTER TABLE event ADD COLUMN stage_sound INTEGER NOT NULL DEFAULT 1;          -- projector sounds
+  `);
+  const rows = db.prepare("SELECT e.id, e.org_id, e.name, e.product, o.created_at FROM event e JOIN orgs o ON o.id = e.org_id ORDER BY e.id").all() as
+    Array<{ id: number; org_id: number; name: string; product: string; created_at: number }>;
+  const ins = db.prepare("INSERT INTO events (id, org_id, name, status, created_at) VALUES (?, ?, ?, 'active', ?)");
+  for (const r of rows) ins.run(r.id, r.org_id, brandName(r.name, r.product), r.created_at || Date.now());
+  // An organisation without an event row (a database that never finished its first start) still gets its event.
+  db.prepare(`INSERT INTO events (org_id, name, status, created_at) SELECT o.id, o.name, 'active', o.created_at FROM orgs o
+    WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.org_id = o.id)`).run();
+  for (const t of EVENT_TABLES) {
+    const before = (db.prepare(`SELECT COUNT(*) n FROM ${t}`).get() as { n: number }).n;
+    db.exec(`ALTER TABLE ${t} ADD COLUMN event_id INTEGER NOT NULL DEFAULT 0`);
+    db.exec(`UPDATE ${t} SET event_id = COALESCE((SELECT ev.id FROM events ev WHERE ev.org_id = ${t}.org_id AND ev.status = 'active'), 0)`);
+    const after = (db.prepare(`SELECT COUNT(*) n FROM ${t}`).get() as { n: number }).n;
+    const orphan = (db.prepare(`SELECT COUNT(*) n FROM ${t} WHERE event_id = 0`).get() as { n: number }).n;
+    if (after !== before || orphan) throw new Error(`v10: ${t} — ${orphan} rows without an event (${before} → ${after}) — migration aborted`);
+    db.exec(`CREATE INDEX ${t}_event ON ${t}(org_id, event_id)`);
+  }
+  const broken = db.prepare("PRAGMA foreign_key_check").all();
+  if (broken.length) throw new Error(`v10: foreign key check failed (${broken.length} rows) — migration aborted`);
+}
 
 /** Rebuilds `table` with the same columns (+ extra column defs / table constraints), copying and verifying every row. */
 function rebuildTable(db: DB, table: string, extra: { columns: string[]; constraints: string[] }) {

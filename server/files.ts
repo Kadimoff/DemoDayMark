@@ -6,6 +6,9 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Readable } from "node:stream";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+import { Worker } from "node:worker_threads";
 
 export type UploadKind = "presentation" | "logo";
 export const KINDS: Record<UploadKind, { exts: string[]; label: string; maxMb?: number }> = {
@@ -38,8 +41,59 @@ export const storedPath = (dir: string, name: string) => {
 };
 
 let pdfjs: typeof import("pdfjs-dist/legacy/build/pdf.mjs") | null = null;
-/** Page count, or null when pdf.js cannot open the file. */
+
+// v3 reliability: parsing a big PDF with pdf.js takes the CPU for a while; done on the main thread it would hold up every
+// socket (timer, slides) meanwhile. It runs in one worker thread instead (falls back to the main thread if that fails).
+const WORKER_SRC = `
+const { parentPort, workerData } = require("node:worker_threads");
+const fs = require("node:fs");
+let lib = null;
+parentPort.on("message", async ({ id, file }) => {
+  try {
+    lib = lib || await import(workerData.pdfjs);
+    const data = new Uint8Array(await fs.promises.readFile(file));
+    const task = lib.getDocument({ data, disableFontFace: true, useSystemFonts: false, verbosity: 0 });
+    const doc = await task.promise;
+    const n = doc.numPages;
+    await task.destroy().catch(() => {});
+    parentPort.postMessage({ id, n });
+  } catch (e) { parentPort.postMessage({ id, n: null }); }
+});`;
+let worker: Worker | null = null;
+let workerBroken = false;
+const pending = new Map<number, (n: number | null) => void>();
+let seq = 0;
+function pdfWorker(): Worker | null {
+  if (workerBroken) return null;
+  if (worker) return worker;
+  try {
+    const pdfjsUrl = pathToFileURL(createRequire(import.meta.url).resolve("pdfjs-dist/legacy/build/pdf.mjs")).href;
+    worker = new Worker(WORKER_SRC, { eval: true, workerData: { pdfjs: pdfjsUrl } });
+    worker.unref();
+    worker.on("message", (m: { id: number; n: number | null }) => { pending.get(m.id)?.(m.n); pending.delete(m.id); });
+    worker.on("error", () => { workerBroken = true; worker = null; for (const f of pending.values()) f(undefined as unknown as null); pending.clear(); });
+    worker.on("exit", () => { worker = null; });
+    return worker;
+  } catch { workerBroken = true; return null; }
+}
+
+/** Page count, or null when pdf.js cannot open the file (parsed off the main thread). */
 export async function pdfPages(file: string): Promise<number | null> {
+  const w = pdfWorker();
+  if (w) {
+    const id = ++seq;
+    const n = await new Promise<number | null | undefined>(res => {
+      const t = setTimeout(() => { pending.delete(id); res(undefined); }, 60_000);
+      t.unref();
+      pending.set(id, v => { clearTimeout(t); res(v); });
+      w.postMessage({ id, file });
+    });
+    if (n !== undefined) return n;
+  }
+  return pdfPagesHere(file);
+}
+
+async function pdfPagesHere(file: string): Promise<number | null> {
   try {
     pdfjs ??= await import("pdfjs-dist/legacy/build/pdf.mjs");
     const data = new Uint8Array(await fs.promises.readFile(file));

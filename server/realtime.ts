@@ -33,6 +33,14 @@ export class Realtime {
     this.io = new Server(app.server, {
       path: "/socket.io",
       serveClient: false,
+      // v3 reliability: WebSocket first (Traefik/Coolify pass the upgrade), long-polling as the fallback. A ping every
+      // 15 s keeps idle proxies and NAT boxes from dropping the connection and finds a dead one within ~25 s; clients
+      // then reconnect with backoff and refetch their full state.
+      transports: ["websocket", "polling"],
+      pingInterval: 15_000,
+      pingTimeout: 10_000,
+      perMessageDeflate: false,
+      maxHttpBufferSize: 1e6,
       allowRequest: (req, cb) => {
         const host = (req.headers["x-forwarded-host"] as string) || req.headers.host;
         cb(null, originAllowed(cfg, req.headers.origin, host));
@@ -42,7 +50,7 @@ export class Realtime {
     // The client says which role it connects as (admin page, juror page, projector) and, on public screens,
     // which organisation (?org=<slug>); without a role it only joins that organisation's public room.
     this.io.use((socket, next) => {
-      const auth = (socket.handshake.auth ?? {}) as { role?: string; org?: string };
+      const auth = (socket.handshake.auth ?? {}) as { role?: string; org?: string; watch?: string };
       const cookies = app.parseCookie(socket.request.headers.cookie ?? "");
       const repo = this.orgs.root.repo;
       socket.data.user = auth.role === "admin" || auth.role === "juror"
@@ -51,6 +59,7 @@ export class Realtime {
       socket.data.team = auth.role === "team" ? resolveTeam(this.orgs.root.trepo, cfg, cookies, v => app.unsignCookie(v)) : null;
       const o = typeof auth.org === "string" && auth.org ? this.orgs.bySlug(auth.org) : null;
       socket.data.pageOrg = o && o.active ? o.id : null;
+      socket.data.watch = auth.watch === "root";
       next();
     });
 
@@ -77,6 +86,8 @@ export class Realtime {
     socket.join([`user:${user.id}`, `session:${user.sessionId}`]);
     const ort = this.org(user.orgId);
     if (user.role === "admin") {
+      // v3: the platform owner's /root page gets a compact live feed of every organisation's stage (public data only).
+      if (socket.data.watch && user.isRoot) { socket.join("rootwatch"); return; }
       // A projector page of another organisation never gets this organisation's admin feed.
       if (pageOrg != null && pageOrg !== user.orgId) return;
       socket.join(`o${user.orgId}:admin`);
@@ -135,8 +146,26 @@ export class Realtime {
 export class OrgRealtime {
   /** munsif: runs after every stage change (queue reminders to teams). */
   afterStage: (() => void) | null = null;
+  /** v3: broadcasts that can come in bursts (30 jurors scoring at once) go out at most once per window, the last state always. */
+  private gates = new Map<string, { timer: NodeJS.Timeout; dirty: boolean }>();
+  static THROTTLE_MS = 250;
 
   constructor(private rt: Realtime, readonly orgId: number, private cfg: Config) {}
+
+  /** Leading + trailing coalescing: the first call goes out at once; calls within the window collapse into one at its end. */
+  private coalesce(key: string, fn: () => void) {
+    const g = this.gates.get(key);
+    if (g) { g.dirty = true; return; }
+    fn();
+    const open = () => {
+      const cur = this.gates.get(key);
+      if (cur?.dirty) { cur.dirty = false; try { fn(); } catch { /* closed */ } cur.timer = setTimeout(open, OrgRealtime.THROTTLE_MS); cur.timer.unref?.(); }
+      else this.gates.delete(key);
+    };
+    const timer = setTimeout(open, OrgRealtime.THROTTLE_MS);
+    timer.unref?.();
+    this.gates.set(key, { timer, dirty: false });
+  }
 
   get io() { return this.rt.io; }
   private get repo(): Repo { return this.rt.orgs.scope(this.orgId).repo; }
@@ -147,12 +176,17 @@ export class OrgRealtime {
   presence(): PresenceEntry[] {
     return this.repo.jurors().map(j => ({ jurorId: j.id, online: this.rt.isOnline(j.id), lastSeen: this.rt.lastSeenOf(j.id) }));
   }
-  emitPresence() { this.to("admin").emit("presence:changed", this.presence()); }
+  emitPresence() { this.coalesce("presence", () => this.to("admin").emit("presence:changed", this.presence())); }
 
   progress(): ProgressEntry[] {
     return [...this.rt.drafts.values()].filter(d => d.orgId === this.orgId).map(({ orgId: _o, ...d }) => d);
   }
-  emitProgress() { this.to("admin").emit("progress:changed", this.progress()); }
+  emitProgress() { this.coalesce("progress", () => this.to("admin").emit("progress:changed", this.progress())); }
+  /** v3 events: a new event starts without any live draft progress. */
+  clearOrgProgress() {
+    for (const [k, v] of this.rt.drafts) if (v.orgId === this.orgId) this.rt.drafts.delete(k);
+    this.emitProgress();
+  }
   clearProgress(jurorId: number, teamId?: number) {
     for (const [k, v] of this.rt.drafts) if (v.orgId === this.orgId && v.jurorId === jurorId && (teamId == null || v.teamId === teamId)) this.rt.drafts.delete(k);
     this.emitProgress();
@@ -170,13 +204,16 @@ export class OrgRealtime {
   }
 
   emitStage() {
-    this.to("public").emit("stage:changed", this.repo.stage());
+    const s = this.repo.stage();
+    this.to("public").emit("stage:changed", s);
+    this.io.to("rootwatch").emit("org:stage", { orgId: this.orgId, stage: s });
     try { this.afterStage?.(); } catch { /* reminders are best effort */ }
   }
 
   emitTimer() {
     const s = this.repo.stage();
     this.to("public").emit("timer:changed", { timer: s.timer, serverNow: s.serverNow });
+    this.io.to("rootwatch").emit("org:stage", { orgId: this.orgId, stage: s });
   }
 
   emitLocked(locked: boolean) {
@@ -198,7 +235,7 @@ export class OrgRealtime {
   /** Public: only revealed places (see shared/reveal.ts). Admin screens refetch their full view. */
   emitReveal() { this.to("public").emit("reveal:changed", revealPublicView(this.repo)); }
 
-  emitResults() { this.to("admin").emit("results:changed", adminResults(this.repo, this.cfg)); }
+  emitResults() { this.coalesce("results", () => this.to("admin").emit("results:changed", adminResults(this.repo, this.cfg))); }
 
   kickUser(userId: number) { this.io.in(`user:${userId}`).disconnectSockets(true); }
   kickSession(sessionId: string) { this.io.in(`session:${sessionId}`).disconnectSockets(true); }

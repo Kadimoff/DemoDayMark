@@ -2,7 +2,9 @@
 // Never creates juror accounts — the coordinator adds those from /admin/setup.
 import { hash, type Options } from "@node-rs/argon2";
 import type { Config } from "./config.js";
-import type { Repo } from "./repo.js";
+import { brandName } from "../shared/brand.js";
+import type { DB } from "./db.js";
+import { Repo } from "./repo.js";
 
 // Default hackathon rubric: points per criterion, 50 in total. Entry scores are off by default.
 export const DEFAULT_CRITERIA = [
@@ -30,32 +32,42 @@ export function todayDate() {
   return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
 }
 
-/** orgs: the event row (brand prefix `name`) and the default rubric of an organisation, if missing. Idempotent. */
-export function seedOrgEvent(repo: Repo, cfg: Config, name: string, log: (m: string) => void = () => {}) {
-  const db = repo.db;
-  if (!db.prepare("SELECT 1 FROM event WHERE org_id = ?").get(repo.orgId)) {
+/**
+ * orgs: the event row (brand prefix `name`), the active event (v3 `events`) and the default rubric of an organisation,
+ * if missing. Idempotent. Returns the organisation's repo bound to its active event.
+ */
+export function seedOrgEvent(db: DB, orgId: number, orgSlug: string, cfg: Config, name: string, log: (m: string) => void = () => {}): Repo {
+  if (!db.prepare("SELECT 1 FROM event WHERE org_id = ?").get(orgId)) {
     // org 1 keeps the historical event id 1; other organisations get the next free id
     db.prepare("INSERT INTO event (id, org_id, name, date, show_juror_total, include_entry) VALUES (?, ?, ?, ?, ?, 0)")
-      .run(repo.orgId === 1 ? 1 : null, repo.orgId, name, todayDate(), +cfg.showJurorTotal);
-    log(`event row created (org ${repo.orgId})`);
+      .run(orgId === 1 ? 1 : null, orgId, name, todayDate(), +cfg.showJurorTotal);
+    log(`event row created (org ${orgId})`);
   }
+  if (!db.prepare("SELECT 1 FROM events WHERE org_id = ? AND status = 'active'").get(orgId)) {
+    const ev = db.prepare("SELECT id, name, product FROM event WHERE org_id = ?").get(orgId) as { id: number; name: string; product: string };
+    const free = !db.prepare("SELECT 1 FROM events WHERE id = ?").get(ev.id);
+    db.prepare("INSERT INTO events (id, org_id, name, status, created_at) VALUES (?, ?, ?, 'active', ?)").run(free ? ev.id : null, orgId, brandName(ev.name, ev.product), Date.now());
+    log(`active event created (org ${orgId})`);
+  }
+  const repo = new Repo(db, orgId, orgSlug);
   if (!repo.criteria().length) {
     for (const c of DEFAULT_CRITERIA) repo.addCriterion(c);
-    log(`default criteria seeded (org ${repo.orgId})`);
+    log(`default criteria seeded (org ${orgId})`);
   }
+  return repo;
 }
 
 /** Default organisation (org 1, the platform owner's): event row, root account, rubric, placeholder teams. */
-export async function ensureBaseline(repo: Repo, cfg: Config, log: (m: string) => void = () => {}) {
-  const db = repo.db;
-  seedOrgEvent(repo, cfg, "", log); // brand prefix, filled in from Setup
+export async function ensureBaseline(db: DB, cfg: Config, log: (m: string) => void = () => {}) {
+  const repo = seedOrgEvent(db, 1, "root", cfg, "", log); // brand prefix, filled in from Setup
   if (!db.prepare("SELECT 1 FROM users WHERE is_root = 1").get()) {
     if (!cfg.adminPassword) throw new Error("ADMIN_PASSWORD must be set to create the admin account");
     if (repo.userByUsername(cfg.adminUsername)) throw new Error(`ADMIN_USERNAME "${cfg.adminUsername}" is already used by another account`);
     repo.createUser("admin", cfg.adminUsername, "Koordinator", await hashPassword(cfg.adminPassword), { isRoot: true });
     log(`admin account "${cfg.adminUsername}" created`);
   }
-  if (!repo.teams().length) {
+  // Placeholders only for a brand-new database (never into a later, deliberately empty event).
+  if (!db.prepare("SELECT 1 FROM teams WHERE org_id = 1").get() && (db.prepare("SELECT COUNT(*) n FROM events WHERE org_id = 1").get() as { n: number }).n === 1) {
     for (let i = 1; i <= 8; i++) repo.addTeam(`Komanda ${i}`, "");
     log("placeholder teams seeded");
   }

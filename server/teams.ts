@@ -6,7 +6,7 @@ import type { Converter } from "./files.js";
 import type { OrgRealtime } from "./realtime.js";
 import type { Repo } from "./repo.js";
 import { materials, TeamRepo, prettyCode, teamRow } from "./teamrepo.js";
-import { orgActive } from "./auth.js";
+import { activeEventOf, orgActive } from "./auth.js";
 import { tokenId } from "./auth.js";
 import type { AdminTeamMaterials, Notice, TeamQueue, TeamStatePayload } from "../shared/types.js";
 
@@ -33,6 +33,8 @@ export function resolveTeam(trepo: TeamRepo, cfg: Config, cookies: Record<string
   if (!t) return null;
   // orgs: a deactivated organisation signs its teams out as well
   if (!orgActive(trepo, t.org_id)) return null;
+  // v3 events: teams of an archived event are signed out
+  if (t.event_id !== activeEventOf(trepo, t.org_id)) return null;
   return { teamId: t.id, sessionId: sid, orgId: t.org_id };
 }
 
@@ -98,13 +100,31 @@ export class TeamService {
       materials: materials(this.trepo.db, t),
       history: this.trepo.history(teamId),
       event: { displayName: ev.displayName, date: ev.date, deadline: ev.uploadDeadline, uploadsOpen: this.uploadsOpen(teamId), canRename: ev.teamCanRename,
-        pitchSec: ev.timer.pitchSec, qaSec: ev.timer.qaSec },
+        pitchSec: ev.timer.pitchSec, qaSec: ev.timer.qaSec, extendedUntil: t.extend_until && (!ev.uploadDeadline || t.extend_until > ev.uploadDeadline) ? t.extend_until : null },
+      slideControl: this.slidePermission(teamId),
       queue: this.queue(teamId),
       notices: this.trepo.notices("team", teamId, 30),
       stage: this.repo.stage(),
       soffice: this.converter.available,
       maxUploadMb: Math.round(this.cfg.maxUploadBytes / 1048576),
     };
+  }
+
+  /**
+   * v3: may this team turn the slides on the projector now? Only while its own presentation is on stage (team scene,
+   * slides view) and the coordinator has not switched the right off. Checked on every request by the server.
+   */
+  slidePermission(teamId: number): TeamStatePayload["slideControl"] {
+    const ev = this.repo.getEvent();
+    const st = this.repo.stage();
+    const pages = st.show.pres?.pages ?? null;
+    const no = (reason: string) => ({ allowed: false, reason, slide: ev.stageSlide, pages });
+    if (ev.currentTeamId !== teamId) return no("Növbəniz çatanda (səhnədə olanda) slaydları buradan çevirə biləcəksiniz.");
+    if (ev.stageScene !== "team") return no("Hazırda proyektorda tədbirin öz prezentasiyası göstərilir.");
+    if (!ev.teamSlideControl) return no("Slaydları təşkilatçı idarə edir.");
+    if (!st.show.pres) return no(st.show.presPending ? "Prezentasiyanız hələ hazırlanır (PDF-ə çevrilir)." : "Səhnədə prezentasiyanız yoxdur.");
+    if (ev.stageMode !== "auto") return no("Proyektorda hazırda taymer və ya sayt göstərilir.");
+    return { allowed: true, reason: null, slide: ev.stageSlide, pages };
   }
 
   adminList(): AdminTeamMaterials[] {

@@ -7,8 +7,9 @@ import { parseBody, publicScope, scopeOf, type Ctx } from "../context.js";
 import type { Scope } from "../orgs.js";
 import { KINDS, MIME, receiveUpload, storedPath, UploadError, type UploadKind } from "../files.js";
 import { fileRow, normalizeTeamCode, prettyCode, type FileRow } from "../teamrepo.js";
-import { orgActive } from "../auth.js";
+import { activeEventOf, orgActive } from "../auth.js";
 import { checkEmbeddable, TEAM_COOKIE } from "../teams.js";
+import { moveSlide } from "../stagectl.js";
 
 const url = z.string().trim().max(500).refine(v => v === "" || /^https?:\/\/[^\s]+$/i.test(v), "Link http:// və ya https:// ilə başlamalıdır.");
 const profileBody = z.object({
@@ -22,6 +23,7 @@ const registerBody = z.object({
   name: z.string().trim().min(2, "Komandanın adını yazın.").max(120),
   project: z.string().trim().max(160).default(""),
 });
+const slideBody = z.object({ slide: z.number().int().min(1).max(5000).optional(), delta: z.number().int().min(-50).max(50).optional() });
 const codeBody = z.object({ code: z.string().trim().min(4, "Kodu yazın.").max(200) });
 
 /** Uploads come as a raw body (application/octet-stream) and are streamed to disk, never buffered. */
@@ -75,7 +77,7 @@ export async function handleUpload(ctx: Ctx, sc: Scope, req: FastifyRequest, rep
 }
 
 /** Streams a stored upload. `asPdf`: a converted PPTX is served as its PDF. */
-export function sendStored(ctx: Ctx, reply: FastifyReply, f: FileRow, opts: { asPdf?: boolean; download?: boolean } = {}) {
+export function sendStored(ctx: Ctx, reply: FastifyReply, f: Pick<FileRow, "ext" | "pdf_stored" | "stored" | "orig_name">, opts: { asPdf?: boolean; download?: boolean } = {}) {
   const usePdf = opts.asPdf !== false && f.ext === "pptx" && !!f.pdf_stored;
   const name = usePdf ? f.pdf_stored! : f.stored;
   const ext = usePdf ? "pdf" : f.ext;
@@ -95,7 +97,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
   // Team codes and team sessions are global (the code says which team, so which organisation).
   const { repo, trepo } = orgs.root;
   /** The organisation of a team found by its code, if that organisation is active. */
-  const teamScope = (t: { org_id: number }) => (orgActive(repo, t.org_id) ? orgs.scope(t.org_id) : null);
+  const teamScope = (t: { org_id: number; event_id: number }) => (orgActive(repo, t.org_id) && t.event_id === activeEventOf(repo, t.org_id) ? orgs.scope(t.org_id) : null);
 
   function startTeamSession(req: FastifyRequest, reply: FastifyReply, teamId: number) {
     const token = newToken();
@@ -210,6 +212,17 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
       return handleUpload(ctx, sc, req, reply, id, "team");
     });
 
+    // v3: the team on stage turns its own slides (only its own presentation, only while it is on stage, only when allowed).
+    r.post("/api/team/slide", async (req, reply) => {
+      const b = parseBody(slideBody, req.body, reply); if (!b) return;
+      const sc = scopeOf(ctx, req);
+      const id = req.team!.teamId;
+      const perm = sc.teams.slidePermission(id);
+      if (!perm.allowed) return reply.code(403).send({ error: perm.reason ?? "Slaydları indi çevirmək olmur." });
+      if (moveSlide(sc.repo, b)) { sc.rt.emitStage(); sc.repo.audit(null, "team.slide", { teamId: id, slide: sc.repo.getEvent().stageSlide }); }
+      return { slideControl: sc.teams.slidePermission(id), stage: sc.repo.stage() };
+    });
+
     r.get("/api/team/notices", async req => scopeOf(ctx, req).trepo.notices("team", req.team!.teamId, 50));
     r.post("/api/team/notices/read", async req => { scopeOf(ctx, req).trepo.markRead("team", req.team!.teamId); return { ok: true }; });
   });
@@ -249,5 +262,14 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     return sendStored(ctx, reply, f, { asPdf: true });
   };
   app.get("/api/stage/presentation", stageFile("presentation"));
+  // v3: the event's own presentation, only while it is the one on stage (scene "event").
+  app.get("/api/stage/event-presentation", async (req, reply) => {
+    const sc = publicScope(ctx, req);
+    if (!sc) return reply.code(404).send({ error: "Təşkilat tapılmadı." });
+    const ev = sc.repo.getEvent();
+    const f = ev.stageScene === "event" && ev.stageEventFile != null ? sc.trepo.eventFile(ev.stageEventFile) : null;
+    if (!f || (f.ext !== "pdf" && !f.pdf_stored)) return reply.code(404).send({ error: "Səhnədə tədbir prezentasiyası yoxdur." });
+    return sendStored(ctx, reply, f, { asPdf: true });
+  });
   app.get("/api/stage/logo", stageFile("logo"));
 }

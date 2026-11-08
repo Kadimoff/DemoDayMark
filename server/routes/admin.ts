@@ -14,6 +14,8 @@ import { revealSteps } from "../../shared/reveal.js";
 import { PRODUCTS } from "../../shared/brand.js";
 import { adjustTimer } from "../../shared/timer.js";
 import { isPlaceholderName, placeholderName } from "../../shared/brand.js";
+import { buildHistoryXlsx } from "../export/history.js";
+import { createEvent, listEvents } from "../events.js";
 
 /** A juror QR is valid this long, or until it is scanned / replaced. */
 export const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -50,10 +52,34 @@ const critBody = z.object({ name: name(), description: z.string().trim().max(400
 const critPatch = z.object({ name: name().optional(), description: z.string().trim().max(400).optional(), maxScore: maxScore.optional() });
 const reorderBody = z.object({ ids: z.array(z.number().int().positive()).min(1) });
 const wipeBody = z.object({ token: z.string().min(1) });
+const newEventBody = z.object({
+  name: z.string().trim().min(2, "Tədbirin adını yazın.").max(40, "Ad 40 simvoldan uzun ola bilməz."),
+  product: z.enum(PRODUCTS).optional(),
+  date: z.string().trim().max(40).optional(),
+  pitchSec: z.number().int().min(10).max(3600).optional(),
+  qaSec: z.number().int().min(10).max(3600).optional(),
+  uploadDeadline: z.number().int().positive().nullable().optional(),
+  copyCriteria: z.boolean().optional(),
+  copyTeams: z.boolean().optional(),
+  confirm: z.literal(true, { message: "Köhnə tədbirin arxivə köçürülməsini təsdiqləyin." }),
+});
 const revealBody = z.object({ action: z.enum(["enable", "disable", "next", "back", "reset"]) });
+
+const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+export function attach(reply: FastifyReply, file: string, type: string, buf: Buffer) {
+  reply.header("Content-Type", type);
+  reply.header("Content-Disposition", `attachment; filename="${file.replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(file)}`);
+  return reply.send(buf);
+}
+export const sendHistory = async (reply: FastifyReply, repo: Repo) =>
+  attach(reply, exportFileName(repo.getEvent().displayName, repo.getEvent().date, "tarixce.xlsx"), XLSX, await buildHistoryXlsx(repo));
 
 export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
   const { cfg } = ctx;
+  const sendResultsXlsx = async (reply: FastifyReply, repo: Repo) =>
+    attach(reply, exportFileName(repo.getEvent().displayName, repo.getEvent().date, "netice.xlsx"), XLSX, await buildXlsx(repo, cfg));
+  const sendResultsPdf = async (reply: FastifyReply, repo: Repo) =>
+    attach(reply, exportFileName(repo.getEvent().displayName, repo.getEvent().date, "protokol.pdf"), "application/pdf", await buildPdf(repo, cfg));
   /** Pending "wipe all scores" confirmation, per organisation. */
   const wipes = new Map<number, { token: string; until: number }>();
 
@@ -78,6 +104,8 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         sessions: repo.sessions().map(s => ({ ...s, id: s.id.slice(0, 16) })),
         // orgs: whose panel this is (header, projector links)
         org: { id: o.id, slug: o.slug, name: o.name, root: o.id === 1 },
+        // v3 events: the active event of the organisation
+        eventMeta: repo.meta(),
         ...adminResults(repo, cfg),
       };
     });
@@ -126,7 +154,8 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         product: b.product ?? cur.product,
         timer,
         // munsif: a new team on stage starts on its first slide, in the default view.
-        ...(stageChanged && b.currentTeamId !== undefined && b.currentTeamId !== cur.currentTeamId ? { stageSlide: 1, stageMode: "auto" as const, stageIntroAt: null } : {}),
+        // v3: putting a team on stage brings the projector back from the event's own presentation.
+      ...(stageChanged && b.currentTeamId !== undefined && b.currentTeamId !== cur.currentTeamId ? { stageSlide: 1, stageMode: "auto" as const, stageIntroAt: null, ...(b.currentTeamId != null ? { stageScene: "team" as const } : {}) } : {}),
       });
       if (b.locked !== undefined && b.locked !== cur.locked) {
         repo.audit(actor, b.locked ? "event.lock" : "event.unlock");
@@ -166,7 +195,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const ev = repo.updateEvent({
         currentTeamId: next?.id ?? null,
         timer: applyTimerAction(cur.timer, next ? "reset" : "stop", Date.now()),
-        stageSlide: 1, stageMode: "auto", stageIntroAt: null,
+        stageSlide: 1, stageMode: "auto", stageIntroAt: null, ...(next ? { stageScene: "team" as const } : {}),
       });
       repo.audit(req.user!.id, "stage.change", { teamId: ev.currentTeamId });
       rt.emitStage();
@@ -458,23 +487,33 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     });
 
     // ---------- exports / audit ----------
-    r.get("/api/admin/export.xlsx", async (req, reply) => {
-      const { repo, rt } = scopeOf(ctx, req);
-      const buf = await buildXlsx(repo, cfg);
-      const file = exportFileName(repo.getEvent().displayName, repo.getEvent().date, "netice.xlsx");
-      reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      reply.header("Content-Disposition", `attachment; filename="${file}"; filename*=UTF-8''${encodeURIComponent(file)}`);
-      return reply.send(buf);
-    });
-    r.get("/api/admin/export.pdf", async (req, reply) => {
-      const { repo, rt } = scopeOf(ctx, req);
-      const buf = await buildPdf(repo, cfg);
-      const file = exportFileName(repo.getEvent().displayName, repo.getEvent().date, "protokol.pdf");
-      reply.header("Content-Type", "application/pdf");
-      reply.header("Content-Disposition", `attachment; filename="${file}"; filename*=UTF-8''${encodeURIComponent(file)}`);
-      return reply.send(buf);
-    });
+    r.get("/api/admin/export.xlsx", async (req, reply) => sendResultsXlsx(reply, scopeOf(ctx, req).repo));
+    r.get("/api/admin/export.pdf", async (req, reply) => sendResultsPdf(reply, scopeOf(ctx, req).repo));
     r.get("/api/admin/audit", async req => scopeOf(ctx, req).repo.auditLog());
+    // v3: scoring history as Excel (who, when, which team, criterion, old → new) — this organisation only.
+    r.get("/api/admin/history.xlsx", async (req, reply) => sendHistory(reply, scopeOf(ctx, req).repo));
+
+    // ---------- v3 events: archive + new event ----------
+    r.get("/api/admin/events", async req => listEvents(ctx.orgs, scopeOf(ctx, req).orgId, cfg));
+    r.post("/api/admin/events", async (req, reply) => {
+      const sc = scopeOf(ctx, req);
+      const b = parseBody(newEventBody, req.body, reply); if (!b) return;
+      const r0 = createEvent(ctx.orgs, sc, cfg, req.user!.id, b);
+      return { ...r0, events: listEvents(ctx.orgs, sc.orgId, cfg) };
+    });
+    const archived = (req: { params: unknown }, reply: FastifyReply, orgId: number) => {
+      const p = idParam.safeParse(req.params);
+      const repo = p.success ? ctx.orgs.eventRepo(orgId, p.data.id) : null;
+      if (!repo) { reply.code(404).send({ error: "Tədbir tapılmadı." }); return null; }
+      return repo;
+    };
+    r.get("/api/admin/events/:id/results", async (req, reply) => {
+      const repo = archived(req, reply, scopeOf(ctx, req).orgId); if (!repo) return;
+      return { event: repo.getEvent(), meta: repo.meta(), ...adminResults(repo, cfg) };
+    });
+    r.get("/api/admin/events/:id/export.xlsx", async (req, reply) => { const repo = archived(req, reply, scopeOf(ctx, req).orgId); if (repo) return sendResultsXlsx(reply, repo); });
+    r.get("/api/admin/events/:id/export.pdf", async (req, reply) => { const repo = archived(req, reply, scopeOf(ctx, req).orgId); if (repo) return sendResultsPdf(reply, repo); });
+    r.get("/api/admin/events/:id/history.xlsx", async (req, reply) => { const repo = archived(req, reply, scopeOf(ctx, req).orgId); if (repo) return sendHistory(reply, repo); });
     // Scoring history: every submit and change, kept even after a wipe. ?juror=&team=&before=<id>&limit=
     r.get<{ Querystring: Record<string, string | undefined> }>("/api/admin/history", async req => {
       const { repo, rt } = scopeOf(ctx, req);

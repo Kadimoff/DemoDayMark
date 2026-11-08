@@ -1,7 +1,7 @@
 import { verify } from "@node-rs/argon2";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { COOKIES, LEGACY_COOKIE, newToken, orgActive, requireRole, resolveUser, tokenId, type Role } from "../auth.js";
+import { activeEventOf, COOKIES, LEGACY_COOKIE, newToken, orgActive, requireRole, resolveUser, tokenId, type Role } from "../auth.js";
 import { hashPassword } from "../baseline.js";
 import { parseBody, type Ctx } from "../context.js";
 import type { UserRow } from "../repo.js";
@@ -53,6 +53,7 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
     const user = repo.userById(inv.user_id);
     if (!user || user.role !== "juror") return { inv, user: null, error: "Bu münsif hesabı silinib." };
     if (!orgActive(repo, user.org_id)) return { inv, user: null, error: "Bu tədbirin təşkilatı deaktiv edilib." };
+    if (user.event_id !== activeEventOf(repo, user.org_id)) return { inv, user: null, error: "Bu tədbir artıq bitib (arxivdədir)." };
     if (inv.used_at) return { inv, user, error: "Bu QR kod artıq istifadə olunub. Koordinatordan yenisini istəyin." };
     if (inv.revoked_at) return { inv, user, error: "Bu QR kodun yerinə yenisi yaradılıb. Koordinatordan sonuncu QR-ı istəyin." };
     if (inv.expires_at <= Date.now()) return { inv, user, error: "Bu QR kodun vaxtı bitib. Koordinatordan yenisini istəyin." };
@@ -118,7 +119,8 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
     // The platform owner starts every sign-in in its own organisation (no leftover "viewing another organisation").
     if (u.is_root) reply.clearCookie("ij_org", { path: "/" });
     orgs.scope(u.org_id).repo.audit(u.id, "login", { ip: req.ip });
-    return { role: u.role, displayName: u.display_name, redirect: u.role === "admin" ? "/admin" : "/juror" };
+    // v3: the platform owner lands on the platform panel, a coordinator on its event panel.
+    return { role: u.role, displayName: u.display_name, redirect: u.is_root ? "/root" : u.role === "admin" ? "/admin" : "/juror" };
   });
 
   // Ends only the session of the given role (the page the button was on).
