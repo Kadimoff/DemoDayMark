@@ -1,6 +1,7 @@
 // munsif.im (coordinator): team materials review, team sign-in links (QR) and the stage view controls.
 import QRCode from "qrcode";
-import type { AdminTeamMaterials, StagePayload, TeamReview } from "../../../shared/types";
+import type { AdminTeamMaterials, EventFile, StagePayload, TeamReview } from "../../../shared/types";
+import { openViewer } from "./viewer";
 import { api, ApiError } from "./api";
 import { ago, esc, icon, toast } from "./dom";
 
@@ -28,8 +29,17 @@ export const presLine = (t: AdminTeamMaterials) => {
 };
 const linkHost = (u: string) => { try { return new URL(u).host; } catch { return u; } };
 
-/** The "Komandaların materialları" card on the live panel. */
-export function mountMaterials(card: HTMLElement, onChange: () => void = () => {}) {
+export interface MaterialsOpts {
+  /** v3: the team on stage (its row shows "Səhnədədir" instead of "Səhnəyə çıxar"). */
+  currentTeam?: () => number | null;
+  putOnStage?: (teamId: number) => Promise<void> | void;
+}
+
+/**
+ * The "Komandalar" tab of the live panel (v3): one row per team — open its presentation full screen with one click,
+ * open its website, put it on stage. Accepting / returning a presentation is optional and sits under "⋯".
+ */
+export function mountMaterials(card: HTMLElement, onChange: () => void = () => {}, opts: MaterialsOpts = {}) {
   let D: MaterialsData | null = null;
   let returning: number | null = null;
   async function reload() {
@@ -39,27 +49,40 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
     if (!D) return;
     const waiting = D.teams.filter(t => t.review === "submitted").length;
     const pending = D.teams.filter(t => t.approval === "pending").length;
+    const cur = opts.currentTeam?.() ?? null;
+    const withPres = D.teams.filter(t => t.active && t.presentation).length;
     card.innerHTML = `
-      <div class="head"><div><h2 id="h-mat">${icon("doc")}Komandaların materialları</h2>
-        <p class="sub">Prezentasiya və sayt linkləri. Yeni yükləmədə zəng və bildiriş gəlir. Qəbul edəndə və ya geri qaytaranda komanda dərhal xəbər tutur.</p></div>
-        <div class="row">${waiting ? `<span class="pill hot">${waiting} yeni yükləmə</span>` : ""}${pending ? `<span class="pill warn">${pending} komanda təsdiq gözləyir</span>` : ""}
-          <a class="btn sm" href="/admin/setup#h-teams">${icon("pencil")}Linklər və ayarlar</a></div></div>
-      <div class="mat-list">${D.teams.map(t => `
-        <div class="mat ${t.active ? "" : "off"} ${t.review === "submitted" ? "fresh" : ""}" data-mat="${t.teamId}">
-          <div class="mat-team"><b>${esc(t.name)}</b><small>${esc(t.project || "—")}</small></div>
-          <div class="mat-st">${reviewPill(t)}${t.reviewNote && t.review === "returned" ? `<small class="danger-t">${esc(t.reviewNote)}</small>` : ""}</div>
-          <div class="mat-pres">${presLine(t)}</div>
-          <div class="mat-links">${t.siteUrl ? `<a href="${esc(t.siteUrl)}" target="_blank" rel="noopener noreferrer">${icon("ext")}${esc(linkHost(t.siteUrl))}</a>` : `<span class="faint">Sayt yoxdur</span>`}
-            ${t.videoUrl ? `<a href="${esc(t.videoUrl)}" target="_blank" rel="noopener noreferrer">${icon("play")}Video</a>` : ""}</div>
-          <div class="mat-act">
-            ${t.approval === "pending" ? `<button class="btn sm primary" data-mat-approve="${t.teamId}">${icon("check")}Təsdiqlə</button>` : ""}
-            ${t.presentation && t.review !== "accepted" ? `<button class="btn sm primary" data-mat-accept="${t.teamId}">${icon("check")}Qəbul et</button>` : ""}
-            ${t.presentation && t.review !== "returned" ? `<button class="btn sm" data-mat-return="${t.teamId}">${icon("undo")}Geri qaytar</button>` : ""}
-            <button class="btn sm ghost" data-mat-link="${t.teamId}" title="Komanda giriş linki və QR">${icon("qr")}Link</button>
+      <div class="head"><div><h2 id="h-mat">${icon("list")}Komandalar</h2>
+        <p class="sub">Prezentasiyaya bir kliklə tam ekranda baxın (slaydlar arası ← →). Səhnəyə çıxarmaq üçün “qəbul et” lazım deyil.</p></div>
+        <div class="row">${waiting ? `<span class="pill hot">${waiting} yeni yükləmə</span>` : ""}${pending ? `<span class="pill warn">${pending} təsdiq gözləyir</span>` : ""}
+          <span class="pill">${withPres}/${D.teams.filter(t => t.active).length} prezentasiya</span>
+          <a class="btn sm ghost" href="/admin/setup#h-teams">${icon("pencil")}Redaktə</a></div></div>
+      <div class="tl">${D.teams.map(t => {
+        const p = t.presentation;
+        const onStage = cur === t.teamId;
+        return `
+        <div class="tl-row ${t.active ? "" : "off"} ${onStage ? "on" : ""} ${t.review === "submitted" ? "fresh" : ""}" data-mat="${t.teamId}">
+          <span class="tl-ix mono">${t.orderIndex + 1}</span>
+          <div class="tl-name"><b>${esc(t.name)}</b><small>${esc(t.project || "—")}</small></div>
+          <div class="tl-st">${reviewPill(t)}${p ? `<small>${p.ext.toUpperCase()}${p.pages ? ` · ${p.pages} slayd` : ""}${p.ext === "pptx" && p.conv !== "done" ? (p.conv === "running" || p.conv === "pending" ? " · çevrilir…" : " · PDF lazımdır") : ""}</small>` : ""}</div>
+          <div class="tl-act">
+            <button class="btn sm ${p?.viewable ? "primary" : ""}" data-mat-view="${t.teamId}" ${p?.viewable ? "" : "disabled"} title="${p ? esc(p.name) : "Prezentasiya yoxdur"}">${icon("expand")}Bax</button>
+            ${t.siteUrl ? `<a class="btn sm" href="${esc(t.siteUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(t.siteUrl)}">${icon("ext")}Sayt</a>` : `<span class="btn sm ghost" aria-disabled="true" title="Sayt linki yoxdur">${icon("ext")}Sayt</span>`}
+            ${t.active ? (onStage ? `<span class="pill fill">Səhnədədir</span>` : `<button class="btn sm" data-mat-stage="${t.teamId}">${icon("play")}Səhnəyə</button>`) : ""}
+            <details class="more"><summary class="btn sm ghost" aria-label="Daha çox">⋯</summary><div class="menu">
+              ${t.approval === "pending" ? `<button class="btn sm primary" data-mat-approve="${t.teamId}">${icon("check")}Təsdiqlə</button>` : ""}
+              ${p && t.review !== "accepted" ? `<button class="btn sm" data-mat-accept="${t.teamId}">${icon("check")}Qəbul et</button>` : ""}
+              ${p && t.review !== "returned" ? `<button class="btn sm" data-mat-return="${t.teamId}">${icon("undo")}Geri qaytar</button>` : ""}
+              <button class="btn sm" data-mat-link="${t.teamId}">${icon("qr")}Giriş linki / QR</button>
+              ${p ? `<a class="btn sm ghost" href="${p.url}?orig=1&download=1">${icon("download")}Faylı endir</a>` : ""}
+              ${t.videoUrl ? `<a class="btn sm ghost" href="${esc(t.videoUrl)}" target="_blank" rel="noopener noreferrer">${icon("play")}Demo video</a>` : ""}
+            </div></details>
           </div>
+          ${t.reviewNote && t.review === "returned" ? `<small class="tl-note danger-t">Səbəb: ${esc(t.reviewNote)}</small>` : ""}
           ${returning === t.teamId ? `<form class="mat-return" data-mat-form="${t.teamId}"><input name="note" maxlength="500" placeholder="Səbəb (komanda görəcək), məs. Son slayd boşdur" required>
             <button class="btn sm danger solid" type="submit">Geri qaytar</button><button class="btn sm" type="button" data-mat-cancel>Ləğv</button></form>` : ""}
-        </div>`).join("") || `<p class="note">Komanda yoxdur.</p>`}</div>`;
+        </div>`;
+      }).join("") || `<p class="note">Komanda yoxdur. Quraşdırmada komanda əlavə edin.</p>`}</div>`;
     const f = card.querySelector<HTMLInputElement>(".mat-return input");
     f?.focus();
   }
@@ -67,7 +90,16 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
     const t = e.target as HTMLElement;
     const id = (a: string) => Number(t.closest<HTMLElement>(`[${a}]`)?.getAttribute(a));
     try {
-      if (t.closest("[data-mat-accept]")) { await api(`/api/admin/teams/${id("data-mat-accept")}/review`, { method: "POST", body: { action: "accept" } }); toast("Qəbul edildi — komandaya bildiriş getdi"); await reload(); onChange(); }
+      if (t.closest("[data-mat-view]")) {
+        const tm = D?.teams.find(x => x.teamId === id("data-mat-view"));
+        if (tm?.presentation?.viewable) {
+          openViewer({ url: tm.presentation.url, title: tm.name, subtitle: [tm.project, tm.presentation.name].filter(Boolean).join(" · "), siteUrl: tm.siteUrl || null,
+            actions: tm.active && opts.putOnStage && opts.currentTeam?.() !== tm.teamId ? `<button class="btn sm primary" data-pv-act="stage">${icon("play")}Səhnəyə çıxar</button>` : "",
+            onAction: async a => { if (a === "stage") { await opts.putOnStage?.(tm.teamId); render(); } } });
+        }
+      }
+      else if (t.closest("[data-mat-stage]")) { await opts.putOnStage?.(id("data-mat-stage")); render(); }
+      else if (t.closest("[data-mat-accept]")) { await api(`/api/admin/teams/${id("data-mat-accept")}/review`, { method: "POST", body: { action: "accept" } }); toast("Qəbul edildi — komandaya bildiriş getdi"); await reload(); onChange(); }
       else if (t.closest("[data-mat-return]")) { returning = id("data-mat-return"); render(); }
       else if (t.closest("[data-mat-cancel]")) { returning = null; render(); }
       else if (t.closest("[data-mat-approve]")) { await api(`/api/admin/teams/${id("data-mat-approve")}/approve`, { method: "POST", body: {} }); toast("Komanda təsdiqləndi"); await reload(); onChange(); }
@@ -84,7 +116,7 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
       returning = null; toast("Geri qaytarıldı — komandaya səbəb göndərildi"); await reload(); onChange();
     } catch (ex) { toast((ex as ApiError).message, "err"); }
   });
-  return { reload, get data() { return D; } };
+  return { reload, render, get data() { return D; } };
 }
 
 // ---------- team sign-in link dialog (/t/<code>) ----------
@@ -136,45 +168,77 @@ export async function openTeamLink(teamId: number, teamName: string, fresh = fal
 export function showCtlHtml(s: StagePayload | null, compact = false) {
   if (!s) return "";
   const sh = s.show;
+  const ev = sh.scene === "event";
   const has = !!s.team;
-  const pages = sh.pres?.pages ?? 0;
-  const status = !has ? "Səhnədə komanda yoxdur"
+  const pages = ev ? sh.eventPres?.pages ?? 0 : sh.pres?.pages ?? 0;
+  const slide = ev ? sh.eventSlide : sh.slide;
+  const deck = ev ? !!sh.eventPres : !!sh.pres;
+  const status = ev ? `Tədbirin prezentasiyası: ${sh.eventPres?.title ?? "—"}`
+    : !has ? "Səhnədə komanda yoxdur"
     : sh.pres ? `Prezentasiya: PDF${pages ? ` · ${pages} slayd` : ""}`
     : sh.presPending ? (sh.presPending === "running" || sh.presPending === "pending" ? "PPTX PDF-ə çevrilir…" : "PPTX göstərilə bilmir — PDF lazımdır")
     : "Prezentasiya yoxdur — səhnədə böyük taymer";
   const mode = sh.mode;
-  return `<div class="showctl${compact ? " compact" : ""}">
-    <div class="row between" style="gap:8px"><span class="caps">${icon("expand")}Səhnə ekranı</span><span class="sub" style="margin:0">${esc(status)}</span></div>
+  return `<div class="showctl${compact ? " compact" : ""}${ev ? " evscene" : ""}">
+    <div class="row between" style="gap:8px"><span class="caps">${icon("expand")}Proyektorda</span><span class="sub" style="margin:0">${esc(status)}</span></div>
     <div class="row" style="gap:8px">
-      <div class="seg" role="group" aria-label="Səhnə görünüşü">
+      ${ev ? `<button class="btn sm primary" type="button" data-ev-back>${icon("back")}Komandaya qayıt</button>` : `<div class="seg" role="group" aria-label="Səhnə görünüşü">
         <button type="button" data-show-mode="auto" aria-pressed="${mode === "auto"}" ${has ? "" : "disabled"}>${sh.pres ? "Slaydlar" : "Avto"}</button>
         <button type="button" data-show-mode="timer" aria-pressed="${mode === "timer"}" ${has ? "" : "disabled"}>Taymer</button>
         <button type="button" data-show-mode="site" aria-pressed="${mode === "site"}" ${has && sh.site ? "" : "disabled"} title="${sh.site ? esc(sh.site.url) : "Sayt linki yoxdur"}">Sayt</button>
-      </div>
+      </div>`}
       <div class="stepper slides" role="group" aria-label="Slayd">
-        <button type="button" data-slide="-1" ${sh.pres && sh.slide > 1 ? "" : "disabled"} aria-label="Əvvəlki slayd">${icon("back")}</button>
-        <span class="mono">${sh.pres ? `${sh.slide} / ${pages || "?"}` : "—"}</span>
-        <button type="button" data-slide="1" ${sh.pres && (!pages || sh.slide < pages) ? "" : "disabled"} aria-label="Növbəti slayd">${icon("next")}</button>
+        <button type="button" data-slide="-1" ${deck && slide > 1 ? "" : "disabled"} aria-label="Əvvəlki slayd">${icon("back")}</button>
+        <span class="mono">${deck ? `${slide} / ${pages || "?"}` : "—"}</span>
+        <button type="button" data-slide="1" ${deck && (!pages || slide < pages) ? "" : "disabled"} aria-label="Növbəti slayd">${icon("next")}</button>
       </div>
-      <button class="btn sm" type="button" data-show-intro ${has ? "" : "disabled"}>${icon("sparkle")}Intro</button>
-      ${compact ? "" : `<a class="btn sm ghost" href="/stage" target="_blank" rel="noopener">${icon("ext")}Səhnə ekranı</a>`}
+      ${ev ? "" : `<button class="btn sm" type="button" data-show-intro ${has ? "" : "disabled"}>${icon("sparkle")}Intro</button>`}
+      ${compact ? "" : `<a class="btn sm ghost" href="/stage" target="_blank" rel="noopener">${icon("ext")}Proyektor</a>`}
     </div></div>`;
 }
 
-/** Click handling for showCtlHtml; `get` returns the current stage, `set` applies the server's answer. */
-export function bindShowCtl(root: HTMLElement, get: () => StagePayload | null, set: (s: StagePayload) => void) {
+/** v3: the event's own presentations — put one on the projector (no team, timer bubble optional), back to the team. */
+export function eventCtlHtml(s: StagePayload | null, files: EventFile[], compact = false) {
+  if (!s) return "";
+  const sh = s.show;
+  const on = sh.scene === "event" ? sh.eventPres?.fileId ?? null : null;
+  return `<div class="head"><div><h2 id="h-scene">${icon("doc")}Tədbirin prezentasiyası</h2>
+      ${compact ? "" : `<p class="sub">Açılış, fasilə, sponsorlar, qaydalar — komanda olmadan proyektorda göstərin. Slaydları ← → ilə, pultdan və ya klikerlə çevirin.</p>`}</div>
+      ${compact ? "" : `<a class="btn sm ghost" href="/admin/setup#h-evfiles">${icon("plus")}Yüklə / idarə et</a>`}</div>
+    ${files.length ? `<div class="evf">${files.map(f => `<div class="evf-row ${on === f.id ? "on" : ""}">
+        <span class="evf-t"><b>${esc(f.title)}</b><small>${f.ext.toUpperCase()}${f.pages ? ` · ${f.pages} slayd` : ""}${f.viewable ? "" : f.conv === "running" || f.conv === "pending" ? " · PDF-ə çevrilir…" : " · göstərilə bilmir (PDF yükləyin)"}</small></span>
+        ${compact ? "" : `<button class="btn sm ghost" type="button" data-ev-preview="${f.id}" ${f.viewable ? "" : "disabled"}>${icon("expand")}Bax</button>`}
+        ${on === f.id ? `<span class="pill live">Proyektorda</span>` : `<button class="btn sm ${on ? "" : "primary"}" type="button" data-ev-show="${f.id}" ${f.viewable ? "" : "disabled"}>${icon("play")}Proyektora</button>`}
+      </div>`).join("")}</div>
+      <div class="toggle" style="border-top:0;padding:0"><div><b>Taymer bubble-ı göstər</b><small>Tədbir prezentasiyasının üstündə taymer (adətən söndürülür)</small></div>
+        <button type="button" class="sw" role="switch" data-ev-bubble aria-checked="${sh.bubble}" aria-label="Taymer bubble-ı göstər"></button></div>
+      ${on ? `<div class="row"><button class="btn sm" type="button" data-ev-back>${icon("back")}Komandaya qayıt</button></div>` : ""}`
+    : `<p class="note">Hələ tədbir prezentasiyası yoxdur. <a href="/admin/setup#h-evfiles">Quraşdırma → Tədbirin prezentasiyası</a> bölməsindən PDF / PPTX yükləyin.</p>`}`;
+}
+
+/** Click handling for showCtlHtml / eventCtlHtml; `get` returns the current stage, `set` applies the server's answer. */
+export function bindShowCtl(root: HTMLElement, get: () => StagePayload | null, set: (s: StagePayload) => void, extra: { preview?: (fileId: number) => void } = {}) {
   root.addEventListener("click", async e => {
     const t = e.target as HTMLElement;
     const m = t.closest<HTMLButtonElement>("[data-show-mode]");
     const sl = t.closest<HTMLButtonElement>("[data-slide]");
     const intro = t.closest<HTMLButtonElement>("[data-show-intro]");
-    if ((!m && !sl && !intro) || (m ?? sl ?? intro)!.disabled) return;
+    const evShow = t.closest<HTMLButtonElement>("[data-ev-show]");
+    const evBack = t.closest<HTMLButtonElement>("[data-ev-back]");
+    const evBubble = t.closest<HTMLButtonElement>("[data-ev-bubble]");
+    const evPrev = t.closest<HTMLButtonElement>("[data-ev-preview]");
+    if (evPrev && !evPrev.disabled) { extra.preview?.(Number(evPrev.dataset.evPreview)); return; }
+    const btn = m ?? sl ?? intro ?? evShow ?? evBack ?? evBubble;
+    if (!btn || btn.disabled) return;
     const s = get();
-    const body = m ? { mode: m.dataset.showMode } : sl ? { slide: Math.max(1, (s?.show.slide ?? 1) + Number(sl.dataset.slide)) } : { intro: true };
+    const body = m ? { mode: m.dataset.showMode } : sl ? { delta: Number(sl.dataset.slide) } : evShow ? { eventFile: Number(evShow.dataset.evShow), scene: "event" }
+      : evBack ? { scene: "team" } : evBubble ? { bubble: !(s?.show.bubble ?? false) } : { intro: true };
     try {
       const r = await api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body });
       set(r.stage);
       if (intro) toast("Intro səhnədə göstərilir");
+      if (evShow) toast("Tədbirin prezentasiyası proyektorda");
+      if (evBack) toast("Proyektor komandaya qayıtdı");
     } catch (ex) { toast((ex as ApiError).message, "err"); }
   });
 }
@@ -191,22 +255,13 @@ export function teamAccessHtml(D: MaterialsData | null) {
   const sw = (id: string, on: boolean, label: string, hint: string) => `<div class="toggle"><div><b>${label}</b><small>${hint}</small></div>
     <button type="button" class="sw" role="switch" data-tset="${id}" aria-checked="${on}" aria-label="${label}"></button></div>`;
   return `
-    <div class="row between"><h3 id="h-tacc">Komanda girişi və materiallar</h3><span class="saved" id="taSaved"></span></div>
+    <div class="row between"><h3 id="h-tacc">Komanda girişi</h3></div>
     <p class="sub" style="margin:0">Hər komandaya giriş linki (QR) verin: komanda <b>/t/kod</b> linki ilə daxil olur, prezentasiyasını (PDF${D.soffice ? " və ya PPTX" : ""}, maks. ${D.maxUploadMb} MB), sayt və video linkini yükləyir.
       Bal və reytinq komandalara heç vaxt göstərilmir.${D.soffice ? "" : " <b>Serverdə LibreOffice yoxdur</b> — komandalardan PDF istəyin."}</p>
     ${sw("teamRegistration", s.teamRegistration, "Açıq qeydiyyat", "Komandalar özləri qeydiyyatdan keçə bilər (munsif.im/team). Yeni komanda “təsdiq gözləyir” statusunda yaranır və siz təsdiqləyənə qədər sıraya düşmür.")}
     ${sw("teamCanRename", s.teamCanRename, "Komanda adını özü dəyişə bilsin", "Bağlı olanda komanda və layihə adını yalnız siz dəyişirsiniz.")}
     ${sw("jurorsSeeMaterials", s.jurorsSeeMaterials, "Münsiflər materialları görsün", "Münsif panelində komandanın prezentasiyası və saytı üçün baxış linki görünür.")}
-    <div class="toggle"><div><b>Yükləmə deadline-ı</b><small>Bu vaxtdan sonra komandalar fayl və link dəyişə bilmir (bir saat qalmış xatırlatma gedir). Boş = deadline yoxdur.</small></div>
-      <div class="row" style="flex-wrap:nowrap;gap:6px"><input type="datetime-local" id="taDeadline" value="${dtLocal(s.uploadDeadline)}" style="width:auto">
-      ${s.uploadDeadline ? `<button class="btn sm ghost" type="button" data-tset-clear>Sil</button>` : ""}</div></div>
-    <div class="tacc">${D.teams.map((t, i) => `
-      <div class="tacc-row ${t.active ? "" : "off"}">
-        <span class="ix mono">${i + 1}</span>
-        <div class="mid"><b>${esc(t.name)}</b><small>${t.approval === "pending" ? `<span class="warn-t">Təsdiq gözləyir</span> · ` : ""}${t.link ? `Link: <span class="mono">${esc(t.link.code ?? "••••")}</span> · ${t.sessions} sessiya` : "Link yaradılmayıb"} · ${REVIEW_LABEL[t.review]}</small></div>
-        ${t.approval === "pending" ? `<button class="btn sm primary" type="button" data-mat-approve="${t.teamId}">${icon("check")}Təsdiqlə</button>` : ""}
-        <button class="btn sm ${t.link ? "" : "primary"}" type="button" data-tlink="${t.teamId}">${icon("qr")}${t.link ? "Link / QR" : "Link yarat"}</button>
-      </div>`).join("")}</div>`;
+    <p class="sub" style="margin:0">Hər komandanın giriş linki (QR) yuxarıda, “Komandalar” bölməsində komandanı açanda görünür. Deadline — “Yükləmə deadline-ı” bölməsində.</p>`;
 }
 export function bindTeamAccess(root: HTMLElement, getData: () => MaterialsData | null, reload: () => Promise<void>) {
   const flash = () => { const s = document.getElementById("taSaved"); if (s) { s.textContent = "Saxlanıldı"; setTimeout(() => { s.textContent = ""; }, 1800); } };

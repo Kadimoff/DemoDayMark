@@ -1,5 +1,8 @@
 // Projector results screen. It only ever receives places the admin has already revealed
 // (server: shared/reveal.ts), so nothing can leak ahead of the ceremony.
+// v3: calm and simple — the top places open in two clicks: first the big place number, then the name (soft
+// animation); the winner gets a restrained confetti. No suspense texts, heartbeat or fireworks, and no control
+// buttons on the projector: the coordinator panel and the phone remote run the reveal.
 import "./styles.css";
 import { ordinal, type RevealPublic, type RevealedEntry } from "../../shared/reveal";
 import { displayParts } from "../../shared/scoring";
@@ -14,19 +17,18 @@ interface AdminReveal { enabled: boolean; step: number; stepsTotal: number; next
 const main = $("#main");
 const overlay = $("#overlay");
 const spot = $("#spot");
-const vid = { bg: $<HTMLVideoElement>("#bgv"), sus: $<HTMLVideoElement>("#susv"), win: $<HTMLVideoElement>("#winv") };
+const vid = { bg: $<HTMLVideoElement>("#bgv") };
 const play = (v: HTMLVideoElement, fromStart = false) => { if (fromStart) v.currentTime = 0; v.play().catch(() => { /* autoplay blocked or file missing: CSS backdrop stays */ }); };
 play(vid.bg);
 const el = {
-  ev: $("#ev"), title: $("#title"), ovPlace: $("#ovPlace"), ovName: $("#ovName"), ovProj: $("#ovProj"), ovScore: $("#ovScore"), ovBreak: $("#ovBreak"),
-  ovHint: $("#ovHint"), btns: $("#btns"), keys: $("#keys"), toast: $("#toast"), dock: $("#dock"),
+  ev: $("#ev"), title: $("#title"), ovNum: $("#ovNum"), ovPlace: $("#ovPlace"), ovName: $("#ovName"), ovProj: $("#ovProj"), ovScore: $("#ovScore"), ovBreak: $("#ovBreak"),
+  btns: $("#btns"), toast: $("#toast"), dock: $("#dock"),
   prog: $("#prog"), progN: $("#progN"), progT: $("#progT"), progBar: $("#progBar"), manual: $("#manual"),
 };
 const calm = reducedMotion();
 
 let state: RevealPublic | null = null;
 let boardTotal = -1;
-let isAdmin = false;
 let ceremony = 0; // bumps on every state change so stale timeouts never touch a newer screen
 
 // ---------- sound (Web Audio; unlocked by the first click/key on the projector) ----------
@@ -113,49 +115,18 @@ function brass(freqs: number[], at: number, dur: number, vol: number) {
     }
   } catch { /* audio unavailable */ }
 }
+// v3: soft, short cues only (no heartbeat, risers, booms or fanfare).
 const sound = {
-  // "lub-dub": two low thumps
-  beat: () => { tone(62, 0, 0.2, "sine", 0.9, 38); tone(55, 0.19, 0.18, "sine", 0.6, 34); },
-  reveal: () => { tone(523.25, 0, 0.18, "triangle", 0.25); tone(783.99, 0.1, 0.35, "triangle", 0.22); },
-  podium: () => [523.25, 659.25, 783.99].forEach((f, i) => tone(f, i * 0.12, 0.9, "triangle", 0.28)),
-  /** Tension before the ignition. */
-  riser: () => { noise(0, 0.95, 0.28, "bandpass", 300, 5000, 0.9); tone(160, 0, 0.95, "sine", 0.12, 880); },
-  boom: () => {
-    tone(72, 0, 1.6, "sine", 1, 26);
-    tone(144, 0, 0.3, "triangle", 0.35, 60);
-    noise(0, 0.7, 0.55, "lowpass", 1400, 90, 0.005);
-  },
-  shimmer: () => [1567.98, 2093, 2637.02, 3135.96].forEach((f, i) => tone(f, 0.05 + i * 0.05, 2.2, "sine", 0.05)),
-  fanfare: () => {
-    const C = [261.63, 329.63, 392, 523.25], F = [349.23, 440, 523.25, 698.46], G = [392, 493.88, 587.33, 783.99];
-    brass(C, 0, 0.42, 0.5); brass(C, 0.46, 0.16, 0.45); brass(F, 0.66, 0.42, 0.5); brass(G, 1.12, 0.42, 0.52);
-    brass([...C, 659.25], 1.6, 2.8, 0.6);
-    [0, 0.66, 1.12, 1.6, 1.72].forEach((t, i) => tone(i < 3 ? 98 : 65.41, t, 0.6, "sine", 0.65, 50));
-  },
-  crackle: () => {
-    tone(115, 0, 0.35, "sine", 0.45, 38);
-    noise(0, 0.6, 0.3, "highpass", 1800, 4500, 0.005);
-    for (let i = 0; i < 9; i++) noise(0.25 + Math.random() * 0.9, 0.035, 0.18, "highpass", 4000);
+  place: () => { tone(392, 0, 0.5, "sine", 0.12); tone(587.33, 0.05, 0.6, "sine", 0.08); },
+  reveal: () => { tone(523.25, 0, 0.18, "triangle", 0.2); tone(783.99, 0.1, 0.35, "triangle", 0.18); },
+  podium: () => [523.25, 659.25, 783.99].forEach((f, i) => tone(f, i * 0.12, 0.9, "triangle", 0.22)),
+  winner: () => {
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, i * 0.14, 1.4, "triangle", 0.2));
+    [1567.98, 2093].forEach((f, i) => tone(f, 0.6 + i * 0.08, 1.6, "sine", 0.04));
+    noise(0.55, 0.5, 0.05, "highpass", 3000, 6000, 0.01);
   },
 };
-
-// ---------- heartbeat: accelerates the longer the room waits ----------
-let beatTimer = 0, beatStart = 0;
-function startBeats() {
-  stopBeats();
-  beatStart = performance.now();
-  const loop = () => {
-    const t = (performance.now() - beatStart) / 1000;
-    overlay.classList.remove("beat");
-    void overlay.offsetWidth;
-    overlay.classList.add("beat");
-    sound.beat();
-    beatTimer = window.setTimeout(loop, Math.max(560, 1050 - t * 28));
-  };
-  loop();
-}
-function stopBeats() { clearTimeout(beatTimer); overlay.classList.remove("beat"); }
-
+void brass; // kept for the sound bus API
 // ---------- helpers ----------
 const medal = (rank: number) => (rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "");
 function countUp(node: HTMLElement, to: number | null, ms: number) {
@@ -197,7 +168,6 @@ function hint() {
 // ---------- board ----------
 function waiting() {
   boardTotal = -1;
-  stopBeats();
   overlay.hidden = true;
   el.title.textContent = "Nəticələr";
   document.body.classList.add("waiting");
@@ -313,36 +283,38 @@ function clearSlot(index: number) {
   if (rk) rk.textContent = String(index + 1);
 }
 
-// ---------- overlay ----------
-function showSuspense(rank: number) {
+// ---------- overlay: big place number → name ----------
+function showPlace(rank: number) {
   overlay.hidden = false;
-  overlay.className = "rv-overlay suspense";
+  overlay.className = `rv-overlay place ${medal(rank)}`;
+  el.ovNum.textContent = String(rank);
   el.ovPlace.textContent = `${ordinal(rank)} yer`;
   el.ovName.textContent = "";
   el.ovProj.textContent = "";
   el.ovScore.textContent = "";
   el.ovBreak.textContent = "";
-  el.ovHint.textContent = ""; // suspense shows only the place and the heartbeat
-  play(vid.sus, true);
-  if (!calm) startBeats();
+  sound.place();
 }
 
 function ceremonyReveal(e: RevealedEntry) {
-  if (e.rank === 1 && e.index === 0) { winnerScene(e); return; }
   const my = ceremony;
-  stopBeats();
+  const winner = e.rank === 1 && e.index === 0;
   overlay.hidden = false;
-  overlay.className = `rv-overlay revealed ${medal(e.rank)}`;
-  el.ovPlace.textContent = `${ordinal(e.rank)} yer`;
+  overlay.className = `rv-overlay revealed ${medal(e.rank)}${winner ? " winner" : ""}`;
+  el.ovNum.textContent = String(e.rank);
+  el.ovPlace.textContent = winner ? `${ordinal(1)} yer · Qalib` : `${ordinal(e.rank)} yer`;
   el.ovName.textContent = e.name;
   el.ovProj.textContent = e.project;
   el.ovScore.textContent = e.score == null ? "" : "0.00";
-  el.ovHint.textContent = e.rank === 1 ? "Təbriklər!" : "";
   el.ovBreak.textContent = breakdown(e);
   fit(el.ovName, 24);
-  countUp(el.ovScore, e.score, 1600);
-  sound.podium();
-  // Hand the stage back to the podium after the moment has landed.
+  countUp(el.ovScore, e.score, 1400);
+  if (winner) {
+    sound.winner();
+    // restrained confetti: one soft fall, in the brand's warm tones
+    if (!calm) window.setTimeout(() => { if (my === ceremony) fxFront.confetti(110, [C.gold, C.ink, C.ember]); }, 450);
+  } else sound.podium();
+  // Hand the stage back to the podium after the moment has landed (the winner stays a little longer).
   window.setTimeout(() => {
     if (my !== ceremony) return;
     overlay.classList.add("leaving");
@@ -350,8 +322,9 @@ function ceremonyReveal(e: RevealedEntry) {
       if (my !== ceremony) return;
       overlay.hidden = true;
       fillSlot(e, true);
+      ambient();
     }, calm ? 0 : 700);
-  }, 4500);
+  }, winner ? 7000 : 4500);
 }
 
 // ---------- apply server state ----------
@@ -364,13 +337,12 @@ function apply(next: RevealPublic) {
   const prev = state;
   state = next;
   ceremony++;
-  stopWinner();
   spot.hidden = true;
   spot.innerHTML = "";
   fxFront.embers(0, []);
   el.ev.innerHTML = brandHtml(next.eventName || "Hakaton");
   document.body.classList.toggle("noscores", next.hideScores);
-  if (!next.enabled) { waiting(); renderButtons(); return; }
+  if (!next.enabled) { waiting(); return; }
   if (boardTotal !== next.total) buildBoard(next.total);
   el.title.textContent = next.done ? "Qaliblər" : "Nəticələr";
   el.prog.hidden = false;
@@ -393,156 +365,38 @@ function apply(next: RevealPublic) {
   if (freshSet.size && !special) spotlight(next.revealed.filter(e => freshSet.has(e.index)));
 
   if (next.suspense) {
-    if (!(prev?.suspense && prev.suspense.index === next.suspense.index && !overlay.hidden)) showSuspense(next.suspense.rank);
+    // first click on a top place: only its number (the name is not even on this screen yet — see shared/reveal.ts)
+    if (!(prev?.suspense && prev.suspense.index === next.suspense.index && !overlay.hidden)) showPlace(next.suspense.rank);
   } else if (special) {
     ceremonyReveal(next.revealed.find(e => e.index === fresh)!);
   } else {
-    stopBeats();
     overlay.hidden = true;
   }
-  if (overlay.hidden) vid.sus.pause();
   main.querySelectorAll(".rv-pod.p0").forEach(p => p.classList.toggle("champion", next.done));
   ambient();
-  renderButtons();
 }
 
 // ---------- particles ----------
 const tok = (v: string, fb: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fb;
 const C = { gold: rgb(tok("--rv-gold", "#F1C24D")), ember: rgb(tok("--rv-ember", "#FF6F36")), ink: rgb(tok("--rv-ink", "#F3F4F8")), silver: rgb(tok("--rv-silver", "#D3DAE6")), bronze: rgb(tok("--rv-bronze", "#E0955F")) };
 const fxFront = new FX($<HTMLCanvasElement>("#fx"));
-const winFx = new FX($<HTMLCanvasElement>("#winFx"));
-fxFront.hot = winFx.hot = C.ink;
-winFx.onBurst = () => sound.crackle();
+fxFront.hot = C.ink;
 
-// ---------- winner scene: hold → ignition → name forge → fireworks → podium ----------
-const win = $("#win");
-const winName = $("#winName");
-let winTimers: number[] = [];
-let winEntry: RevealedEntry | null = null;
-const later = (ms: number, fn: () => void) => {
-  const my = ceremony;
-  winTimers.push(window.setTimeout(() => { if (my === ceremony) fn(); }, ms));
-};
-function stopWinner() {
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
-  winEntry = null;
-  win.hidden = true;
-  win.className = "rv-win";
-  winFx.clear();
-  overlay.classList.remove("hold");
-}
-function setWinnerName(name: string) {
-  let i = 0;
-  winName.querySelector(".chars")!.innerHTML = name.split(" ").map(word =>
-    `<span class="w">${Array.from(word).map(ch => `<span class="c" style="--i:${i++}">${esc(ch)}</span>`).join("")}</span>`).join(" ");
-  winName.querySelector(".shine")!.textContent = name;
-  fit(winName, 40);
-  return i;
-}
-function winnerScene(e: RevealedEntry) {
-  stopBeats();
-  winEntry = e;
-  $("#winLabel").textContent = `${ordinal(1)} yer · Qalib`;
-  $("#winProj").textContent = e.project;
-  $("#winScore").textContent = e.score == null ? "" : "0.00";
-  $("#winScoreBox").hidden = e.score == null;
-  $("#winBreak").textContent = breakdown(e);
-  const letters = setWinnerName(e.name);
-  if (calm) {
-    overlay.hidden = true;
-    win.hidden = false;
-    win.className = "rv-win label name score congrats";
-    $("#winScore").textContent = e.score == null ? "" : e.score.toFixed(2);
-    later(9000, () => finishWinner());
-    return;
-  }
-  overlay.classList.add("hold");            // the heart stops; the room holds its breath
-  sound.riser();
-  later(900, () => {                         // ignition
-    overlay.hidden = true;
-    overlay.classList.remove("hold");
-    win.hidden = false;
-    win.className = "rv-win ignite";
-    play(vid.win, true);
-    winFx.resize();
-    sound.boom();
-    sound.shimmer();
-    winFx.burst(0.5, 0.45, [C.gold, C.ink, C.ember], 280, 1.5);
-    winFx.embers(40, [C.gold, C.ember]);
-  });
-  later(1250, () => win.classList.add("label"));
-  later(1550, () => { win.classList.add("name"); sound.fanfare(); });
-  const named = 1550 + letters * 60 + 1000;
-  later(named, () => { win.classList.add("score"); countUp($("#winScore"), e.score, 2200); });
-  later(named + 500, () => win.classList.add("shine"));
-  for (let i = 0; i < 14; i++) later(named + 300 + i * 480, () => winFx.rocket(0.1 + Math.random() * 0.8, [C.gold, C.gold, C.ember, C.silver]));
-  later(named + 600, () => fxFront.confetti(180, [C.gold, C.ember, C.ink, C.silver, C.bronze]));
-  later(named + 1400, () => win.classList.add("congrats"));
-  later(named + 9500, () => finishWinner());
-}
-/** Hands over to the podium (also when the admin presses next/Space during the scene). */
-function finishWinner() {
-  const e = winEntry;
-  if (!e) return;
-  winEntry = null;
-  winTimers.forEach(clearTimeout);
-  winTimers = [];
-  winFx.embers(0, []);
-  win.classList.add("leaving");
-  const my = ceremony;
-  window.setTimeout(() => {
-    if (my !== ceremony || winEntry) return; // the admin moved on meanwhile
-    win.hidden = true;
-    win.className = "rv-win";
-    winFx.clear();
-    fillSlot(e, true);
-    ambient();
-  }, calm ? 0 : 1400);
-}
 /** Slow golden embers behind the final podium. */
-function ambient() { fxFront.embers(state?.done && !calm && !winEntry ? 12 : 0, [C.gold, C.ember]); }
+function ambient() { fxFront.embers(state?.done && !calm && overlay.hidden ? 10 : 0, [C.gold, C.ember]); }
 
-// ---------- admin controls on the projector (optional; the admin panel has the same buttons) ----------
-let adminView: AdminReveal | null = null;
-function nextLabel() {
-  const n = adminView?.next;
-  if (!adminView?.enabled) return "Açıqlamaya icazə verilməyib";
-  if (!n) return "Hamısı açıqlandı";
-  if (n.kind === "suspense") return `${ordinal(n.entry.rank)} yer: intizar`;
-  if (n.entries && n.entries.length > 1) {
-    const r = n.entries.map(x => x.rank);
-    return `${Math.max(...r)}–${ordinal(Math.min(...r))} yerlər`;
-  }
-  return `${ordinal(n.entry.rank)} yeri açıqla`;
-}
+// ---------- v3: no control buttons on the projector — only small sound / fullscreen icons (and F / M keys) ----------
 function renderButtons() {
-  const common = `<button class="tp-btn" data-act="mute" title="Səs (M)">${icon("sound")}<span>${muted ? "Səs sönük" : "Səs"}</span></button>
-    <button class="tp-btn" data-act="full" title="Tam ekran (F)" aria-label="Tam ekran">${icon("full")}</button>`;
-  if (!isAdmin) { el.btns.innerHTML = common; return; }
-  const canNext = !!adminView?.enabled && !!adminView.next;
-  el.btns.innerHTML = `
-    <button class="tp-btn" data-act="back" ${adminView?.step ? "" : "disabled"} title="Geri (←)">${icon("reset")}<span>Geri</span></button>
-    <button class="tp-btn go" data-act="next" ${canNext ? "" : "disabled"} title="Növbəti (→ / Space)">${icon("next")}<span>${esc(nextLabel())}</span></button>
-    ${common}`;
+  el.btns.innerHTML = `<button class="tp-btn ico" data-act="mute" title="Səs (M)" aria-label="${muted ? "Səsi aç" : "Səsi söndür"}">${icon("sound")}${muted ? `<span class="x">×</span>` : ""}</button>
+    <button class="tp-btn ico" data-act="full" title="Tam ekran (F)" aria-label="Tam ekran">${icon("full")}</button>`;
 }
-async function refreshAdmin() {
-  if (!isAdmin) return;
-  try { adminView = await api<AdminReveal>("/api/admin/reveal"); } catch { /* lost admin session */ }
-  renderButtons();
-}
-async function act(a: string) {
+function act(a: string) {
   if (a === "full") {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => toast("Tam ekran mümkün olmadı"));
-    else document.exitFullscreen();
+    else void document.exitFullscreen();
     return;
   }
-  if (a === "mute") { muted = !muted; toast(muted ? "Səs söndürüldü" : "Səs açıldı"); renderButtons(); return; }
-  if (!isAdmin) return;
-  try {
-    adminView = await api<AdminReveal & { public: RevealPublic }>("/api/admin/reveal", { method: "POST", body: { action: a } });
-    apply((adminView as AdminReveal & { public: RevealPublic }).public);
-  } catch (e) { toast((e as ApiError).message); }
+  if (a === "mute") { muted = !muted; toast(muted ? "Səs söndürüldü" : "Səs açıldı"); renderButtons(); }
 }
 el.btns.addEventListener("click", e => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-act]");
@@ -553,10 +407,8 @@ document.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if (k === "f") act("full");
   else if (k === "m") act("mute");
-  else if (winEntry && (e.code === "Space" || k === "arrowright" || k === "enter" || k === "escape")) { e.preventDefault(); finishWinner(); }
-  else if (isAdmin && (e.code === "Space" || k === "arrowright" || k === "enter")) { e.preventDefault(); if (adminView?.next && adminView.enabled) act("next"); }
-  else if (isAdmin && k === "arrowleft") act("back");
 });
+renderButtons();
 let idleT = 0;
 const wakeDock = () => { el.dock.classList.remove("idle"); clearTimeout(idleT); idleT = window.setTimeout(() => el.dock.classList.add("idle"), 3500); };
 ["mousemove", "touchstart", "keydown"].forEach(e => document.addEventListener(e, wakeDock, { passive: true }));
@@ -565,21 +417,13 @@ wakeDock();
 // ---------- data ----------
 async function load() {
   try { apply(await api<RevealPublic>("/api/reveal")); } catch { toast("Serverə qoşulmaq mümkün olmadı"); }
-  refreshAdmin();
 }
 live({
-  role: "admin", // admin controls when this browser has an admin session; otherwise public only
+  // v3: anonymous — the public reveal feed only
   on: {
-    "reveal:changed": (p: RevealPublic) => { apply(p); refreshAdmin(); },
+    "reveal:changed": (p: RevealPublic) => apply(p),
     "config:changed": load,
   },
   resync: load,
-  status: online => { if (!online) toast("Bağlantı kəsildi — yenidən qoşulur…"); },
 });
-api<{ admin: boolean; adminOrg: string | null }>("/api/auth/session").then(me => {
-  // orgs: controls only for an admin of the organisation this screen shows
-  isAdmin = me.admin && me.adminOrg === (pageOrg() ?? "root");
-  el.keys.hidden = !isAdmin;
-  refreshAdmin();
-}).catch(() => renderButtons());
 load();

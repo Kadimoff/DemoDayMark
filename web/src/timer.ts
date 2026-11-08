@@ -1,7 +1,9 @@
 // Projector screen (/timer, /stage, /stage/demo): the shared server timer, and — munsif.im — the team's
 // presentation (pdf.js) with the timer floating above it as a bubble, the last-5-seconds takeover,
-// the "Növbəti çıxış" intro and the website mode. Anyone can watch; only a logged-in admin gets the
-// control dock and keyboard shortcuts (slides: ← → PageUp PageDown).
+// the "Növbəti çıxış" intro and the website mode, and (v3) the event's own presentation. Anyone can watch.
+// v3: the projector has NO control buttons, not even with an admin session — the stage is run from the coordinator
+// panel and the phone remote. Only small auto-hiding sound / fullscreen icons stay, and with an admin session of this
+// organisation the slide keys of a presentation clicker (← → PageUp PageDown) still turn the slides.
 import "./styles.css";
 import QRCode from "qrcode";
 import { adjustTimer, applyTimerAction, fmtClock, timerView, type PhaseKind, type TimerView } from "../../shared/timer";
@@ -21,6 +23,9 @@ const SLOW = DEMO ? Math.max(1, Math.min(20, Number(qs.get("slow")) || 1)) : 1;
 const T0 = Date.now();
 const now = () => (DEMO ? T0 + (Date.now() - T0) / SLOW : serverNow());
 const reduced = reducedMotion() || qs.get("reduced") === "1";
+/** v3: read-only preview inside the platform panel (/root): silent, no keys, no icons. */
+const PREVIEW = qs.get("preview") === "1";
+if (PREVIEW) document.body.classList.add("st-preview");
 
 const CIRC = 2 * Math.PI * 176;
 const BCIRC = 2 * Math.PI * 52;
@@ -116,9 +121,20 @@ type View = "dial" | "pres" | "site";
 let view: View = "dial";
 
 const show = (): StageShow | null => stage?.show ?? null;
+/** v3: the event's own presentation is on stage (no team needed). */
+const eventScene = () => show()?.scene === "event" && !!show()?.eventPres && show()!.eventPres!.url !== presFailed;
+/** The deck the stage shows now (team presentation or event presentation) and its slide. */
+function deckWanted(): { url: string; slide: number; pages: number | null } | null {
+  const s = show();
+  if (!s) return null;
+  if (eventScene()) return { url: s.eventPres!.url, slide: s.eventSlide, pages: s.eventPres!.pages };
+  return s.pres ? { url: s.pres.url, slide: s.slide, pages: s.pres.pages } : null;
+}
 function wantedView(): View {
   const s = show();
-  if (!stage?.team || !s) return "dial";
+  if (!s) return "dial";
+  if (eventScene()) return "pres";
+  if (!stage?.team) return "dial";
   if (s.mode === "site" && s.site) return "site";
   if (s.mode === "auto" && s.pres && s.pres.url !== presFailed) return "pres";
   return "dial";
@@ -134,13 +150,15 @@ function applyView() {
   el.slides.hidden = v !== "pres";
   el.site.hidden = v !== "site";
   el.hud.hidden = v === "dial";
-  if (v === "pres" && s?.pres) {
-    if (deck.current !== s.pres.url) {
-      void deck.load(s.pres.url).then(ok => { if (ok) { void deck.show(show()?.slide ?? 1, 0, true); paintHud(); } });
-    } else if (deck.ready && s.slide !== deck.shown) {
-      void deck.show(s.slide, deck.shown ? Math.sign(s.slide - deck.shown) : 0).then(paintHud);
+  body.classList.toggle("st-eventscene", eventScene());
+  const want = deckWanted();
+  if (v === "pres" && want) {
+    if (deck.current !== want.url) {
+      void deck.load(want.url).then(ok => { if (ok) { void deck.show(deckWanted()?.slide ?? 1, 0, true); paintHud(); } });
+    } else if (deck.ready && want.slide !== deck.shown) {
+      void deck.show(want.slide, deck.shown ? Math.sign(want.slide - deck.shown) : 0).then(paintHud);
     }
-  } else if (!s?.pres && deck.current) {
+  } else if (!want && deck.current) {
     deck.unload();
   }
   if (v === "site" && s?.site && stage?.team) void showSite(s.site.url, s.site.embeddable, stage.team.name);
@@ -162,12 +180,12 @@ async function showSite(url: string, embeddable: boolean | null, team: string) {
 }
 
 function paintHud() {
-  const t = stage?.team;
-  el.hudTeam.textContent = t ? t.name : stage?.eventName ?? "munsif.im";
-  el.hudInfo.textContent = t ? `#${t.index} · ${t.index}/${t.total}${t.project ? ` · ${t.project}` : ""}` : "";
-  const pages = deck.pages || show()?.pres?.pages || 0;
+  const t = eventScene() ? null : stage?.team;
+  el.hudTeam.textContent = t ? t.name : eventScene() ? show()!.eventPres!.title || stage?.eventName || "munsif.im" : stage?.eventName ?? "munsif.im";
+  el.hudInfo.textContent = t ? `#${t.index} · ${t.index}/${t.total}${t.project ? ` · ${t.project}` : ""}` : eventScene() ? stage?.eventName ?? "" : "";
+  const pages = deck.pages || deckWanted()?.pages || 0;
   el.slidePill.hidden = !(view === "pres" && pages);
-  el.slidePill.textContent = `${deck.shown || show()?.slide || 1} / ${pages}`;
+  el.slidePill.textContent = `${deck.shown || deckWanted()?.slide || 1} / ${pages}`;
   el.bTeam.textContent = t?.name ?? "";
 }
 
@@ -202,7 +220,8 @@ addEventListener("resize", placeBubble);
 
 let lastSoft = -1;
 function bubbleFrame(v: TimerView) {
-  const on = view !== "dial" && v.kind !== "idle" && !introOn;
+  // v3: over the event presentation the bubble shows only when the coordinator wants it
+  const on = view !== "dial" && v.kind !== "idle" && !introOn && (!eventScene() || !!show()?.bubble);
   el.bubble.classList.toggle("hidden-b", !on);
   if (!on) return;
   const frac = v.kind === "done" ? 0 : v.remainingExact / v.phaseTotal;
@@ -219,7 +238,7 @@ function bubbleFrame(v: TimerView) {
   cl.toggle("paused", !v.running);
   el.bPause.hidden = v.running || v.kind === "done" || v.ready;
   // soft ticks 10..6; 5..1 belong to the takeover
-  if (live && v.remaining <= 10 && v.remaining > 5 && v.remaining !== lastSoft) { lastSoft = v.remaining; sfx.soft(); }
+  if (live && v.remaining <= 10 && v.remaining > 5 && v.remaining !== lastSoft && !eventScene()) { lastSoft = v.remaining; sfx.soft(); }
 }
 
 // ---------- intro ("Növbəti çıxış" + 3·2·1) ----------
@@ -230,7 +249,7 @@ function introFrame() {
   const at = show()?.introAt ?? null;
   const t = stage?.team;
   const age = at != null ? now() - at : Infinity;
-  const on = !!t && at != null && age >= 0 && age < 7000;
+  const on = !!t && !eventScene() && at != null && age >= 0 && age < 7000;
   if (on && introShown !== at) {
     introShown = at; introCountN = null;
     el.introLogo.innerHTML = show()?.logo ? `<img src="${esc(show()!.logo!)}" alt="">` : esc((t!.name.trim()[0] ?? "m").toLocaleUpperCase("az"));
@@ -329,8 +348,11 @@ function tick() {
   introFrame();
   bubbleFrame(v);
 
-  // Last 5 seconds of the pitch and of Q&A: the takeover (in every view, as long as a team is on stage).
-  const fx = !!stage.team && !introOn;
+  // v3: sounds follow the coordinator's "Səs" setting as well as this screen's own M toggle
+  sfx.muted = muted || !(stage.show.fx?.sound ?? true) || PREVIEW;
+  // Last 5 seconds of the pitch and of Q&A: the takeover (in every view, as long as a team is on stage and the
+  // coordinator has the effect on; never over the event's own presentation).
+  const fx = !!stage.team && !introOn && (stage.show.fx?.last5 ?? true) && !eventScene();
   const inLast = fx && v.running && (v.kind === "pitch" || v.kind === "qa") && v.remainingExact > 0 && v.remainingExact <= 5;
   if (inLast) {
     if (!finale.active || finale.tu) finale.enter();
@@ -358,83 +380,32 @@ function tick() {
   renderButtons(v.running, v.kind, v.ready);
 }
 
-// ---------- admin control dock ----------
+// ---------- v3: no control dock — only small auto-hiding sound / fullscreen icons ----------
 let btnSig = "";
-function renderButtons(running: boolean, kind: PhaseKind, ready: boolean) {
-  const hasTeam = !!stage?.team;
-  const s = show();
-  const sig = `${isAdmin}|${running}|${kind}|${ready}|${hasTeam}|${view}|${!!s?.pres}|${!!s?.site}|${muted}|${DEMO}`;
+function renderButtons(_running: boolean, _kind: PhaseKind, _ready: boolean) {
+  const sig = `${muted}|${PREVIEW}`;
   if (sig === btnSig) return;
   btnSig = sig;
-  const common = `
-    <button class="tp-btn" data-act="sound" title="Səs (M)">${icon("sound")}<span>${muted ? "Səssiz" : "Səs"}</span></button>
-    <button class="tp-btn" data-act="full" title="Tam ekran (F)" aria-label="Tam ekran">${icon("full")}</button>`;
-  if (!isAdmin || DEMO) { el.btns.innerHTML = common; return; }
-  const slideBtns = view === "pres" ? `
-    <button class="tp-btn" data-act="prev" title="Əvvəlki slayd (←)" aria-label="Əvvəlki slayd">${icon("back")}</button>
-    <button class="tp-btn" data-act="nextSlide" title="Növbəti slayd (→)" aria-label="Növbəti slayd">${icon("next")}</button>` : "";
-  const modeBtn = hasTeam && (s?.pres || s?.site) ? `<button class="tp-btn" data-act="mode" title="Görünüş: prezentasiya / sayt / taymer">${icon("expand")}<span>${view === "pres" ? (s?.site ? "Sayt" : "Taymer") : view === "site" ? "Taymer" : s?.pres ? "Slaydlar" : "Sayt"}</span></button>` : "";
-  el.btns.innerHTML = `
-    <button class="tp-btn ${running ? "hold" : "go"}" data-act="toggle" ${kind === "idle" && !hasTeam ? "disabled" : ""} title="Başlat / fasilə (Space)">
-      ${running ? `${icon("pause")}<span>Fasilə</span>` : `${icon("play")}<span>${ready || kind === "idle" || kind === "done" ? "Başlat" : "Davam"}</span>`}</button>
-    <button class="tp-btn qa" data-act="qa" ${hasTeam ? "" : "disabled"} title="Dərhal sual-cavab mərhələsinə keç (S)">${icon("skip")}<span>Sual-cavab</span></button>
-    <button class="tp-btn" data-act="reset" ${kind === "idle" ? "disabled" : ""} title="Sıfırla (R)">${icon("reset")}<span>Sıfırla</span></button>
-    <button class="tp-btn" data-act="next" title="Növbəti komanda (N)">${icon("next")}<span>Növbəti</span></button>
-    ${slideBtns}${modeBtn}
-    <button class="tp-btn" data-act="intro" ${hasTeam ? "" : "disabled"} title="Komandanın intro ekranı">${icon("sparkle")}<span>Intro</span></button>
-    ${common}`;
-}
-
-async function stagePatch(b: Record<string, unknown>) {
-  const r = await api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body: b });
-  onStage(r.stage);
+  el.btns.innerHTML = PREVIEW ? "" : `
+    <button class="tp-btn ico" data-act="sound" title="Səs (M)" aria-label="${muted ? "Səsi aç" : "Səsi söndür"}">${icon("sound")}${muted ? `<span class="x">×</span>` : ""}</button>
+    <button class="tp-btn ico" data-act="full" title="Tam ekran (F)" aria-label="Tam ekran">${icon("full")}</button>`;
 }
 
 async function act(a: string) {
-  if (a === "sound") { ensureAudio(); if (muted) toggleMute(); else { sTest(); toast("Səs siqnalı aktivdir"); } return; }
+  if (a === "sound") { ensureAudio(); toggleMute(); if (!muted) sTest(); return; }
   if (a === "full") { toggleFull(); return; }
-  if (DEMO) return;
-  if (!isAdmin) return;
-  ensureAudio();
-  try {
-    if (a === "prev" || a === "nextSlide") { slideBy(a === "prev" ? -1 : 1); return; }
-    if (a === "intro") { await stagePatch({ intro: true }); return; }
-    if (a === "mode") {
-      const s = show();
-      const next = view === "pres" ? (s?.site ? "site" : "timer") : view === "site" ? "timer" : s?.pres ? "auto" : "site";
-      await stagePatch({ mode: next });
-      return;
-    }
-    if (a === "next") {
-      const r = await api<{ stage: StagePayload }>("/api/admin/event/next", { method: "POST" });
-      onStage(r.stage);
-      toast(r.stage.team ? `Yeni: ${r.stage.team.name}` : "Səhnə boşdur");
-      return;
-    }
-    if (a === "plus" || a === "minus") {
-      const r = await api<{ stage: StagePayload }>("/api/admin/event", { method: "PATCH", body: { timerAdd: a === "plus" ? 30 : -30 } });
-      onStage(r.stage);
-      toast(a === "plus" ? "+30 saniyə" : "−30 saniyə");
-      return;
-    }
-    let action = a as TimerAction;
-    // Starting from "idle" (hidden timer) begins the pitch.
-    if (a === "toggle" && stage && !stage.timer.visible) action = "pitch";
-    const r = await api<{ stage: StagePayload }>("/api/admin/event", { method: "PATCH", body: { timer: action } });
-    onStage(r.stage);
-  } catch (e) { toast((e as ApiError).message); }
 }
 
-/** Optimistic: this screen turns the page at once; the server then moves every other stage screen. */
+/** Clicker / arrow keys (admin session of this organisation only): optimistic on this screen, then every other screen. */
 function slideBy(d: number) {
-  const s = show();
-  if (!stage || !s || view !== "pres" || !deck.ready) return;
-  const n = Math.max(1, Math.min(deck.pages, (deck.shown || s.slide) + d));
+  const want = deckWanted();
+  if (!stage || !want || view !== "pres" || !deck.ready) return;
+  const n = Math.max(1, Math.min(deck.pages, (deck.shown || want.slide) + d));
   if (n === deck.shown) return;
-  s.slide = n;
+  if (eventScene()) stage.show.eventSlide = n; else stage.show.slide = n;
   void deck.show(n, d).then(paintHud);
   if (DEMO) return;
-  if (isAdmin) stagePatch({ slide: n }).catch(e => toast((e as ApiError).message));
+  if (isAdmin) api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body: { slide: n } }).then(r => onStage(r.stage)).catch(e => toast((e as ApiError).message));
 }
 
 function toggleFull() {
@@ -448,22 +419,17 @@ el.btns.addEventListener("click", e => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-act]");
   if (b && !b.disabled) void act(b.dataset.act!);
 });
+// v3: on the projector only F (fullscreen), M (sound) and the clicker's slide keys work. Timer and stage controls
+// (start, Q&A, reset, next team…) live on the coordinator panel and the phone remote only.
 document.addEventListener("keydown", e => {
-  if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (PREVIEW || e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === "f") { toggleFull(); return; }
   if (k === "m") { ensureAudio(); toggleMute(); return; }
   // slides: arrows and presentation clickers (PageUp / PageDown)
   if (["arrowright", "pagedown", "arrowdown"].includes(k)) { if (isAdmin || DEMO) { e.preventDefault(); slideBy(1); } return; }
   if (["arrowleft", "pageup", "arrowup"].includes(k)) { if (isAdmin || DEMO) { e.preventDefault(); slideBy(-1); } return; }
-  if (DEMO) { if (e.code === "Space") { e.preventDefault(); demoCmd("toggle"); } return; }
-  if (!isAdmin) return;
-  if (e.code === "Space") { e.preventDefault(); void act("toggle"); }
-  else if (k === "s" || k === "q") void act("qa");
-  else if (k === "r") void act("reset");
-  else if (k === "n") void act("next");
-  else if (k === "+" || k === "=") void act("plus");
-  else if (k === "-" || k === "_") void act("minus");
+  if (DEMO && e.code === "Space") { e.preventDefault(); demoCmd("toggle"); }
 });
 // swipe on touch screens
 {
@@ -471,7 +437,7 @@ document.addEventListener("keydown", e => {
   el.view.addEventListener("pointerdown", e => { sx = e.clientX; sy = e.clientY; });
   el.view.addEventListener("pointerup", e => {
     if (sx == null) return; const dx = e.clientX - sx, dy = e.clientY - sy; sx = null;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) && (isAdmin || DEMO)) slideBy(dx < 0 ? 1 : -1);
+    if (!PREVIEW && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) && (isAdmin || DEMO)) slideBy(dx < 0 ? 1 : -1);
   });
 }
 
@@ -636,12 +602,14 @@ if (DEMO) {
     show: {
       mode: "auto", slide: 1, introAt: null, pres: { fileId: 0, url: "/demo/munsif-demo.pdf", pages: null }, presPending: null,
       site: { url: "https://munsif.im", embeddable: false }, logo: null, members: ["Aysel M.", "Rəşad Q.", "Nigar H."], next: { name: "Növbəti komanda", project: "" },
+      scene: "team", eventPres: null, eventSlide: 1, bubble: false, fx: { last5: true, sound: true }, teamSlides: true,
     },
   });
   (window as unknown as { __munsif: unknown }).__munsif = { demo: demoCmd, beat: () => finale.n, particles: () => finale.particles, lite: () => finale.lite, view: () => view, slide: () => deck.shown };
 } else {
   live({
-    role: "admin", // falls back to the public room when this browser has no admin session
+    // v3: anonymous — the projector only needs the public stage feed (never the admin feed, even when signed in)
+    indicator: !PREVIEW,
     on: {
       "stage:changed": onStage,
       "timer:changed": (p: { timer: TimerState; serverNow: number }) => {
@@ -653,16 +621,14 @@ if (DEMO) {
       "config:changed": load,
     },
     resync: load,
-    status: online => { if (!online) toast("Bağlantı kəsildi — yenidən qoşulur…"); },
   });
-  api<{ admin: boolean; adminOrg: string | null }>("/api/auth/session").then(me => {
-    // orgs: controls only for an admin of the organisation this screen shows
+  if (!PREVIEW) api<{ admin: boolean; adminOrg: string | null }>("/api/auth/session").then(me => {
+    // orgs: the clicker's slide keys work only for an admin of the organisation this screen shows
     isAdmin = me.admin && me.adminOrg === (pageOrg() ?? "root");
-    el.keys.hidden = !isAdmin;
-    btnSig = "";
-    tick();
   }).catch(() => { /* anonymous viewer */ });
   load();
+  // v3: a cheap safety net — refetch the stage every 60 s, so even a silently stuck connection heals itself
+  setInterval(() => { if (!document.hidden) void load(); }, 60_000);
   (window as unknown as { __munsif: unknown }).__munsif = { beat: () => finale.n, particles: () => finale.particles, view: () => view, slide: () => deck.shown, stage: () => stage, deck };
 }
 renderButtons(false, "idle", false);

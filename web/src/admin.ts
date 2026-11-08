@@ -16,7 +16,9 @@ import { topbar } from "./lib/topbar";
 import { orgPath } from "./lib/org";
 import { bindShowCtl, mountMaterials, showCtlHtml } from "./lib/materials";
 import { noticeBell } from "./lib/notices";
-import type { Notice } from "../../shared/types";
+import type { EventFile, Notice } from "../../shared/types";
+import { eventCtlHtml } from "./lib/materials";
+import { openViewer, viewerOpen } from "./lib/viewer";
 
 interface EventState {
   name: string; date: string; currentTeamId: number | null; timer: TimerState; locked: boolean; showJurorTotal: boolean; includeEntry: boolean;
@@ -114,42 +116,104 @@ async function nextTeam() {
 }
 
 // ---------- layout ----------
+// v3: four clear tabs (mobile first) — Səhnə · Komandalar · Münsiflər · Nəticələr; secondary tools fold away.
+type Tab = "stage" | "teams" | "jury" | "results";
+const TABS: Array<{ id: Tab; label: string; icon: string }> = [
+  { id: "stage", label: "Səhnə", icon: "timer" }, { id: "teams", label: "Komandalar", icon: "list" },
+  { id: "jury", label: "Münsiflər", icon: "users" }, { id: "results", label: "Nəticələr", icon: "medal" },
+];
+let tab: Tab = (TABS.find(t => `#${t.id}` === location.hash)?.id) ?? "stage";
+function setTab(t: Tab) {
+  tab = t;
+  if (location.hash !== `#${t}`) history.replaceState(null, "", `#${t}`);
+  main.querySelectorAll<HTMLElement>("[data-tabpane]").forEach(p => { p.hidden = p.dataset.tabpane !== t; });
+  main.querySelectorAll<HTMLElement>("[data-tab]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
+}
+function tabBadges() {
+  if (!S) return;
+  const set = (id: string, v: string) => { const b = main.querySelector(`[data-tab="${id}"] .tb`); if (b) b.textContent = v; };
+  const pres = new Map(S.presence.map(p => [p.jurorId, p]));
+  const js = activeJurors();
+  set("teams", String(activeTeams().length));
+  set("jury", js.length ? `${js.filter(j => pres.get(j.id)?.online).length}/${js.length}` : "0");
+  set("results", S.results.need ? `${S.results.done}/${S.results.need}` : "");
+}
+
 function build() {
   main.innerHTML = `
-    <section class="card hero" id="hero"></section>
-    <div class="kpis section-gap" id="kpis"></div>
-    <div class="cgrid section-gap">
-      <section class="card pad-lg stagebox" id="stageCard" aria-label="Səhnə idarəsi"></section>
-      <section class="card pad-lg stack" id="orderCard" aria-labelledby="h-order"></section>
+    <nav class="atabs" role="tablist" aria-label="Panel bölmələri">${TABS.map(t => `<button role="tab" data-tab="${t.id}" aria-selected="${t.id === tab}">${icon(t.icon)}<span>${t.label}</span><b class="tb"></b></button>`).join("")}</nav>
+    <div data-tabpane="stage">
+      <div class="kpis" id="kpis"></div>
+      <div class="cgrid section-gap">
+        <section class="card pad-lg stagebox" id="stageCard" aria-label="Səhnə idarəsi"></section>
+        <section class="card pad-lg stack" id="orderCard" aria-labelledby="h-order"></section>
+      </div>
+      <section class="card pad-lg stack section-gap" id="sceneCard" aria-labelledby="h-scene"></section>
+      <section class="card pad-lg stack section-gap" id="screensCard" aria-labelledby="h-screens"></section>
     </div>
-    <section class="card pad-lg stack section-gap" id="matCard" aria-labelledby="h-mat"></section>
-    <section class="card pad-lg stack section-gap" id="juryCard" aria-labelledby="h-jury"></section>
-    <section class="card pad-lg stack section-gap" id="finalCard" aria-labelledby="h-final"></section>
-    <section class="card pad-lg stack section-gap" id="revealCard" aria-labelledby="h-rv"></section>
-    <div class="grid2 section-gap">
+    <div data-tabpane="teams" hidden>
+      <section class="card pad-lg stack" id="matCard" aria-labelledby="h-mat"></section>
+    </div>
+    <div data-tabpane="jury" hidden>
+      <section class="card pad-lg stack" id="juryCard" aria-labelledby="h-jury"></section>
+    </div>
+    <div data-tabpane="results" hidden>
       <section>
         <div class="head" style="margin-bottom:12px"><div><h2>${icon("medal")}Reytinq</h2><p class="sub" id="lbFormula"></p></div></div>
         <div class="card" style="overflow:hidden" id="lbCard"></div>
       </section>
-      <section class="card" id="matrixCard"></section>
-    </div>
-    <section class="card section-gap" id="heatCard"></section>
-    <section class="card pad-lg stack section-gap" id="histCard" aria-labelledby="h-hist"></section>
-    <div class="grid2 section-gap">
-      <section class="card pad-lg stack" id="exportCard"></section>
-      <section class="card pad-lg stack" id="dangerCard"></section>
+      <section class="card pad-lg stack section-gap" id="revealCard" aria-labelledby="h-rv"></section>
+      <section class="card pad-lg stack section-gap" id="exportCard"></section>
+      <details class="fold section-gap"><summary>${icon("medal")}Yekun sıra (münsiflərin qərarı)</summary><section class="stack" id="finalCard" aria-labelledby="h-final"></section></details>
+      <details class="fold"><summary>${icon("sheet")}Münsif matrisi və meyarlar üzrə ballar</summary><div class="stack"><section class="card" id="matrixCard"></section><section class="card" id="heatCard"></section></div></details>
+      <details class="fold"><summary>${icon("list")}Qiymətləndirmə tarixçəsi</summary><section class="stack" id="histCard" aria-labelledby="h-hist"></section></details>
+      <details class="fold"><summary>${icon("warn")}Təhlükəli zona</summary><section class="stack" id="dangerCard"></section></details>
     </div>
     <div class="footbar"><span id="footBrand"></span><span>Avto-sinxronizasiya: açıq</span></div>`;
   built = true;
+  setTab(tab);
   mountHistory($("#histCard"));
-  materials = mountMaterials($("#matCard"));
+  materials = mountMaterials($("#matCard"), () => void load(), {
+    currentTeam: () => S?.event.currentTeamId ?? null,
+    putOnStage: id => patchEvent({ currentTeamId: id }).then(() => { toast("Komanda səhnədədir"); renderMaterials(); }),
+  });
   void materials.reload();
+  void loadEventFiles();
+}
+const renderMaterials = () => materials?.render();
+
+// ---------- v3: the event's own presentation on stage ----------
+let EF: EventFile[] = [];
+async function loadEventFiles() {
+  try { EF = (await api<{ files: EventFile[] }>("/api/admin/event-files")).files; } catch { /* next time */ }
+  renderScene();
+}
+function renderScene() {
+  const box = document.getElementById("sceneCard");
+  if (!box || !S) return;
+  box.innerHTML = eventCtlHtml(S.stage, EF);
+}
+function renderScreens() {
+  const box = document.getElementById("screensCard");
+  if (!box || !S) return;
+  const link = (href: string, label: string, hint: string, ic: string) => `<a class="scr" href="${href}" target="_blank" rel="noopener">${icon(ic)}<span><b>${label}</b><small>${hint}</small></span></a>`;
+  box.innerHTML = `<div class="head"><div><h2 id="h-screens">${icon("expand")}Ekranlar</h2>
+      <p class="sub">Bütün ekranlar eyni server saatı ilə sinxron işləyir. Proyektorda idarə düymələri yoxdur — səhnəni buradan və ya telefon pultundan idarə edin.</p></div></div>
+    <div class="scrs">
+      ${link("/stage", "Proyektor (səhnə)", "Prezentasiya + taymer", "expand")}
+      ${link("/admin/pult", "Telefon pultu", "Taymer, slayd, nəticə", "timer")}
+      <button class="scr" type="button" id="speakerQr">${icon("qr")}<span><b>Danışan ekranı</b><small>Çıxış edənin telefonu (QR)</small></span></button>
+      ${link("/reveal", "Nəticə ekranı", "Açıqlama proyektoru", "medal")}
+    </div>`;
 }
 
 function renderAll() {
   if (!S) return;
   if (!built) build();
   renderHero();
+  renderScene();
+  renderScreens();
+  tabBadges();
   renderKpis();
   renderStage();
   renderOrder();
@@ -165,16 +229,7 @@ function renderAll() {
 
 function renderHero() {
   if (!S) return;
-  $("#hero").innerHTML = `
-    <div class="t"><span class="flame" aria-hidden="true"></span>
-      <div><h1>Canlı səhnə idarəetməsi <span class="pill hot">${esc(S.stage.eventName)}${S.event.date ? ` / ${esc(S.event.date)}` : ""}</span></h1>
-      <p class="sub">Səhnə tempi, real vaxtda münsif sinxronizasiyası və nəticə açıqlaması</p></div></div>
-    <div class="row">
-      <a class="btn sm" href="/timer" target="_blank" rel="noopener">${icon("timer")}Proyektor taymeri</a>
-      <button class="btn sm" id="speakerQr">${icon("qr")}Təqdimatçı QR</button>
-      <button class="btn sm primary" id="heroQr">${icon("qr")}Münsif QR yarat</button>
-    </div>`;
-  $("#footBrand").textContent = `${S.stage.eventName} · Tədbir idarəetmə sistemi`;
+  $("#footBrand").textContent = `${S.stage.eventName}${S.event.date ? ` · ${S.event.date}` : ""} · munsif.im`;
 }
 
 // ---------- KPI row ----------
@@ -287,8 +342,7 @@ function renderTimerCtl(v?: TimerView) {
       <button class="btn sm ${kind === "pitch" && running ? "on" : ""}" data-timer="pitch" ${hasTeam ? "" : "disabled"}>${icon("play")}Pitch-i başdan · ${fmtClock(t.pitchSec)}</button>
       <button class="btn sm ghost" data-timer="stop" ${kind === "idle" ? "disabled" : ""}>${icon("stop")}Taymeri gizlət</button>
       <button class="btn sm ghost" id="clearStage" ${hasTeam ? "" : "disabled"}>Səhnəni boşalt</button>
-      <a class="btn sm ghost" href="/timer" target="_blank" rel="noopener">${icon("ext")}Proyektor taymeri</a>
-      <button class="btn sm ghost" id="speakerQr2">${icon("qr")}Təqdimatçı QR</button>`;
+      <a class="btn sm ghost" href="/stage" target="_blank" rel="noopener">${icon("ext")}Proyektor</a>`;
   }
   const cb = document.getElementById("clockbox");
   if (!cb) return;
@@ -514,11 +568,11 @@ function renderReveal() {
   const what = !rv.snapshotAt ? `İcazə verəndə qiymətləndirmə bağlanır və həmin anın reytinqi dondurulur. Daxil olan qiymətlər: <b class="mono">${rv.progress.done}/${rv.progress.need}</b>.`
     : !rv.enabled ? "Proyektorda “Nəticələr tezliklə açıqlanacaq” yazısı görünür. İrəliləyiş saxlanılıb."
     : done ? "Bütün yerlər açıqlanıb. Qalib ekranda qalır."
-    : n!.kind === "suspense" ? `Növbəti basış: <b>${ordinal(n!.entry.rank)} yer</b> üçün intizar (qaranlıq ekran, ürək döyüntüsü). Ad hələ görünmür.`
+    : n!.kind === "suspense" ? `Növbəti basış: ekranda böyük <b>${ordinal(n!.entry.rank)} yer</b> nömrəsi görünür. Ad hələ göndərilmir.`
     : n!.entries?.length > 1 ? `Növbəti basış: <b>${Math.max(...n!.entries.map(e => e.rank))}–${ordinal(Math.min(...n!.entries.map(e => e.rank)))} yerlər</b> birlikdə açılır (${n!.entries.length} komanda).`
     : `Növbəti basış: <b>${ordinal(n!.entry.rank)} yer</b> açıqlanır: <b>${esc(n!.entry.name)}</b> · <span class="mono">${fmt2(n!.entry.score)}</span> <span class="faint">(yalnız siz görürsünüz)</span>`;
   const label = !rv.enabled ? "Açıqlamaya icazə ver" : done ? "Bütün yerlər açıqlandı"
-    : n!.kind === "suspense" ? `${ordinal(n!.entry.rank)} yer: intizarı başlat`
+    : n!.kind === "suspense" ? `${ordinal(n!.entry.rank)} yeri göstər`
     : n!.entries?.length > 1 ? `${Math.max(...n!.entries.map(e => e.rank))}–${ordinal(Math.min(...n!.entries.map(e => e.rank)))} yerləri açıqla`
     : `${ordinal(n!.entry.rank)} yeri açıqla`;
   // One chip per place, last place first, the way the ceremony goes.
@@ -549,7 +603,7 @@ function renderReveal() {
         </div>
         <div class="row between">
           <button class="btn sm ghost" id="rvReset" ${rv.snapshotAt ? "" : "disabled"}>${icon("reset")}Sıfırla</button>
-          <span class="row" style="gap:8px"><span class="caps">İntizarlı yer</span>
+          <span class="row" style="gap:8px"><span class="caps" title="Bu yerlər iki basışla açılır: əvvəl nömrə, sonra ad">İki addımlı yer</span>
             <span class="stepper"><button id="topDec" ${S.event.revealTop > 0 ? "" : "disabled"} aria-label="Azalt">−</button><b>${S.event.revealTop}</b><button id="topInc" ${S.event.revealTop < 10 ? "" : "disabled"} aria-label="Artır">+</button></span></span>
         </div>
         <div class="row between">
@@ -560,15 +614,15 @@ function renderReveal() {
             <button class="sw" role="switch" id="rvScores" aria-checked="${!S.event.revealHideScores}" aria-label="Açıqlamada balları göstər"></button></span>
         </div>
         ${rv.snapshotAt && S.event.revealBatch !== rv.batch ? `<p class="sub" style="margin:0">Toplu açılış (${S.event.revealBatch}) “Sıfırla”dan sonra tətbiq olunur.</p>` : ""}
-        ${rv.snapshotAt && S.event.revealTop !== top ? `<p class="sub" style="margin:0">Yeni say (${S.event.revealTop}) “Sıfırla”dan sonra tətbiq olunur. İndiki açıqlama: ilk ${top} yer intizarla.</p>` : ""}
+        ${rv.snapshotAt && S.event.revealTop !== top ? `<p class="sub" style="margin:0">Yeni say (${S.event.revealTop}) “Sıfırla”dan sonra tətbiq olunur. İndiki açıqlama: ilk ${top} yer iki addımla.</p>` : ""}
       </div>
       <div class="rvstat">
         <div class="row between"><h3>Yerlər</h3><span class="caps">${(rv.public?.revealed ?? []).length} / ${total} açıqlanıb</span></div>
         ${total ? `<div class="rvsteps">${chips}</div>` : `<p class="sub" style="margin:0">Hələ heç bir komanda tam qiymətləndirilməyib.</p>`}
-        <p class="sub" style="margin:0">${icon("medal")} işarəli yerlər iki basışla açılır: əvvəl intizar, sonra ad. Hazırda ilk <b>${top}</b> yer.</p>
+        <p class="sub" style="margin:0">${icon("medal")} işarəli yerlər iki basışla açılır: əvvəl böyük yer nömrəsi, sonra komandanın adı. Hazırda ilk <b>${top}</b> yer.</p>
       </div>
     </div>
-    <div class="isolation">${icon("shield")}<span><b>Server tərəfində izolyasiya:</b> reytinq dondurulub, ekrana yalnız açıqlanmış yerlər göndərilir. İntizar addımında ad və bal şəbəkəyə çıxmır.</span></div>`;
+    <div class="isolation">${icon("shield")}<span><b>Server tərəfində izolyasiya:</b> reytinq dondurulub, ekrana yalnız açıqlanmış yerlər göndərilir. Yer nömrəsi göstəriləndə ad və bal hələ şəbəkəyə çıxmır.</span></div>`;
 }
 
 // ---------- ranking ----------
@@ -669,6 +723,7 @@ function renderExports() {
     <div class="exports">
       <a class="tile" href="/api/admin/export.xlsx" download><span class="ti x">${icon("sheet")}</span><span><b>Excel yüklə (.xlsx)</b><small>Tam matris və şərhlər</small></span></a>
       <a class="tile" href="/api/admin/export.pdf" download><span class="ti p">${icon("doc")}</span><span><b>Rəsmi PDF protokol</b><small>İmza üçün protokol</small></span></a>
+      <a class="tile" href="/api/admin/history.xlsx" download><span class="ti x">${icon("list")}</span><span><b>Qiymətləndirmə tarixçəsi (.xlsx)</b><small>Kim, nə vaxt, hansı meyar: köhnə → yeni</small></span></a>
     </div>`;
 }
 function renderDanger() {
@@ -710,6 +765,8 @@ main.addEventListener("click", async e => {
   }
   if (t.closest("#rnCancel")) { editing = null; renderStage(); return; }
   if (t.closest("#lockSw") || t.closest("#lockBtn")) { await patchEvent({ locked: !S.event.locked }); renderJury(); return; }
+  const tb = t.closest<HTMLElement>("[data-tab]");
+  if (tb) { setTab(tb.dataset.tab as Tab); return; }
   if (t.closest("#heroQr") || t.closest("#addJuror")) { createJuror(); return; }
   if (t.closest("#speakerQr") || t.closest("#speakerQr2")) {
     showLinkQr({ title: "Təqdimatçı taymeri", heading: "Pitch edən tələbə skan etsin",
@@ -860,7 +917,7 @@ document.addEventListener("keydown", e => {
   if ((e.target as HTMLElement).id === "clockT" && e.key === "Enter") { openClockEdit(); return; }
   if (!S || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
   const el = e.target as HTMLElement;
-  if (el.closest("input, textarea, select, dialog[open]") || document.querySelector("dialog[open]")) return;
+  if (el.closest("input, textarea, select, dialog[open]") || document.querySelector("dialog[open]") || viewerOpen()) return;
   const k = e.key.toLowerCase();
   const has = !!S.event.currentTeamId;
   if (e.code === "Space" && has) { e.preventDefault(); patchEvent({ timer: "toggle" }); }
@@ -869,16 +926,18 @@ document.addEventListener("keydown", e => {
   else if (k === "n") nextTeam();
   else if ((k === "+" || k === "=") && has) patchEvent({ timerAdd: 30 });
   else if ((k === "-" || k === "_") && has) patchEvent({ timerAdd: -30 });
-  else if ((k === "arrowright" || k === "pagedown" || k === "arrowleft" || k === "pageup") && has && S.stage.show.pres) {
+  else if ((k === "arrowright" || k === "pagedown" || k === "arrowleft" || k === "pageup") && (S.stage.show.scene === "event" ? !!S.stage.show.eventPres : has && !!S.stage.show.pres)) {
     e.preventDefault();
     const d = k === "arrowright" || k === "pagedown" ? 1 : -1;
-    api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body: { slide: Math.max(1, S.stage.show.slide + d) } })
+    api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body: { delta: d } })
       .then(r => { if (S) { S.stage = r.stage; strip.set(r.stage); renderStage(); } }).catch(ex => toast((ex as ApiError).message, "err"));
   }
 });
 
 onQrChange(() => load());
-bindShowCtl(main, () => S?.stage ?? null, st => { strip.set(st); if (S) { S.stage = st; const box = document.getElementById("showCtl"); if (box) box.innerHTML = showCtlHtml(st); } });
+bindShowCtl(main, () => S?.stage ?? null, st => { strip.set(st); if (S) { S.stage = st; const box = document.getElementById("showCtl"); if (box) box.innerHTML = showCtlHtml(st); renderScene(); } }, {
+  preview: id => { const f = EF.find(x => x.id === id); if (f) openViewer({ url: f.url, title: f.title, subtitle: "Tədbirin prezentasiyası" }); },
+});
 
 live({
   role: "admin",
@@ -891,6 +950,8 @@ live({
       S.event.timer = s.timer;
       bar.setEventName(s.eventName);
       renderHero();
+      renderScene();
+      renderMaterials();
       renderStage();
       renderOrder();
       renderJury();
@@ -907,6 +968,7 @@ live({
     "results:changed": (d: AdminData) => {
       if (!S) return;
       Object.assign(S, d);
+      tabBadges();
       renderKpis();
       renderStage();
       renderOrder();
@@ -919,7 +981,8 @@ live({
       loadReveal();
       refreshHistory();
     },
-    "presence:changed": (p: PresenceEntry[]) => { if (S) { S.presence = p; renderJury(); renderKpis(); } },
+    "presence:changed": (p: PresenceEntry[]) => { if (S) { S.presence = p; renderJury(); renderKpis(); tabBadges(); } },
+    "eventfiles:changed": () => void loadEventFiles(),
     "progress:changed": (p: ProgressEntry[]) => { if (S) { S.progress = p; renderJury(); } },
     "juror:joined": (p: { jurorId: number; displayName: string }) => { jurorJoined(p); load(); },
     "event:locked": (p: { locked: boolean }) => { if (S) { S.event.locked = p.locked; renderKpis(); renderJury(); } },

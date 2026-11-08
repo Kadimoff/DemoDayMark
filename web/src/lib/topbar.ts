@@ -96,18 +96,18 @@ function applyMe(me: Me, opts: TopbarOpts) {
     orgName = org;
     syncOrgName();
   }
-  if (me.isRoot && opts.nav && !document.querySelector("a[data-orgs-link]")) {
-    const here = location.pathname === "/admin/orgs";
-    const html = `<a href="/admin/orgs" data-orgs-link${here ? ' aria-current="page"' : ""}><span class="ni">${icon("db")}</span><span class="nl">Təşkilatlar</span><span class="ns">Təşkilat</span></a>`;
+  // v3: the platform owner reaches its own panel (/root) from every coordinator page it opens
+  if (me.isRoot && opts.nav && location.pathname !== "/root" && !document.querySelector("a[data-orgs-link]")) {
+    const html = `<a href="/root" data-orgs-link><span class="ni">${icon("db")}</span><span class="nl">Platforma</span><span class="ns">Platforma</span></a>`;
     document.querySelectorAll(".nav, .tabbar").forEach(n => n.insertAdjacentHTML("beforeend", html));
   }
   if (me.impersonating && me.org) {
     const b = $("#impBar");
     b.hidden = false;
-    b.innerHTML = `<div class="wrap wide row"><span>${icon("shield")}Siz <b>${esc(me.org.name)}</b> təşkilatının panelindəsiniz (platforma sahibi kimi).</span>
-      <span class="spacer"></span><button class="btn sm" id="impBack">${icon("back")}Öz panelimə qayıt</button><a class="btn sm ghost" href="/admin/orgs">Təşkilatlar</a></div>`;
+    b.innerHTML = `<div class="wrap wide row"><span>${icon("shield")}Müdaxilə: siz <b>${esc(me.org.name)}</b> təşkilatının panelindəsiniz (platforma sahibi kimi).</span>
+      <span class="spacer"></span><button class="btn sm" id="impBack">${icon("back")}Platformaya qayıt</button></div>`;
     $("#impBack").addEventListener("click", async () => {
-      try { const r = await api<{ redirect: string }>("/api/root/impersonate", { method: "POST", body: { orgId: null } }); location.href = r.redirect; }
+      try { await api<{ redirect: string }>("/api/root/impersonate", { method: "POST", body: { orgId: null } }); location.href = "/root"; }
       catch (e) { toast((e as ApiError).message, "err"); }
     });
   }

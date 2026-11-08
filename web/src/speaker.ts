@@ -50,15 +50,18 @@ let doc: PDFDocumentProxy | null = null;
 let slideSig = "";
 async function slides(s: StagePayload) {
   const box = $("#slides");
-  const p = s.show?.pres;
-  if (!p || !s.team) { box.hidden = true; slideSig = ""; return; }
+  // v3: the event's own presentation counts too (no team needed)
+  const ev = s.show?.scene === "event" && !!s.show.eventPres;
+  const p = ev ? s.show.eventPres : s.show?.pres;
+  const slide = ev ? s.show.eventSlide : s.show?.slide ?? 1;
+  if (!p || (!ev && !s.team)) { box.hidden = true; slideSig = ""; return; }
   box.hidden = false;
-  const sig = `${p.url}|${s.show.slide}`;
+  const sig = `${p.url}|${slide}`;
   if (sig === slideSig) return;
   slideSig = sig;
   try {
     if (docUrl !== p.url) { void doc?.loadingTask.destroy(); doc = await openPdf(p.url); docUrl = p.url; }
-    const n = Math.min(doc!.numPages, s.show.slide);
+    const n = Math.min(doc!.numPages, slide);
     const draw = async (sel: string, page: number | null) => {
       const el = $(sel);
       if (!page) { el.innerHTML = `<span>Son slayd</span>`; return; }

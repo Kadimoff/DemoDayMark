@@ -84,88 +84,112 @@ async function signedOut(err = "") {
   });
 }
 
-// ---------- signed in ----------
-function statusCard() {
+// ---------- signed in (v3: one simple page) ----------
+const deadlineOf = () => (S ? S.event.extendedUntil ?? S.event.deadline : null);
+function left(ms: number) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return d ? `${d} gün ${p(h)}:${p(m)}:${p(sec)}` : `${p(h)}:${p(m)}:${p(sec)}`;
+}
+function deadlineHtml() {
+  const dl = deadlineOf();
+  if (!dl || !S) return "";
+  const open = S.event.uploadsOpen;
+  const ms = dl - Date.now();
+  const cls = !open ? "danger" : ms < 3600_000 ? "warn" : "";
+  return `<div class="tdl ${cls}" id="tdl">${icon("timer")}<span><b>${open ? `Yükləməyə <span class="mono" id="tdlLeft">${left(ms)}</span> qalıb` : "Deadline keçib — yükləmə bağlıdır"}</b>
+    <small>Deadline: ${dt(dl)}${S.event.extendedUntil ? " (sizin üçün uzadılıb)" : ""}${open ? "" : " · təşkilatçıya müraciət edin"}</small></span></div>`;
+}
+
+function stageHtml() {
+  const s = S!;
+  if (!s.queue.onStage) return "";
+  const sc = s.slideControl;
+  return `<section class="tcard onstage-card fade" id="onStage">
+    <div class="os-head"><span class="os-dot"></span><b>Səhnədəsiniz!</b><span class="sub" style="margin:0">${esc(s.event.displayName)}</span></div>
+    ${sc.allowed ? `<p class="sub" style="margin:0">Slaydlarınızı buradan çevirin — proyektorda dərhal dəyişir.</p>
+      <div class="os-thumb" id="osThumb"></div>
+      <div class="os-ctl">
+        <button class="os-btn" data-slide="-1" ${sc.slide <= 1 ? "disabled" : ""} aria-label="Əvvəlki slayd">${icon("back")}</button>
+        <div class="os-n"><small>Slayd</small><b class="mono" id="osN">${sc.slide}${sc.pages ? ` / ${sc.pages}` : ""}</b></div>
+        <button class="os-btn go" data-slide="1" ${sc.pages && sc.slide >= sc.pages ? "disabled" : ""} aria-label="Növbəti slayd">${icon("next")}</button>
+      </div>` : `<p class="note" style="margin:0">${esc(sc.reason ?? "Slaydları təşkilatçı idarə edir.")}</p>`}
+  </section>`;
+}
+
+function statusHtml() {
   const s = S!;
   const m = s.materials;
   const q = s.queue;
-  const step = m.approval === "pending"
-    ? { cls: "warn", t: "Təsdiq gözləyir", d: "Təşkilatçı komandanızı təsdiqləyəndən sonra çıxış sırasına düşəcəksiniz. Materialları indidən yükləyə bilərsiniz." }
-    : m.review === "accepted" ? { cls: "ok", t: "Prezentasiyanız qəbul edildi", d: "Hər şey hazırdır. Dəyişiklik etsəniz, yenidən yoxlanılacaq." }
-    : m.review === "submitted" ? { cls: "hot", t: "Yoxlanılır", d: "Prezentasiyanız təşkilatçıya göndərildi. Qəbul edəndə bildiriş gələcək." }
-    : m.review === "returned" ? { cls: "danger", t: "Geri qaytarıldı", d: m.reviewNote || "Təşkilatçı düzəliş istəyir." }
-    : { cls: "", t: "Prezentasiya gözlənilir", d: "Prezentasiyanızı PDF (və ya PPTX) kimi yükləyin." };
+  const st = m.approval === "pending" ? { cls: "warn", t: "Təsdiq gözləyir", d: "Təşkilatçı təsdiqləyəndən sonra çıxış sırasına düşəcəksiniz. Materialları indidən yükləyə bilərsiniz." }
+    : !m.presentation ? { cls: "", t: "Prezentasiya gözlənilir", d: "Prezentasiyanızı aşağıda yükləyin (PDF və ya PPTX)." }
+    : m.review === "returned" ? { cls: "danger", t: "Düzəliş istənir", d: m.reviewNote || "Təşkilatçı düzəliş istəyir." }
+    : m.review === "accepted" ? { cls: "ok", t: "Hazırdır", d: "Prezentasiyanız yüklənib və təşkilatçı təsdiqləyib." }
+    : { cls: "ok", t: "Prezentasiya yüklənib", d: "Təşkilatçı baxa bilər. Dəyişmək üçün yeni versiya yükləyin." };
   const queue = !s.team.active ? "Sırada deyilsiniz"
-    : q.onStage ? `<b class="ok-t">Səhnədəsiniz!</b>`
-    : q.ahead != null ? `Sıranız: <b>${q.position}</b> / ${q.total} · qabaqda <b>${q.ahead}</b> komanda`
-    : `Sıranız: <b>${q.position}</b> / ${q.total}${q.current ? "" : " · çıxışlar hələ başlamayıb"}`;
-  const dl = s.event.deadline;
+    : q.onStage ? `<b class="ok-t">Səhnədəsiniz</b>`
+    : q.ahead != null ? `Sıranız <b>${q.position}</b> / ${q.total} · qabaqda <b>${q.ahead}</b> komanda`
+    : `Sıranız <b>${q.position}</b> / ${q.total}${q.current ? "" : " · çıxışlar başlamayıb"}`;
   const newCode = sessionStorage.getItem("munsif-newcode");
-  return `<section class="tcard status-card ${step.cls}">
-    <div class="row between" style="align-items:flex-start;gap:12px">
+  return `<section class="tcard status-card ${st.cls}">
+    <div class="row between" style="align-items:flex-start;gap:12px;flex-wrap:nowrap">
       <div style="min-width:0"><span class="kicker">${esc(s.event.displayName)}${s.event.date ? ` · ${esc(s.event.date)}` : ""}</span>
         <h1 class="tname">${esc(s.team.name)}</h1><p class="sub" style="margin:2px 0 0">${esc(s.team.project || "Layihə adı yazılmayıb")}</p></div>
       <span class="tlogo">${m.logo ? `<img src="${m.logo.url}" alt="">` : esc((s.team.name.trim()[0] ?? "m").toLocaleUpperCase("az"))}</span>
     </div>
-    <div class="tstep ${step.cls}"><b>${step.t}</b><span>${esc(step.d)}</span></div>
-    <div class="tmeta">
-      <span>${icon("list")}${queue}</span>
-      <span>${icon("timer")}Pitch ${Math.round(s.event.pitchSec / 60 * 10) / 10} dəq + sual-cavab ${Math.round(s.event.qaSec / 60 * 10) / 10} dəq</span>
-      ${dl ? `<span class="${s.event.uploadsOpen ? "" : "danger-t"}">${icon("lock")}Deadline: ${dt(dl)}${s.event.uploadsOpen ? "" : " — yükləmə bağlıdır"}</span>` : ""}
-    </div>
+    <div class="tstep ${st.cls}"><b>${st.t}</b><span>${esc(st.d)}</span></div>
+    ${deadlineHtml()}
+    <div class="tmeta"><span>${icon("list")}${queue}</span><span>${icon("timer")}Pitch ${Math.round(s.event.pitchSec / 6) / 10} dəq + sual-cavab ${Math.round(s.event.qaSec / 6) / 10} dəq</span></div>
     ${newCode ? `<div class="note" style="margin-top:12px">Komanda kodunuz: <b class="mono">${esc(newCode)}</b> — üzvlərlə paylaşın (munsif.im/team səhifəsində yazılır).</div>` : ""}
     ${"Notification" in window && Notification.permission === "default" ? `<button class="btn sm" id="allowNotif" style="margin-top:12px">${icon("bell")}Bildirişlərə icazə ver</button>` : ""}
   </section>`;
 }
 
-function presCard() {
-  const s = S!;
-  const p = s.materials.presentation;
-  const open = s.event.uploadsOpen;
-  const conv = p?.ext === "pptx"
-    ? p.conv === "done" ? `<span class="pill ok">PPTX → PDF hazırdır</span>`
-      : p.conv === "running" || p.conv === "pending" ? `<span class="pill hot">PDF-ə çevrilir…</span>`
-      : `<span class="pill danger">PPTX səhnədə göstərilə bilmir — PDF kimi yükləyin</span>`
-    : "";
-  return `<section class="tcard">
-    <div class="row between"><h2>${icon("doc")}Prezentasiya</h2>${p ? `<span class="sub" style="margin:0">${ago(p.createdAt)} yükləndi</span>` : ""}</div>
-    ${p ? `<div class="pres-now">
-        <div class="thumb" id="thumb">${p.viewable ? `<span class="spin"></span>` : icon("doc")}</div>
-        <div class="pmeta"><b>${esc(p.name)}</b><small>${p.ext.toUpperCase()} · ${fmtSize(p.size)}${p.pages ? ` · ${p.pages} slayd` : ""}</small>${conv}
-          <div class="row" style="gap:6px;margin-top:6px">${p.viewable ? `<a class="btn sm" href="${p.url}" target="_blank" rel="noopener">${icon("expand")}Bax</a>` : ""}
-          <a class="btn sm ghost" href="${p.url}?orig=1&download=1">${icon("download")}Endir</a></div></div></div>` : ""}
-    <label class="drop ${open ? "" : "disabled"}" id="drop">
-      <input type="file" id="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" ${open ? "" : "disabled"} hidden>
-      <span class="dicon">${icon("cloud")}</span>
-      <b>${p ? "Yeni versiya yüklə" : "Prezentasiyanı yüklə"}</b>
-      <small>PDF${s.soffice ? " və ya PPTX (avtomatik PDF-ə çevrilir)" : " (PPTX-i əvvəlcə PDF kimi saxlayın)"} · maks. ${s.maxUploadMb} MB</small>
-      <div class="upbar" hidden><i></i></div>
-    </label>
-    ${s.history.filter(f => f.kind === "presentation").length > 1 ? `<details class="vers"><summary>Versiyalar (${s.history.filter(f => f.kind === "presentation").length})</summary>
-      <ul>${s.history.filter(f => f.kind === "presentation").map((f: TeamFile) => `<li class="${f.active ? "on" : ""}"><span>${esc(f.name)}</span><small>${fmtSize(f.size)}${f.pages ? ` · ${f.pages} slayd` : ""} · ${dt(f.createdAt)}${f.uploadedBy === "admin" ? " · təşkilatçı" : ""}${f.active ? " · <b>aktiv</b>" : ""}</small></li>`).join("")}</ul></details>` : ""}
-  </section>`;
-}
-
-function profileCard() {
+function formHtml() {
   const s = S!;
   const m = s.materials;
+  const p = m.presentation;
   const canName = s.event.canRename || m.approval === "pending";
   const open = s.event.uploadsOpen;
-  return `<section class="tcard">
-    <h2>${icon("users")}Komanda və linklər</h2>
+  const conv = p?.ext === "pptx"
+    ? p.conv === "done" ? `<span class="pill ok">PDF-ə çevrildi</span>`
+      : p.conv === "running" || p.conv === "pending" ? `<span class="pill hot">PDF-ə çevrilir…</span>`
+      : `<span class="pill danger">PPTX göstərilə bilmir — PDF yükləyin</span>`
+    : "";
+  const versions = s.history.filter(f => f.kind === "presentation");
+  return `<section class="tcard tform">
     <form id="profile" class="stack" novalidate>
-      <div class="row" style="align-items:flex-start">
-        <div style="flex:1 1 200px"><label class="f" for="pName">Komanda adı</label><input id="pName" maxlength="120" value="${esc(s.team.name)}" ${canName ? "" : "disabled"}></div>
-        <div style="flex:1 1 200px"><label class="f" for="pProj">Layihə</label><input id="pProj" maxlength="160" value="${esc(s.team.project)}" ${canName ? "" : "disabled"}></div>
+      <div class="tgrid">
+        <div><label class="f" for="pName">Komanda adı</label><input id="pName" maxlength="120" value="${esc(s.team.name)}" ${canName ? "" : "disabled"}></div>
+        <div><label class="f" for="pProj">Layihə</label><input id="pProj" maxlength="160" value="${esc(s.team.project)}" ${canName ? "" : "disabled"}></div>
       </div>
-      ${canName ? "" : `<p class="sub" style="margin:-6px 0 0">Adı dəyişmək üçün təşkilatçıya yazın.</p>`}
-      <div><label class="f" for="pMembers">Üzvlər (hər sətirdə bir nəfər)</label><textarea id="pMembers" rows="3" maxlength="1000" placeholder="Aysel Məmmədova&#10;Rəşad Quliyev">${esc(m.members.join("\n"))}</textarea></div>
-      <div><label class="f" for="pSite">Layihə saytı</label><input id="pSite" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${esc(m.siteUrl)}" ${open ? "" : "disabled"}>
-        ${m.siteUrl ? `<small class="sub">${m.siteEmbeddable === false ? "Sayt səhnədə daxil edilə bilmir — səhnədə QR kod göstəriləcək." : m.siteEmbeddable ? "Sayt səhnədə açılır." : "Sayt yoxlanılır…"}</small>` : ""}</div>
-      <div><label class="f" for="pVideo">Demo video (YouTube, Drive və s.)</label><input id="pVideo" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${esc(m.videoUrl)}" ${open ? "" : "disabled"}></div>
+      ${canName ? "" : `<p class="sub" style="margin:-8px 0 0">Adı dəyişmək üçün təşkilatçıya yazın.</p>`}
+      <div><label class="f" for="pMembers">Üzvlər <small>(hər sətirdə bir nəfər)</small></label><textarea id="pMembers" rows="3" maxlength="1000" placeholder="Aysel Məmmədova&#10;Rəşad Quliyev">${esc(m.members.join("\n"))}</textarea></div>
+      <div><label class="f" for="pSite">Sayt linki</label><input id="pSite" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${esc(m.siteUrl)}" ${open ? "" : "disabled"}>
+        ${m.siteUrl ? `<small class="sub">${m.siteEmbeddable === false ? "Sayt səhnədə açılmır — səhnədə QR kod göstəriləcək." : m.siteEmbeddable ? "Sayt səhnədə açılır." : "Sayt yoxlanılır…"}</small>` : ""}</div>
+      <div><span class="f">Prezentasiya</span>
+        ${p ? `<div class="pres-now">
+          <div class="thumb" id="thumb">${p.viewable ? `<span class="spin"></span>` : icon("doc")}</div>
+          <div class="pmeta"><b>${esc(p.name)}</b><small>${p.ext.toUpperCase()} · ${fmtSize(p.size)}${p.pages ? ` · ${p.pages} slayd` : ""} · ${ago(p.createdAt)}</small>${conv}
+            ${p.viewable ? `<a class="btn sm" href="${p.url}" target="_blank" rel="noopener" style="margin-top:6px">${icon("expand")}Bax</a>` : ""}</div></div>` : ""}
+        <label class="drop ${open ? "" : "disabled"}" id="drop">
+          <input type="file" id="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" ${open ? "" : "disabled"} hidden>
+          <span class="dicon">${icon("cloud")}</span>
+          <b>${open ? (p ? "Yeni versiyanı bura atın və ya seçin" : "Faylı bura atın və ya seçin") : "Yükləmə bağlıdır"}</b>
+          <small>PDF${s.soffice ? " və ya PPTX" : ""} · maks. ${s.maxUploadMb} MB</small>
+          <span class="btn sm primary" aria-hidden="true">${icon("plus")}Fayl seç</span>
+          <div class="upbar" hidden><i></i></div>
+        </label>
+        ${versions.length > 1 ? `<details class="vers"><summary>Əvvəlki versiyalar (${versions.length - 1})</summary><ul>${versions.slice(1).map((f: TeamFile) => `<li><span>${esc(f.name)}</span><small>${fmtSize(f.size)} · ${dt(f.createdAt)}${f.uploadedBy === "admin" ? " · təşkilatçı" : ""}</small></li>`).join("")}</ul></details>` : ""}
+      </div>
+      <details class="vers more-f"${m.videoUrl || m.logo ? " open" : ""}><summary>Əlavə (istəyə bağlı): demo video, loqo</summary>
+        <div class="stack" style="margin-top:10px">
+          <div><label class="f" for="pVideo">Demo video linki</label><input id="pVideo" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${esc(m.videoUrl)}" ${open ? "" : "disabled"}></div>
+          <label class="btn sm ghost" style="justify-self:start" ${open ? "" : "aria-disabled=\"true\""}>${icon("plus")}${m.logo ? "Loqonu dəyiş" : "Loqo yüklə"}<input type="file" id="logo" accept="image/png,image/jpeg,image/webp" hidden ${open ? "" : "disabled"}></label>
+        </div></details>
       <p class="err-t" id="pErr" role="alert"></p>
-      <div class="row"><button class="btn primary" type="submit">Yadda saxla</button>
-        <label class="btn ghost" ${open ? "" : "aria-disabled=\"true\""}>${icon("plus")}${m.logo ? "Loqonu dəyiş" : "Loqo yüklə"}<input type="file" id="logo" accept="image/png,image/jpeg,image/webp" hidden ${open ? "" : "disabled"}></label></div>
+      <button class="btn primary lg" type="submit">Yadda saxla</button>
     </form>
   </section>`;
 }
@@ -174,12 +198,23 @@ let headerFor = "";
 function render() {
   if (!S) return;
   if (headerFor !== "in") { header(true, S.team.name); headerFor = "in"; } else bell?.set(S.notices);
-  main.innerHTML = `${statusCard()}${presCard()}${profileCard()}
+  // keep what the user is typing when a refresh arrives (socket) while a field has focus
+  const focused = document.activeElement as HTMLInputElement | null;
+  const typing = focused && main.contains(focused) && /^(INPUT|TEXTAREA)$/.test(focused.tagName) && focused.type !== "file" ? { id: focused.id, v: focused.value } : null;
+  if (typing && document.getElementById("profile")) { renderStageOnly(); return; }
+  main.innerHTML = `${stageHtml()}${statusHtml()}${formHtml()}
     <p class="tfoot">Bal və reytinq komandalara göstərilmir. Nəticələr tədbirin sonunda səhnədə açıqlanır.</p>`;
   void thumb();
+  void stageThumb();
+}
+function renderStageOnly() {
+  const cur = document.getElementById("onStage");
+  const html = stageHtml();
+  if (cur) { if (html) cur.outerHTML = html; else cur.remove(); }
+  else if (html) main.insertAdjacentHTML("afterbegin", html);
+  void stageThumb();
 }
 
-let thumbUrl = "";
 async function thumb() {
   const p = S?.materials.presentation;
   const box = document.getElementById("thumb");
@@ -189,10 +224,58 @@ async function thumb() {
     const r = await renderPage(doc, 1, 240, 160, 2);
     r.c.style.width = `${r.w}px`; r.c.style.height = `${r.h}px`;
     box.replaceChildren(r.c);
-    thumbUrl = p.url;
     void doc.loadingTask.destroy();
   } catch { box.innerHTML = icon("doc"); }
 }
+
+// the slide that is on the projector right now, small, under the big buttons
+let osDoc: { url: string; doc: Awaited<ReturnType<typeof openPdf>> } | null = null;
+let osTok = 0;
+async function stageThumb() {
+  const box = document.getElementById("osThumb");
+  const p = S?.materials.presentation;
+  if (!box || !p?.viewable || !S?.slideControl.allowed) return;
+  const tok = ++osTok;
+  try {
+    if (osDoc?.url !== p.url) { void osDoc?.doc.loadingTask.destroy(); osDoc = { url: p.url, doc: await openPdf(p.url) }; }
+    const n = Math.max(1, Math.min(osDoc.doc.numPages, S.slideControl.slide));
+    const w = Math.min(box.clientWidth || 320, 520);
+    const r = await renderPage(osDoc.doc, n, w, w * 0.62, 2);
+    if (tok !== osTok) return;
+    r.c.style.width = `${r.w}px`; r.c.style.height = `${r.h}px`;
+    box.replaceChildren(r.c);
+  } catch { /* the buttons still work */ }
+}
+
+let slideBusy = false;
+async function slide(d: number) {
+  if (!S?.slideControl.allowed || slideBusy) return;
+  slideBusy = true;
+  // optimistic: the number moves at once, the server answers within ~100 ms
+  const sc = S.slideControl;
+  const n = Math.max(1, sc.pages ? Math.min(sc.pages, sc.slide + d) : sc.slide + d);
+  if (n === sc.slide) { slideBusy = false; return; }
+  sc.slide = n;
+  renderStageOnly();
+  navigator.vibrate?.(15);
+  try {
+    const r = await api<{ slideControl: TeamStatePayload["slideControl"]; stage: StagePayload }>("/api/team/slide", { method: "POST", body: { delta: d } });
+    S.slideControl = r.slideControl; S.stage = r.stage;
+  } catch (ex) { toast((ex as ApiError).message, "err"); await load(); }
+  slideBusy = false;
+  renderStageOnly();
+}
+
+// deadline countdown
+setInterval(() => {
+  const el = document.getElementById("tdlLeft");
+  const dl = deadlineOf();
+  if (!el || !dl) return;
+  const ms = dl - Date.now();
+  el.textContent = left(ms);
+  if (ms <= 0) void load();
+  else if (ms < 3600_000) document.getElementById("tdl")?.classList.add("warn");
+}, 1000);
 
 function upload(file: File, kind: "presentation" | "logo") {
   if (busy) return;
@@ -236,7 +319,17 @@ main.addEventListener("drop", e => {
   if (f && S?.event.uploadsOpen) upload(f, "presentation");
 });
 main.addEventListener("click", async e => {
-  if ((e.target as HTMLElement).closest("#allowNotif")) { const p = await askNotifications(); toast(p === "granted" ? "Bildirişlər açıqdır" : "Brauzer icazə vermədi"); render(); }
+  const t = e.target as HTMLElement;
+  if (t.closest("#allowNotif")) { const p = await askNotifications(); toast(p === "granted" ? "Bildirişlər açıqdır" : "Brauzer icazə vermədi"); render(); return; }
+  const sb = t.closest<HTMLButtonElement>("[data-slide]");
+  if (sb && !sb.disabled) void slide(Number(sb.dataset.slide));
+});
+// big buttons also on a Bluetooth clicker / keyboard while on stage
+document.addEventListener("keydown", e => {
+  if (!S?.slideControl.allowed || (e.target as HTMLElement).closest("input, textarea")) return;
+  const k = e.key.toLowerCase();
+  if (["arrowright", "pagedown"].includes(k)) { e.preventDefault(); void slide(1); }
+  else if (["arrowleft", "pageup"].includes(k)) { e.preventDefault(); void slide(-1); }
 });
 main.addEventListener("submit", async e => {
   if ((e.target as HTMLElement).id !== "profile" || !S) return;
@@ -276,7 +369,16 @@ async function boot() {
     on: {
       notice: (n: Notice) => { bell?.push(n); void load(); },
       "team:changed": () => void load(),
-      "stage:changed": (st: StagePayload) => { if ((st.team?.id ?? 0) !== lastStageTeam) { lastStageTeam = st.team?.id ?? 0; void load(); } },
+      "stage:changed": (st: StagePayload) => {
+        const me = S?.team.id;
+        const changed = (st.team?.id ?? 0) !== lastStageTeam;
+        lastStageTeam = st.team?.id ?? 0;
+        // on stage: the slide number follows the projector (coordinator / remote / our own presses) without a refetch
+        if (!changed && S && me && st.team?.id === me && S.slideControl.allowed && st.show.scene === "team" && st.show.mode === "auto") {
+          S.stage = st; S.slideControl.slide = st.show.slide; renderStageOnly(); return;
+        }
+        if (changed || st.team?.id === me || S?.queue.onStage) void load();
+      },
       "config:changed": () => void load(),
     },
     resync: () => void load(),

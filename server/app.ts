@@ -204,9 +204,9 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
         const o = orgs.byId(req.user.orgId);
         if (o) return reply.redirect(`/o/${o.slug}${url}${q}`);
       }
+      if (FRAMEABLE.has(page.file)) reply.header("X-Frame-Options", "SAMEORIGIN");
       if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
       reply.header("Cache-Control", "no-cache");
-      if (FRAMEABLE.has(page.file)) reply.header("X-Frame-Options", "SAMEORIGIN");
       return reply.sendFile(page.file);
     });
   }
@@ -214,9 +214,9 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     const url = `/${req.params.page}`;
     const o = orgs.bySlug(req.params.slug);
     if (!ORG_PAGES.has(url) || !o || !o.active) return reply.code(404).type("text/plain; charset=utf-8").send("404 · Səhifə tapılmadı");
+    if (FRAMEABLE.has(PAGES[url].file)) reply.header("X-Frame-Options", "SAMEORIGIN");
     if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
     reply.header("Cache-Control", "no-cache");
-    if (FRAMEABLE.has(PAGES[url].file)) reply.header("X-Frame-Options", "SAMEORIGIN");
     return reply.sendFile(PAGES[url].file);
   });
   // Team sign-in link: public page; the code itself is checked by /api/auth/team/:code.
