@@ -9,3 +9,5 @@ docs
 *.html
 !web/*.html
 Pitch Deck Taymeri.desktop
+!assets/landing/index.html
+!assets/landing/en/index.html

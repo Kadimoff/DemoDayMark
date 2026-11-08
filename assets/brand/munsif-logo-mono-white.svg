@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 834 240" width="834" height="240" role="img" aria-label="munsif.im"><title>munsif.im</title>
+<defs>
+  <linearGradient id="lg-g" x1="96" y1="420" x2="420" y2="96" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#7C5CFF"/><stop offset=".55" stop-color="#D46BC4"/><stop offset="1" stop-color="#FFB020"/>
+  </linearGradient>
+  <linearGradient id="lg-gm" x1="170" y1="0" x2="342" y2="0" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#9A7BFF"/><stop offset=".5" stop-color="#D46BC4"/><stop offset="1" stop-color="#FFB020"/>
+  </linearGradient>
+  <linearGradient id="lg-tile" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#1B1830"/><stop offset="1" stop-color="#0D0C17"/>
+  </linearGradient>
+  <radialGradient id="lg-halo" cx="256" cy="256" r="230" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#7C5CFF" stop-opacity=".22"/><stop offset="1" stop-color="#7C5CFF" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="lg-wg" x1="-10" y1="0" x2="594" y2="0" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#8E6BFF"/><stop offset=".55" stop-color="#D46BC4"/><stop offset="1" stop-color="#FFB020"/>
+  </linearGradient>
+</defs>
+<g transform="scale(0.46875)">
+  <g fill="none" stroke="#F5F5FA" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 88A168 168 0 1 1 96.22 204.09" stroke-width="34"/>
+    <path d="M180 306V244a38 38 0 0 1 76 0v62M256 244a38 38 0 0 1 76 0v62" stroke-width="30"/>
+  </g></g>
+<g transform="translate(308 154) scale(0.62)"><g fill="none" stroke="#F5F5FA" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"><path d="M0 0V-71a29 29 0 0 1 58 0V0M58 -71a29 29 0 0 1 58 0V0M0 -100V0"/><path d="M164 -100V-34a32 32 0 0 0 64 0M228 -100V0"/><path d="M278 -100V0M278 -66a32 32 0 0 1 64 0V0"/><path d="M446 -84C440 -96 430 -100 419 -100C403 -100 393 -91 393 -79C393 -64 407 -59 420 -54C435 -49 448 -42 448 -25C448 -9 436 0 419 0C405 0 395 -5 390 -15"/><path d="M494 -100V0"/><path d="M546 0V-110C546 -131 558 -144 578 -144C584 -144 589 -143 592 -141M524 -98H578"/></g><g fill="#F5F5FA" stroke="none"><circle cx="494" cy="-140" r="16.12"/></g><g opacity="0.6"><g fill="none" stroke="#F5F5FA" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"><path d="M658 -100V0"/><path d="M698 0V-71a29 29 0 0 1 58 0V0M756 -71a29 29 0 0 1 58 0V0M698 -100V0"/></g><g fill="#F5F5FA" stroke="none"><circle cx="618" cy="-14.120000000000001" r="16.12"/><circle cx="658" cy="-140" r="16.12"/></g></g></g>
+</svg>
