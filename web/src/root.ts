@@ -39,7 +39,7 @@ function liveLine(o: OrgLive) {
   const scene = st.show.scene === "event" && st.show.eventPres ? `${icon("doc")}<b>${esc(st.show.eventPres.title)}</b><small>tədbirin prezentasiyası</small>`
     : st.team ? `<span class="mono acc-t">#${st.team.index}</span><b>${esc(st.team.name)}</b><small>${st.team.index}/${st.team.total}</small>` : `<span class="faint">Səhnə boşdur</span>`;
   const timer = v.kind === "idle" ? `<span class="pill">Taymer gizli</span>`
-    : `<span class="pill ${v.kind === "done" ? "danger" : v.running ? "live" : "warn"}">${v.kind === "pitch" ? "Pitch" : v.kind === "qa" ? "Sual-cavab" : "Vaxt bitdi"}${v.kind !== "done" ? ` · <span class="mono">${fmtClock(v.remaining)}</span>` : ""}${!v.running && v.kind !== "done" ? " · fasilə" : ""}</span>`;
+    : `<span class="pill ${v.kind === "done" ? "danger" : v.running ? "live" : "warn"}">${v.kind === "pitch" ? "Təqdimat" : v.kind === "qa" ? "Sual-cavab" : "Vaxt bitdi"}${v.kind !== "done" ? ` · <span class="mono">${fmtClock(v.remaining)}</span>` : ""}${!v.running && v.kind !== "done" ? " · fasilə" : ""}</span>`;
   return `<div class="rl-scene">${scene}</div><div class="rl-timer" data-timer="${o.id}">${timer}</div>`;
 }
 
@@ -61,11 +61,11 @@ function card(o: OrgLive) {
     <div class="rlive" data-live="${o.id}">${liveLine(o)}</div>
     <div class="nums"><div><b>${o.teams}</b><span>komanda</span></div><div><b>${o.jurorsOnline}/${o.jurors}</b><span>münsif onlayn</span></div><div><b>${pct}%</b><span>səs (${o.progress.done}/${o.progress.need})</span></div></div>
     <div class="row">
-      <button class="btn sm" data-peek="${o.id}" ${o.active ? "" : "disabled"}>${icon("expand")}Proyektoruna bax</button>
+      <button class="btn sm" data-peek="${o.id}" ${o.active ? "" : "disabled"}>${icon("expand")}Səhnə ekranına bax</button>
       <button class="btn sm primary" data-enter="${o.id}">${icon("ext")}Müdaxilə et</button>
       <details class="more"><summary class="btn sm ghost">⋯ Daha çox</summary><div class="menu">
         <a class="btn sm ghost" href="/api/root/orgs/${o.id}/history.xlsx" download>${icon("sheet")}Qiymət tarixçəsi (Excel)</a>
-        <a class="btn sm ghost" href="${esc(o.links.stage)}" target="_blank" rel="noopener" data-raw>${icon("ext")}Proyektor linki</a>
+        <a class="btn sm ghost" href="${esc(o.links.stage)}" target="_blank" rel="noopener" data-raw>${icon("ext")}Səhnə ekranının linki</a>
         <a class="btn sm ghost" href="${esc(o.links.reveal)}" target="_blank" rel="noopener" data-raw>${icon("medal")}Nəticə ekranı</a>
         ${o.root ? "" : `<button class="btn sm ghost" data-active="${o.id}:${o.active ? 0 : 1}">${icon("power")}${o.active ? "Təşkilatı deaktiv et" : "Aktiv et"}</button>`}
       </div></details>
@@ -98,7 +98,7 @@ function render() {
         <div><label class="f" for="nPass">Koordinator şifrəsi (min. 8)</label><input type="password" id="nPass" autocomplete="new-password"></div>
         <button class="btn primary" type="submit" id="nGo">${icon("plus")}Yarat</button>
       </form>
-      <p class="sub" style="margin:0">Yeni təşkilat boş tədbirlə başlayır: standart meyarlar, pitch 3:00 + sual-cavab 2:00. Proyektor linki <span class="mono">/o/&lt;qısa ad&gt;/stage</span>.</p>
+      <p class="sub" style="margin:0">Yeni təşkilat boş tədbirlə başlayır: standart meyarlar, təqdimat 3:00 + sual-cavab 2:00. Səhnə ekranının linki <span class="mono">/o/&lt;qısa ad&gt;/stage</span>.</p>
       <p class="err-t" id="nErr" role="alert"></p>
     </section>` : ""}
     <div class="rgrid section-gap">${orgs.map(card).join("")}</div>`;
@@ -117,11 +117,11 @@ function peek(o: OrgLive, what: "stage" | "reveal" = "stage") {
     addEventListener("resize", () => fitPeek());
   }
   const src = `${what === "stage" ? o.links.stage : o.links.reveal}?preview=1`;
-  peekDlg.innerHTML = `<div class="peek-top"><div><span class="caps">Proyektoruna baxış · yalnız oxu</span><h2>${esc(o.name)}</h2></div>
+  peekDlg.innerHTML = `<div class="peek-top"><div><span class="caps">Səhnə ekranı · yalnız baxış</span><h2>${esc(o.name)}</h2></div>
       <div class="seg" role="group"><button data-peekwhat="stage" aria-pressed="${what === "stage"}">Səhnə</button><button data-peekwhat="reveal" aria-pressed="${what === "reveal"}">Nəticə ekranı</button></div>
       <button class="btn sm primary" data-enter="${o.id}">${icon("ext")}Müdaxilə et</button>
       <button class="icon-btn" data-close aria-label="Bağla">${icon("close")}</button></div>
-    <div class="peek-box"><iframe title="Proyektor: ${esc(o.name)}" src="${esc(src)}" tabindex="-1"></iframe></div>`;
+    <div class="peek-box"><iframe title="Səhnə ekranı: ${esc(o.name)}" src="${esc(src)}" tabindex="-1"></iframe></div>`;
   peekDlg.querySelectorAll<HTMLElement>("[data-peekwhat]").forEach(b => b.addEventListener("click", () => peek(o, b.dataset.peekwhat as "stage" | "reveal")));
   peekDlg.querySelector<HTMLElement>("[data-enter]")!.addEventListener("click", () => enter(o.id));
   if (!peekDlg.open) peekDlg.showModal();

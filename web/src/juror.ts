@@ -149,7 +149,7 @@ function renderHead() {
       <div class="r1">
         <a class="jmark" href="/" title="munsif.im"><img src="/brand/munsif-mark-flat.svg" alt="munsif.im" width="34" height="34"></a>
         <div class="ttl">
-          <div class="t"><b>Canlı qiymətləndirmə</b>${onStage ? `<span class="pill live">Səhnədə</span>` : ""}</div>
+          <div class="t"><b>Ballar</b>${onStage ? `<span class="pill live">Səhnədə</span>` : ""}</div>
           <small>Münsif: ${esc(S.me.displayName)}</small>
         </div>
         <div class="tools">
@@ -199,7 +199,7 @@ function render() {
     const other = S.stage.team && !onStage ? S.stage.team : null;
     main.innerHTML = `
       <div id="nudgeBox"></div>
-      ${locked ? `<div class="banner lock">${icon("lock")}<span>Qiymətləndirmə koordinator tərəfindən bağlanıb. Ballarınıza yalnız baxa bilərsiniz.</span></div>` : ""}
+      ${locked ? `<div class="banner lock">${icon("lock")}<span>Koordinator qiymətləndirməni bağlayıb. Ballarınıza yalnız baxa bilərsiniz.</span></div>` : ""}
       <section class="bento fade" aria-label="Komanda">
         <div class="top-r">
           ${onStage ? `<span class="pill live">Səhnədə · Canlı</span>`
@@ -243,14 +243,14 @@ function render() {
       </section>` : ""}
       <section class="notes">
         <div class="ch"><label for="note">${icon("lock")}<span>Münsif qeydləri (yalnız sizin üçündür)</span></label><span class="opt">Könüllü</span></div>
-        <textarea id="note" maxlength="${NOTE_MAX}" placeholder="Komandanın təqdimatı və ya sual-cavab mərhələsi haqqında şəxsi mülahizələriniz…" ${locked ? "disabled" : ""}>${esc(d.note)}</textarea>
+        <textarea id="note" maxlength="${NOTE_MAX}" placeholder="Təqdimat və sual-cavab haqqında qeydləriniz…" ${locked ? "disabled" : ""}>${esc(d.note)}</textarea>
         <div class="foot"><span>${icon("check")}Bu cihazda avtomatik saxlanılır</span><span id="ncount">${d.note.length} / ${NOTE_MAX} simvol</span></div>
       </section>
       <div class="jacts">
         <button class="btn" id="reset" ${locked ? "disabled" : ""}>${icon("undo")}Sıfırla</button>
         <button class="btn" id="prev" ${idx > 0 ? "" : "disabled"}>${icon("back")}Əvvəlki komanda</button>
       </div>
-      <p class="openline${locked ? " lock" : ""}">${locked ? "Qiymətləndirmə bağlıdır" : "Səsvermə açıqdır · dəyişiklik edilə bilər"}</p>`;
+      <p class="openline${locked ? " lock" : ""}">${locked ? "Qiymətləndirmə bağlıdır" : "Qiymətləndirmə açıqdır · balları dəyişmək olar"}</p>`;
     strip.tick();
   }
   renderNudge();
@@ -596,7 +596,7 @@ const sock = live({
     },
     nudge: (p: Nudge) => {
       nudge = p;
-      const text = `#${p.index} ${p.teamName} üçün qiymətinizi göndərin.`;
+      const text = `#${p.index} ${p.teamName} komandasına balınızı göndərin.`;
       try { navigator.vibrate?.([220, 120, 220, 120, 400]); } catch { /* unsupported */ }
       chime();
       blinkTitle("Koordinator xatırladır");

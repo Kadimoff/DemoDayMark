@@ -37,7 +37,7 @@ export function topbar(opts: TopbarOpts) {
     <div id="themeSw"></div><span class="th1" id="themeOne">${themeToggleHtml()}</span>
     <div class="who-me"><div class="nm"><b id="meName">Koordinator</b><small id="meOrg">Admin sessiyası</small></div><span class="avatar" aria-hidden="true">${icon("users")}</span></div>
     ${opts.role === "admin" ? `<button class="icon-btn" id="pwBtn" title="Şifrəni dəyiş" aria-label="Şifrəni dəyiş">${icon("key")}</button>` : ""}
-    ${opts.logout !== false ? `<button class="icon-btn" id="logout" title="Çıxış" aria-label="Çıxış">${icon("logout")}</button>` : ""}
+    ${opts.logout !== false ? `<button class="icon-btn" id="logout" title="Hesabdan çıx" aria-label="Hesabdan çıx">${icon("logout")}</button>` : ""}
   </div>
   <div class="imp-bar" id="impBar" hidden></div>`;
   // Phones: the same links as a tab bar fixed to the bottom of the screen (outside the blurred header,

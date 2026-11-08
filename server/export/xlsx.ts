@@ -43,7 +43,7 @@ export async function buildXlsx(repo: Repo, cfg: Config): Promise<Buffer> {
   for (const x of results.ranking) {
     s1.addRow([x.rank ?? "—", x.team.name, x.team.project, x.score, x.entry, x.demo, x.n, x.min, x.max,
       ...criteria.map(c => x.perCriterion[c.key]),
-      [x.incomplete ? `eksik (<${cfg.minJurorsForRank} münsif)` : "", withEntry && x.entry == null ? "giriş balı yoxdur (0 sayılır)" : ""].filter(Boolean).join("; ")]);
+      [x.incomplete ? `natamam (<${cfg.minJurorsForRank} münsif)` : "", withEntry && x.entry == null ? "giriş balı yoxdur (0 sayılır)" : ""].filter(Boolean).join("; ")]);
   }
   styleSheet(s1, 1, [6, 26, 30, 12, 14, 14, 12, 11, 11, ...criteria.map(() => 18), 26]);
   [4, 5, 6, 8, 9, ...criteria.map((_, i) => 10 + i)].forEach(c => { s1.getColumn(c).numFmt = num; });

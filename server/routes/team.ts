@@ -57,7 +57,7 @@ export async function handleUpload(ctx: Ctx, sc: Scope, req: FastifyRequest, rep
         void teams.converter.convert(up.stored).then(r => {
           try {
             trepo.setConversion(f.id, r ? { conv: "done", pdfStored: r.pdfStored, pages: r.pages } : { conv: "failed" });
-            if (!r) teams.notifyTeam(teamId, "convert.failed", "PPTX PDF-ə çevrilmədi", "Zəhmət olmasa prezentasiyanı PDF kimi yükləyin.");
+            if (!r) teams.notifyTeam(teamId, "convert.failed", "PPTX PDF-ə çevrilmədi", "Prezentasiyanı PDF kimi yükləyin.");
             teams.changed(teamId);
             if (sc.repo.getEvent().currentTeamId === teamId) sc.rt.emitStage();
           } catch { /* app closed meanwhile */ }
@@ -121,7 +121,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     const code = normalizeTeamCode(req.params.code);
     const t = code ? trepo.teamByCode(code) : null;
     const sc = t ? teamScope(t) : null;
-    if (!t || !sc) { limiter.fail(key); return reply.code(410).send({ error: "Komanda linki etibarsızdır. Təşkilatçıdan yeni link istəyin." }); }
+    if (!t || !sc) { limiter.fail(key); return reply.code(410).send({ error: "Bu komanda linki artıq işləmir. Koordinatordan yenisini istəyin." }); }
     return { valid: true, teamName: t.name, project: t.project, eventName: sc.repo.stage().eventName };
   });
   const signIn = async (req: FastifyRequest, reply: FastifyReply, raw: string) => {
@@ -130,7 +130,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     const code = normalizeTeamCode(raw);
     const t = code ? trepo.teamByCode(code) : null;
     const sc = t ? teamScope(t) : null;
-    if (!t || !sc) { limiter.fail(key); return reply.code(410).send({ error: "Kod tanınmadı. Təşkilatçının göndərdiyi linki və ya kodu yoxlayın." }); }
+    if (!t || !sc) { limiter.fail(key); return reply.code(410).send({ error: "Kod tapılmadı. Koordinatorun göndərdiyi linki və ya kodu yoxlayın." }); }
     limiter.success(key);
     startTeamSession(req, reply, t.id);
     sc.repo.audit(null, "team.login", { teamId: t.id, ip: req.ip });
@@ -153,7 +153,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     const sc = publicScope(ctx, req);
     if (!sc) return reply.code(404).send({ error: "Təşkilat tapılmadı." });
     const { repo, trepo, teams } = sc;
-    if (!repo.getEvent().teamRegistration) return reply.code(403).send({ error: "Qeydiyyat bağlıdır. Təşkilatçıdan komanda linki istəyin." });
+    if (!repo.getEvent().teamRegistration) return reply.code(403).send({ error: "Qeydiyyat bağlıdır. Komanda linkini koordinatordan istəyin." });
     const key = limiter.key(req.ip, "team-register");
     if (throttled(req, reply, key)) return;
     const b = parseBody(registerBody, req.body, reply); if (!b) return;
@@ -176,7 +176,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
 
   app.register(async r => {
     r.addHook("preHandler", async (req, reply) => {
-      if (!req.team) return reply.code(401).send({ error: "Komanda sessiyası yoxdur. Komanda linki ilə daxil olun." });
+      if (!req.team) return reply.code(401).send({ error: "Daxil olmamısınız. Komanda linki ilə daxil olun." });
     });
     rawUploadParser(r);
 
@@ -189,10 +189,10 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
       const ev = repo.getEvent();
       const t = trepo.row(id)!;
       if ((b.name !== undefined && b.name !== t.name) || (b.project !== undefined && b.project !== t.project)) {
-        if (!ev.teamCanRename && t.approval !== "pending") return reply.code(403).send({ error: "Komanda və layihə adını yalnız təşkilatçı dəyişə bilər." });
+        if (!ev.teamCanRename && t.approval !== "pending") return reply.code(403).send({ error: "Komanda və layihə adını yalnız koordinator dəyişə bilər." });
       }
       const linksChange = (b.siteUrl !== undefined && b.siteUrl !== t.site_url) || (b.videoUrl !== undefined && b.videoUrl !== t.video_url);
-      if (linksChange && !teams.uploadsOpen(id)) return reply.code(403).send({ error: "Deadline keçib — linkləri dəyişmək olmur. Təşkilatçıya müraciət edin." });
+      if (linksChange && !teams.uploadsOpen(id)) return reply.code(403).send({ error: "Son tarix keçib, linkləri dəyişmək olmur. Koordinatora yazın." });
       trepo.updateProfile(id, b);
       repo.audit(null, "team.profile", { teamId: id, ...b });
       if (b.siteUrl && b.siteUrl !== t.site_url) {
@@ -208,7 +208,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     r.post("/api/team/files", async (req, reply) => {
       const sc = scopeOf(ctx, req);
       const id = req.team!.teamId;
-      if (!sc.teams.uploadsOpen(id)) { (req.body as NodeJS.ReadableStream)?.resume?.(); return reply.code(403).send({ error: "Deadline keçib — yükləmə bağlıdır. Təşkilatçıya müraciət edin." }); }
+      if (!sc.teams.uploadsOpen(id)) { (req.body as NodeJS.ReadableStream)?.resume?.(); return reply.code(403).send({ error: "Son tarix keçib, yükləmə bağlıdır. Koordinatora yazın." }); }
       return handleUpload(ctx, sc, req, reply, id, "team");
     });
 

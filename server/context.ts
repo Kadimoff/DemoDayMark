@@ -37,7 +37,7 @@ export function publicScope(ctx: Ctx, req: FastifyRequest): Scope | null {
 const FIELD_AZ: Record<string, string> = {
   username: "İstifadəçi adı", password: "Şifrə", displayName: "Görünən ad", name: "Ad", project: "Layihə",
   description: "İzah", note: "Şərh", values: "Ballar", date: "Tarix", ids: "Sıra",
-  pitchSec: "Pitch müddəti", qaSec: "Sual-cavab müddəti", currentTeamId: "Komanda", token: "Təsdiq kodu",
+  pitchSec: "Təqdimat müddəti", qaSec: "Sual-cavab müddəti", currentTeamId: "Komanda", token: "Təsdiq kodu",
   maxScore: "Maksimum bal", entryScore: "Giriş balı", entryMax: "Giriş balının maksimumu", includeEntry: "Giriş balı",
   members: "Üzvlər", siteUrl: "Sayt linki", videoUrl: "Video linki", code: "Kod", slide: "Slayd", mode: "Rejim", uploadDeadline: "Deadline",
 };

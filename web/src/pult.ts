@@ -126,7 +126,7 @@ function renderReveal() {
     ${rv.enabled ? `<div class="pl-row2"><button class="pl-btn" data-rv="back" ${rv.step > 0 ? "" : "disabled"}>${icon("back")}Geri</button>
       <button class="pl-btn go" data-rv="next" ${n ? "" : "disabled"}>${icon("next")}${esc(label)}</button></div>
       ${n && n.kind === "reveal" && n.entries?.length <= 1 ? `<p class="sub" style="margin:0">Növbəti: <b>${esc(n.entry.name)}</b> <span class="faint">(yalnız siz görürsünüz)</span></p>` : ""}`
-    : `<p class="sub" style="margin:0">İcazəni canlı paneldə (Nəticələr) verin — qiymətləndirmə bağlanır və reytinq dondurulur.</p><a class="btn sm" href="/admin#results">${icon("medal")}Canlı panel → Nəticələr</a>`}`;
+    : `<p class="sub" style="margin:0">İcazəni Canlı paneldə, Nəticələr bölməsində verin. Bu zaman qiymətləndirmə bağlanır və reytinq qeydə alınır.</p><a class="btn sm" href="/admin#results">${icon("medal")}Canlı panel → Nəticələr</a>`}`;
 }
 
 async function load() {

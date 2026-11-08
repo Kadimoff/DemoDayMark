@@ -65,7 +65,7 @@ async function render() {
       ${claimedAs
         ? `<p class="sub" style="margin:0">Münsif panelə daxil oldu. Adı bütün ekranlarda görünür.</p>`
         : `<span class="wait">Skan gözlənilir · <span id="qrLeft">${left(invite.expiresAt)}</span></span>
-           <p class="sub" style="margin:0;max-width:42ch">QR bir dəfə işləyir. Münsif skan edib adını yazan kimi bu pəncərə yenilənəcək.${known ? " Köhnə QR artıq etibarsızdır, münsifin balları qorunur." : ""}</p>
+           <p class="sub" style="margin:0;max-width:42ch">QR bir dəfə işləyir. Münsif skan edib adını yazan kimi bu pəncərə yenilənəcək.${known ? " Köhnə QR artıq işləmir, münsifin balları yerindədir." : ""}</p>
            <span class="link">${esc(url)}</span>`}
       <div class="acts">
         ${claimedAs ? "" : `<button class="btn sm" data-qr-copy>${icon("doc")}Linki kopyala</button><button class="btn sm" data-qr-renew>${icon("retry")}Yenilə</button>`}

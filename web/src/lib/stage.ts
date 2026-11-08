@@ -5,7 +5,7 @@ import type { StagePayload, TimerState } from "../../../shared/types";
 import { now, syncClock } from "./clock";
 import { esc } from "./dom";
 
-export const PHASE_LABEL: Record<string, string> = { pitch: "Pitch", qa: "Sual-cavab", done: "Vaxt bitdi", idle: "" };
+export const PHASE_LABEL: Record<string, string> = { pitch: "Təqdimat", qa: "Sual-cavab", done: "Vaxt bitdi", idle: "" };
 
 export class StageStrip {
   private stage: StagePayload | null = null;

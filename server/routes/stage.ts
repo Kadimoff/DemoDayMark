@@ -119,7 +119,7 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       if (!trepo.activeFile(tid, "presentation")) return reply.code(409).send({ error: "Komanda hələ prezentasiya yükləməyib." });
       if (b.action === "return" && !b.note) return reply.code(400).send({ error: "Geri qaytarmağın səbəbini yazın." });
       trepo.setReview(tid, b.action === "accept" ? "accepted" : "returned", b.action === "return" ? b.note : "");
-      if (b.action === "accept") teams.notifyTeam(tid, "review.accepted", "Prezentasiyanız qəbul edildi", "Təşkilatçı materiallarınızı təsdiqlədi. Uğurlar!");
+      if (b.action === "accept") teams.notifyTeam(tid, "review.accepted", "Prezentasiyanız qəbul edildi", "Koordinator materiallarınızı qəbul etdi. Uğurlar!");
       else teams.notifyTeam(tid, "review.returned", "Prezentasiya geri qaytarıldı", b.note);
       repo.audit(req.user!.id, `team.review.${b.action}`, { teamId: tid, note: b.note });
       teams.changed(tid);
@@ -129,7 +129,7 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       const { repo, trepo, teams, rt } = scopeOf(ctx, req);
       const tid = id(repo, req.params, reply); if (!tid) return;
       trepo.setApproval(tid, "approved");
-      teams.notifyTeam(tid, "approved", "Komandanız təsdiqləndi", "Siz çıxış sırasına əlavə olundunuz.");
+      teams.notifyTeam(tid, "approved", "Komandanız təsdiqləndi", "Çıxış sırasına əlavə olundunuz.");
       repo.audit(req.user!.id, "team.approve", { teamId: tid });
       rt.emitConfig(); rt.emitStage(); rt.emitResults();
       teams.changed(tid);

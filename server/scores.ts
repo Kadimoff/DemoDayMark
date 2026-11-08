@@ -17,7 +17,7 @@ export type SubmitResult =
 
 export function submitScore(repo: Repo, rt: OrgRealtime, jurorId: number, teamIdRaw: unknown, raw: unknown): SubmitResult {
   const ev = repo.getEvent();
-  if (ev.locked) return { ok: false, status: 423, error: "Qiymətləndirmə koordinator tərəfindən bağlanıb." };
+  if (ev.locked) return { ok: false, status: 423, error: "Koordinator qiymətləndirməni bağlayıb." };
   const teamId = Number(teamIdRaw);
   const team = Number.isInteger(teamId) ? repo.team(teamId) : null;
   if (!team || !team.active) return { ok: false, status: 404, error: "Komanda tapılmadı." };

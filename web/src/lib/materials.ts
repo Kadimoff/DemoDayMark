@@ -99,7 +99,7 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
         }
       }
       else if (t.closest("[data-mat-stage]")) { await opts.putOnStage?.(id("data-mat-stage")); render(); }
-      else if (t.closest("[data-mat-accept]")) { await api(`/api/admin/teams/${id("data-mat-accept")}/review`, { method: "POST", body: { action: "accept" } }); toast("Qəbul edildi — komandaya bildiriş getdi"); await reload(); onChange(); }
+      else if (t.closest("[data-mat-accept]")) { await api(`/api/admin/teams/${id("data-mat-accept")}/review`, { method: "POST", body: { action: "accept" } }); toast("Qəbul edildi, komandaya bildiriş getdi"); await reload(); onChange(); }
       else if (t.closest("[data-mat-return]")) { returning = id("data-mat-return"); render(); }
       else if (t.closest("[data-mat-cancel]")) { returning = null; render(); }
       else if (t.closest("[data-mat-approve]")) { await api(`/api/admin/teams/${id("data-mat-approve")}/approve`, { method: "POST", body: {} }); toast("Komanda təsdiqləndi"); await reload(); onChange(); }
@@ -113,7 +113,7 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
     const note = (f.elements.namedItem("note") as HTMLInputElement).value.trim();
     try {
       await api(`/api/admin/teams/${f.dataset.matForm}/review`, { method: "POST", body: { action: "return", note } });
-      returning = null; toast("Geri qaytarıldı — komandaya səbəb göndərildi"); await reload(); onChange();
+      returning = null; toast("Geri qaytarıldı, səbəb komandaya göndərildi"); await reload(); onChange();
     } catch (ex) { toast((ex as ApiError).message, "err"); }
   });
   return { reload, render, get data() { return D; } };
@@ -144,14 +144,14 @@ export async function openTeamLink(teamId: number, teamName: string, fresh = fal
     <div class="tl-url mono">${esc(url)}</div>
     <p class="sub" style="margin:0;text-align:center">Linki komandaya göndərin (Telegram, WhatsApp, e-poçt). Komanda üzvlərinin hamısı eyni linklə daxil ola bilər.
       Kodu <b>munsif.im/team</b> səhifəsində əl ilə də yazmaq olar.</p>
-    ${local ? `<p class="note warn-t">Panel localhost ünvanında açılıb — komandalar bu linkə çata bilməz. Paneli server ünvanı ilə açın.</p>` : ""}
+    ${local ? `<p class="note warn-t">Panel localhost ünvanında açılıb, komandalar bu linkə çata bilməz. Paneli server ünvanı ilə açın.</p>` : ""}
     <div class="row" style="justify-content:center">
       <button class="btn primary" data-tl-copy>${icon("doc")}Linki kopyala</button>
       <button class="btn" data-tl-new>${icon("retry")}Yeni link</button>
       <button class="btn ghost danger" data-tl-revoke>Ləğv et</button>
     </div></div>`;
   dlg.querySelector("[data-tl-copy]")!.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(url); toast("Link kopyalandı"); } catch { toast("Kopyalamaq alınmadı — linki seçib kopyalayın", "err"); }
+    try { await navigator.clipboard.writeText(url); toast("Link kopyalandı"); } catch { toast("Kopyalamaq alınmadı. Linki seçib əl ilə kopyalayın.", "err"); }
   });
   dlg.querySelector("[data-tl-new]")!.addEventListener("click", async () => {
     if (!confirm("Yeni link yaradılsın? Köhnə link işləməyəcək (artıq daxil olmuş komanda üzvləri çıxmır).")) return;
@@ -176,11 +176,11 @@ export function showCtlHtml(s: StagePayload | null, compact = false) {
   const status = ev ? `Tədbirin prezentasiyası: ${sh.eventPres?.title ?? "—"}`
     : !has ? "Səhnədə komanda yoxdur"
     : sh.pres ? `Prezentasiya: PDF${pages ? ` · ${pages} slayd` : ""}`
-    : sh.presPending ? (sh.presPending === "running" || sh.presPending === "pending" ? "PPTX PDF-ə çevrilir…" : "PPTX göstərilə bilmir — PDF lazımdır")
-    : "Prezentasiya yoxdur — səhnədə böyük taymer";
+    : sh.presPending ? (sh.presPending === "running" || sh.presPending === "pending" ? "PPTX PDF-ə çevrilir…" : "PPTX açılmadı, PDF lazımdır")
+    : "Prezentasiya yoxdur, səhnə ekranında böyük taymer görünür";
   const mode = sh.mode;
   return `<div class="showctl${compact ? " compact" : ""}${ev ? " evscene" : ""}">
-    <div class="row between" style="gap:8px"><span class="caps">${icon("expand")}Proyektorda</span><span class="sub" style="margin:0">${esc(status)}</span></div>
+    <div class="row between" style="gap:8px"><span class="caps">${icon("expand")}Səhnə ekranında</span><span class="sub" style="margin:0">${esc(status)}</span></div>
     <div class="row" style="gap:8px">
       ${ev ? `<button class="btn sm primary" type="button" data-ev-back>${icon("back")}Komandaya qayıt</button>` : `<div class="seg" role="group" aria-label="Səhnə görünüşü">
         <button type="button" data-show-mode="auto" aria-pressed="${mode === "auto"}" ${has ? "" : "disabled"}>${sh.pres ? "Slaydlar" : "Avto"}</button>
@@ -192,8 +192,8 @@ export function showCtlHtml(s: StagePayload | null, compact = false) {
         <span class="mono">${deck ? `${slide} / ${pages || "?"}` : "—"}</span>
         <button type="button" data-slide="1" ${deck && (!pages || slide < pages) ? "" : "disabled"} aria-label="Növbəti slayd">${icon("next")}</button>
       </div>
-      ${ev ? "" : `<button class="btn sm" type="button" data-show-intro ${has ? "" : "disabled"}>${icon("sparkle")}Intro</button>`}
-      ${compact ? "" : `<a class="btn sm ghost" href="/stage" target="_blank" rel="noopener">${icon("ext")}Proyektor</a>`}
+      ${ev ? "" : `<button class="btn sm" type="button" data-show-intro ${has ? "" : "disabled"}>${icon("sparkle")}Anons</button>`}
+      ${compact ? "" : `<a class="btn sm ghost" href="/stage" target="_blank" rel="noopener">${icon("ext")}Səhnə ekranı</a>`}
     </div></div>`;
 }
 
@@ -203,15 +203,15 @@ export function eventCtlHtml(s: StagePayload | null, files: EventFile[], compact
   const sh = s.show;
   const on = sh.scene === "event" ? sh.eventPres?.fileId ?? null : null;
   return `<div class="head"><div><h2 id="h-scene">${icon("doc")}Tədbirin prezentasiyası</h2>
-      ${compact ? "" : `<p class="sub">Açılış, fasilə, sponsorlar, qaydalar — komanda olmadan proyektorda göstərin. Slaydları ← → ilə, pultdan və ya klikerlə çevirin.</p>`}</div>
+      ${compact ? "" : `<p class="sub">Açılış, fasilə, sponsorlar və qaydalar üçün. Səhnə ekranında komandasız göstərilir, slaydları ← →, pult və ya klikerlə çevirirsiniz.</p>`}</div>
       ${compact ? "" : `<a class="btn sm ghost" href="/admin/setup#h-evfiles">${icon("plus")}Yüklə / idarə et</a>`}</div>
     ${files.length ? `<div class="evf">${files.map(f => `<div class="evf-row ${on === f.id ? "on" : ""}">
-        <span class="evf-t"><b>${esc(f.title)}</b><small>${f.ext.toUpperCase()}${f.pages ? ` · ${f.pages} slayd` : ""}${f.viewable ? "" : f.conv === "running" || f.conv === "pending" ? " · PDF-ə çevrilir…" : " · göstərilə bilmir (PDF yükləyin)"}</small></span>
+        <span class="evf-t"><b>${esc(f.title)}</b><small>${f.ext.toUpperCase()}${f.pages ? ` · ${f.pages} slayd` : ""}${f.viewable ? "" : f.conv === "running" || f.conv === "pending" ? " · PDF-ə çevrilir…" : " · açılmadı (PDF yükləyin)"}</small></span>
         ${compact ? "" : `<button class="btn sm ghost" type="button" data-ev-preview="${f.id}" ${f.viewable ? "" : "disabled"}>${icon("expand")}Bax</button>`}
-        ${on === f.id ? `<span class="pill live">Proyektorda</span>` : `<button class="btn sm ${on ? "" : "primary"}" type="button" data-ev-show="${f.id}" ${f.viewable ? "" : "disabled"}>${icon("play")}Proyektora</button>`}
+        ${on === f.id ? `<span class="pill live">Ekranda</span>` : `<button class="btn sm ${on ? "" : "primary"}" type="button" data-ev-show="${f.id}" ${f.viewable ? "" : "disabled"}>${icon("play")}Ekrana çıxar</button>`}
       </div>`).join("")}</div>
-      <div class="toggle" style="border-top:0;padding:0"><div><b>Taymer bubble-ı göstər</b><small>Tədbir prezentasiyasının üstündə taymer (adətən söndürülür)</small></div>
-        <button type="button" class="sw" role="switch" data-ev-bubble aria-checked="${sh.bubble}" aria-label="Taymer bubble-ı göstər"></button></div>
+      <div class="toggle" style="border-top:0;padding:0"><div><b>Taymer dairəsini göstər</b><small>Tədbirin prezentasiyası üstündə taymer (adətən lazım olmur)</small></div>
+        <button type="button" class="sw" role="switch" data-ev-bubble aria-checked="${sh.bubble}" aria-label="Taymer dairəsini göstər"></button></div>
       ${on ? `<div class="row"><button class="btn sm" type="button" data-ev-back>${icon("back")}Komandaya qayıt</button></div>` : ""}`
     : `<p class="note">Hələ tədbir prezentasiyası yoxdur. <a href="/admin/setup#h-evfiles">Quraşdırma → Tədbirin prezentasiyası</a> bölməsindən PDF / PPTX yükləyin.</p>`}`;
 }
@@ -236,9 +236,9 @@ export function bindShowCtl(root: HTMLElement, get: () => StagePayload | null, s
     try {
       const r = await api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body });
       set(r.stage);
-      if (intro) toast("Intro səhnədə göstərilir");
-      if (evShow) toast("Tədbirin prezentasiyası proyektorda");
-      if (evBack) toast("Proyektor komandaya qayıtdı");
+      if (intro) toast("Anons səhnə ekranında göstərilir");
+      if (evShow) toast("Tədbirin prezentasiyası səhnə ekranında");
+      if (evBack) toast("Səhnə ekranı komandaya qayıtdı");
     } catch (ex) { toast((ex as ApiError).message, "err"); }
   });
 }
@@ -257,11 +257,11 @@ export function teamAccessHtml(D: MaterialsData | null) {
   return `
     <div class="row between"><h3 id="h-tacc">Komanda girişi</h3></div>
     <p class="sub" style="margin:0">Hər komandaya giriş linki (QR) verin: komanda <b>/t/kod</b> linki ilə daxil olur, prezentasiyasını (PDF${D.soffice ? " və ya PPTX" : ""}, maks. ${D.maxUploadMb} MB), sayt və video linkini yükləyir.
-      Bal və reytinq komandalara heç vaxt göstərilmir.${D.soffice ? "" : " <b>Serverdə LibreOffice yoxdur</b> — komandalardan PDF istəyin."}</p>
+      Bal və reytinq komandalara heç vaxt göstərilmir.${D.soffice ? "" : " <b>Serverdə LibreOffice yoxdur</b>, komandalardan PDF istəyin."}</p>
     ${sw("teamRegistration", s.teamRegistration, "Açıq qeydiyyat", "Komandalar özləri qeydiyyatdan keçə bilər (munsif.im/team). Yeni komanda “təsdiq gözləyir” statusunda yaranır və siz təsdiqləyənə qədər sıraya düşmür.")}
     ${sw("teamCanRename", s.teamCanRename, "Komanda adını özü dəyişə bilsin", "Bağlı olanda komanda və layihə adını yalnız siz dəyişirsiniz.")}
     ${sw("jurorsSeeMaterials", s.jurorsSeeMaterials, "Münsiflər materialları görsün", "Münsif panelində komandanın prezentasiyası və saytı üçün baxış linki görünür.")}
-    <p class="sub" style="margin:0">Hər komandanın giriş linki (QR) yuxarıda, “Komandalar” bölməsində komandanı açanda görünür. Deadline — “Yükləmə deadline-ı” bölməsində.</p>`;
+    <p class="sub" style="margin:0">Hər komandanın giriş linki (QR) yuxarıda, “Komandalar” bölməsində komandanı açanda görünür. Son tarix “Yükləmə üçün son tarix” bölməsindədir.</p>`;
 }
 export function bindTeamAccess(root: HTMLElement, getData: () => MaterialsData | null, reload: () => Promise<void>) {
   const flash = () => { const s = document.getElementById("taSaved"); if (s) { s.textContent = "Saxlanıldı"; setTimeout(() => { s.textContent = ""; }, 1800); } };
