@@ -214,17 +214,25 @@ docker compose --profile caddy up -d --build
 | `MAX_UPLOAD_MB` | Prezentasiya faylının maksimum ölçüsü | 50 |
 | `SOFFICE` | LibreOffice yolu (boş olarsa PATH-da `soffice` axtarılır; tapılmasa PPTX çevrilmir) | avtomatik |
 | `BOOTSTRAP_ORG_SLUG`, `BOOTSTRAP_ORG_NAME`, `BOOTSTRAP_COORD_USERNAME`, `BOOTSTRAP_COORD_HASH_B64` | Təşkilat + koordinatoru bir dəfəlik yaratmaq ([bootstrap](#demomüştəri-koordinatorunu-env-ilə-yaratmaq-bootstrap)) | — |
+| `BACKUP_INTERVAL_MIN` | Server işləyərkən avtomatik onlayn yedək (`data/backups/auto-*.db`), dəqiqə; `0` = söndür | 10 |
+| `BACKUP_KEEP` | Saxlanılan avtomatik yedək sayı | 48 |
+| `DB_SYNCHRONOUS` | `FULL` (hər bal diskə yazılmadan cavab getmir) və ya `NORMAL` — bax [docs/reliability.md](docs/reliability.md) | FULL |
+| `SOURCE_COMMIT` | `/api/health`-də görünən commit (Coolify build arg) | — |
 
 ### Əmrlər
 
 | Əmr | Nə edir |
 |---|---|
 | `npm run seed` | Admin, kriteriyalar və yer tutucu komandalar (təkrar işlətmək təhlükəsizdir, münsif yaratmır) |
-| `npm run backup` | `data/backups/ignite-<vaxt>.db` — server işləyərkən də təhlükəsizdir |
-| `npm test` | Unit + gizlilik testləri |
+| `npm run backup` | `data/backups/manual-<vaxt>.db` — server işləyərkən də təhlükəsizdir, yedək yoxlanılır (quick_check) |
+| `npm run restore -- --list` / `npm run restore -- <fayl>` | Yedəkləri göstərir / növbəti startda həmin yedəyi bərpa edir (`--now`: dərhal, server dayanmış olmalıdır) |
+| `npm test` | Unit + gizlilik + etibarlılıq testləri (Docker build-da da işləyir, tez) |
 | `npm run typecheck` | Server və frontend tip yoxlaması |
+| `npm run test:load` | Yük testi: 100 münsif + 10 ekran + 30 komanda (əvvəlcə `npm run build`) |
+| `npm run test:chaos` | Xaos testi: + hər 10 s münsiflərin 20%-i qopur, ortada server SIGKILL + restart |
+| `npm run test:e2e` | Brauzer testi (puppeteer-core + Chromium, `CHROME_PATH`) — bax [Etibarlılıq](#etibarlılıq-və-testlər) |
 
-Docker daxilində: `docker compose exec app node dist-server/server/backup.js`.
+Docker daxilində: `node dist-server/server/backup.js` və `node dist-server/server/restore.js <fayl>`.
 
 ## Canlı server (Coolify) və avtomatik yenilənmə
 
@@ -237,7 +245,18 @@ Tətbiq serverdə Coolify layihəsi **Ignite Demo Day** → tətbiq **demoday-ma
 - **Yedəklər:** hər deploy-dan əvvəl və hər gecə 03:30-da alınır. Həm volume içində (`/app/data/backups`), həm də serverdə `/root/demoday-backups/` qovluğunda saxlanılır (son 30).
   - Əl ilə yedək: `demoday-backup`
   - Deploy loqları: `journalctl -u demoday-autodeploy -n 50`
-- **Yedəkdən bərpa:** Coolify-da tətbiqi dayandırın. Sonra yedək faylını volume-dakı `ignite.db` faylının yerinə köçürün (`-wal` / `-shm` fayllarını silin) və tətbiqi yenidən başladın.
+- **Yedəkdən bərpa:** konteynerdə `node dist-server/server/restore.js --list`, sonra `node dist-server/server/restore.js <fayl>` → Coolify-da **Restart**. Server startda yedəyi yoxlayır, cari bazanı `backups/pre-restore-*.db` kimi saxlayır və yedəyi yerinə qoyur. Ətraflı: [docs/runbook.md](docs/runbook.md).
+
+## Etibarlılıq və testlər
+
+Ətraflı: [docs/reliability.md](docs/reliability.md) (audit, yük/xaos nəticələri) və tədbir günü üçün [docs/runbook.md](docs/runbook.md).
+
+- **Heç bir bal itmir:** münsifin telefonu hər balı əvvəlcə `localStorage`-dakı növbəyə yazır (unikal op id ilə), sonra göndərir və server təsdiqləyənə qədər təkrar cəhd edir. Server eyni op-u yalnız bir dəfə tətbiq edir (`score_ops`). Oflayn verilən ballar şəbəkə qayıdanda özü gedir; qiymətləndirmə bağlıdırsa bal rədd edilir, amma telefonda və serverdə (dəyərləri ilə) qalır.
+- **Restart:** səhnə, taymer (server saatı ilə), slayd, reveal addımı bazadadır; restartdan sonra eyni qalır, ekranlar və telefonlar özü qoşulur.
+- **SQLite:** WAL, `synchronous=FULL`, `busy_timeout`; startda `quick_check`; hər 10 dəqiqə yoxlanılmış onlayn yedək.
+- **Monitorinq:** `GET /api/health` (baza, son yedək, socket sayı, event loop gecikməsi, uptime, versiya) və `/root` → **Sistem vəziyyəti**.
+- **E2E:** `npm run build && npm run test:e2e`. Chromium yolu `CHROME_PATH` (standart `~/.hermes/tools/chromium-1208/chrome-linux64/chrome`), lazım olan kitabxanalar `CHROME_LIBS_FILE` faylından `LD_LIBRARY_PATH` kimi oxunur. Port `E2E_PORT` (3077), şəkillər `E2E_OUT`.
+- **CI:** `.github/workflows/ci.yml` — typecheck, test, build, qısa yük + xaos testi.
 
 ## Tədbir günü yoxlama siyahısı
 
@@ -270,7 +289,7 @@ Tətbiq serverdə Coolify layihəsi **Ignite Demo Day** → tətbiq **demoday-ma
 ## Manual qəbul ssenarisi
 
 1. 5 münsif telefonu və 1 admin noutbuku ilə 8 komandanın hamısı üçün prova edin.
-2. Bir münsif formu doldurarkən Wi-Fi-ı söndürür və "Göndər"ə basır. "Göndərilmədi, qaralama saxlanılıb" mesajı çıxmalıdır. Wi-Fi qayıdanda qaralama avtomatik göndərilir (səhifə yenilənsə belə itmir).
+2. Bir münsif formu doldurarkən Wi-Fi-ı söndürür və "Göndər"ə basır. Aşağıda "Oflayn — növbədə" görünməlidir. Wi-Fi qayıdanda bal avtomatik göndərilir və "Saxlanıldı" olur (səhifə yenilənsə belə növbə itmir).
 3. Kilidi açın və bağlayın: münsif forması dərhal salt oxunur olmalıdır.
 4. Excel və PDF-də "ə" və "Ə" hərfləri düzgün görünməlidir (məs. münsif adı "Əli").
 5. Münsif telefonunda başqa münsifin balı, ortalama və reytinq heç yerdə görünməməlidir.
@@ -290,9 +309,10 @@ server/      Fastify + Socket.IO + better-sqlite3
   export/    xlsx.ts (exceljs) · pdf.ts (pdfkit + gömülü TTF)
 web/         Vite + vanilla TS, tək styles.css (token sistemi)
 assets/fonts Manrope, Unbounded, JetBrains Mono, Noto Sans
-test/        scoring · privacy · team · orgs · orgs-migration · munsif-migration · history · migration …
-             fixtures/legacy-acf187a — əvvəlki buraxılışın data qatı (köhnə bazanı köhnə kodla yazmaq üçün)
-scripts/     hash-password.mjs (BOOTSTRAP_COORD_HASH_B64) · import-landing.mjs
+test/        scoring · privacy · team · orgs · reliability · outbox · ops-migration · orgs-migration · history · migration …
+             fixtures/legacy-* — əvvəlki buraxılışların data qatı (köhnə bazanı köhnə kodla yazmaq üçün)
+scripts/     hash-password.mjs (BOOTSTRAP_COORD_HASH_B64) · import-landing.mjs · loadtest/run.ts (yük + xaos)
+e2e/         run.mjs — brauzer testi (puppeteer-core)
 assets/landing  munsif.im landing (scripts/import-landing.mjs ilə ~/projects/munsif-landing/dist-dən gəlir)
 assets/brand    munsif.im loqoları
 ```

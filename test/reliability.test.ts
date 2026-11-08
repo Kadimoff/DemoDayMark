@@ -128,6 +128,33 @@ describe("idempotent score ops", () => {
   });
 });
 
+describe("group commit (ScoreWriter)", () => {
+  it("parallel submits share one transaction; a failing submit does not take the others down", async () => {
+    const { A, base } = await start(path.join(tmp, "batch"));
+    const admin = await adminCookie(base);
+    const jurors = await Promise.all([1, 2, 3, 4, 5].map(i => newJuror(base, admin, `Paralel ${i}`)));
+    const sc = A.ctx.orgs.root;
+    const crit = sc.repo.criteria();
+    const teams = sc.repo.teams().slice(0, 6);
+    const writer = A.ctx.rt.writer;
+    const broken = Object.create(sc.repo) as typeof sc.repo;
+    broken.upsertScore = () => { throw new Error("disk says no"); };
+    const jobs: Array<Promise<unknown>> = [];
+    for (const j of jurors) for (const t of teams) jobs.push(writer.submit(sc.repo, sc.rt, j.id, t.id, { values: fullValues(crit, 3), opId: `batch-${j.id}-${t.id}` }));
+    const bad = writer.submit(broken, sc.rt, jurors[0].id, teams[0].id, { values: fullValues(crit, 9), opId: "batch-broken-01" });
+    const res = await Promise.all(jobs) as Array<{ ok: boolean }>;
+    await expect(bad).rejects.toThrow("disk says no");
+    expect(res.every(r => r.ok)).toBe(true);
+    const db = A.ctx.orgs.db;
+    expect(db.prepare("SELECT COUNT(*) n FROM scores").get()).toEqual({ n: 30 });
+    expect(db.prepare("SELECT COUNT(*) n FROM score_history").get()).toEqual({ n: 30 });
+    expect(db.prepare("SELECT COUNT(*) n FROM score_ops WHERE op_id = 'batch-broken-01'").get()).toEqual({ n: 0 });
+    // the broken submit's values never reached the table (its savepoint was rolled back)
+    expect(db.prepare("SELECT values_json FROM scores WHERE juror_id = ? AND team_id = ?").get(jurors[0].id, teams[0].id)).toEqual({ values_json: JSON.stringify(fullValues(crit, 3)) });
+    await stop(A);
+  });
+});
+
 describe("server restart", () => {
   it("stage, scene, slides, the running timer and the reveal step are the same after a restart; screens reconnect by themselves", async () => {
     const dir = path.join(tmp, "restart");

@@ -6,3 +6,5 @@ for (const k of Object.keys(process.env)) {
 }
 // v11: no periodic backups in tests unless a test turns them on itself (loadConfig overrides).
 process.env.BACKUP_INTERVAL_MIN = "0";
+// A build that injects NODE_ENV=production must not turn tests into production config (SESSION_SECRET check, secure cookies).
+process.env.NODE_ENV = "test";
