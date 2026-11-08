@@ -58,7 +58,8 @@ export function listEvents(orgs: Orgs, orgId: number, cfg: Config): EventListIte
       jurors: n("SELECT COUNT(*) n FROM users WHERE org_id = ? AND event_id = ? AND role = 'juror'"),
       scores: n("SELECT COUNT(*) n FROM scores WHERE org_id = ? AND event_id = ?"),
       top,
-      ...(() => { const e = orgs.eventRepo(orgId, r.id)?.getEvent(); return { date: e?.date ?? "", product: e?.product ?? "" }; })(),
+      // the active program always shows its current name (rows created before v13 may hold an older one)
+      ...(() => { const e = orgs.eventRepo(orgId, r.id)?.getEvent(); return { date: e?.date ?? "", product: e?.product ?? "", ...(r.status === "active" && e ? { name: e.displayName } : {}) }; })(),
       imported: imports.get(r.id) ?? null,
     };
   });

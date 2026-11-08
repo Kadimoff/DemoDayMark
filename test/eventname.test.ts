@@ -79,6 +79,12 @@ describe("setup and new program use the typed name", () => {
     expect(list[0]).toMatchObject({ status: "active", name: "IDDA Hakaton 2026" });
   });
 
+  it("the list shows the active program's current name even if its events row is stale", async () => {
+    A.ctx.orgs.db.prepare("UPDATE events SET name = 'Köhnə ad' WHERE status = 'active'").run();
+    const list = (await request(base).get("/api/admin/events").set("Cookie", admin)).body;
+    expect(list[0]).toMatchObject({ status: "active", name: "IDDA Hakaton 2026" });
+  });
+
   it("Yeni proqram: the typed name, nothing appended", async () => {
     const r = await post("/api/admin/events").send({ name: "Startap Həftəsi", product: "", confirm: true });
     expect(r.status, r.body.error).toBe(200);
