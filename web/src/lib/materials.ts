@@ -1,5 +1,6 @@
 // munsif.im (coordinator): team materials review, team sign-in links (QR) and the stage view controls.
 import QRCode from "qrcode";
+import { bindShare, shareHtml } from "./share";
 import type { AdminTeamMaterials, EventFile, StagePayload, TeamReview } from "../../../shared/types";
 import { openViewer } from "./viewer";
 import { api, ApiError } from "./api";
@@ -135,6 +136,7 @@ export async function openTeamLink(teamId: number, teamName: string, fresh = fal
     dlg.className = "qrdlg tlink";
     document.body.appendChild(dlg);
     dlg.addEventListener("click", e => { if (e.target === dlg || (e.target as HTMLElement).closest("[data-tl-close]")) dlg!.close(); });
+    bindShare(dlg);
   }
   const local = /^(localhost|127\.|\[?::1\]?$)/.test(location.hostname);
   dlg.innerHTML = `<div class="qrwrap">
@@ -143,17 +145,14 @@ export async function openTeamLink(teamId: number, teamName: string, fresh = fal
     <div class="qrbox"><img src="${qr}" alt="Komanda giriş QR kodu" width="320" height="320"></div>
     <div class="tl-code mono">${esc(link!.code)}</div>
     <div class="tl-url mono">${esc(url)}</div>
-    <p class="sub" style="margin:0;text-align:center">Linki komandaya göndərin (Telegram, WhatsApp, e-poçt). Komanda üzvlərinin hamısı eyni linklə daxil ola bilər.
+    ${shareHtml(url, `${teamName}: komanda giriş linki`)}
+    <p class="sub" style="margin:0;text-align:center">Linki komandaya göndərin. Komanda üzvlərinin hamısı eyni linklə daxil ola bilər.
       Kodu <b>munsif.im/team</b> səhifəsində əl ilə də yazmaq olar.</p>
     ${local ? `<p class="note warn-t">Panel localhost ünvanında açılıb, komandalar bu linkə çata bilməz. Paneli server ünvanı ilə açın.</p>` : ""}
     <div class="row" style="justify-content:center">
-      <button class="btn primary" data-tl-copy>${icon("doc")}Linki kopyala</button>
       <button class="btn" data-tl-new>${icon("retry")}Yeni link</button>
       <button class="btn ghost danger" data-tl-revoke>Ləğv et</button>
     </div></div>`;
-  dlg.querySelector("[data-tl-copy]")!.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(url); toast("Link kopyalandı"); } catch { toast("Kopyalamaq alınmadı. Linki seçib əl ilə kopyalayın.", "err"); }
-  });
   dlg.querySelector("[data-tl-new]")!.addEventListener("click", async () => {
     if (!confirm("Yeni link yaradılsın? Köhnə link işləməyəcək (artıq daxil olmuş komanda üzvləri çıxmır).")) return;
     dlg!.close(); await openTeamLink(teamId, teamName, true);

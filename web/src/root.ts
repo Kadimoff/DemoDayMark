@@ -229,7 +229,8 @@ let bk: { files: BkFile[]; imports: BkImport[] } | null = null;
 let bkErr: string | null = null;
 let bkBusy = false;
 let bkPick: string | null = null; // "<file>|<orgId>|<eventId>"
-const dt = (ms: number | null) => (ms ? new Date(ms).toLocaleString("az-AZ", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+const p2 = (n: number) => String(n).padStart(2, "0");
+const dt = (ms: number | null) => { if (!ms) return ""; const x = new Date(ms); return `${p2(x.getDate())}.${p2(x.getMonth() + 1)}.${x.getFullYear()} ${p2(x.getHours())}:${p2(x.getMinutes())}`; };
 const kb = (b: number) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 async function loadBk() {
   bkBusy = true; rerenderBk();

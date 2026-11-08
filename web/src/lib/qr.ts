@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { isPlaceholderName } from "../../../shared/brand";
 import { api, ApiError } from "./api";
 import { esc, icon, toast } from "./dom";
+import { bindShare, shareHtml } from "./share";
 
 export interface InviteJuror { id: number; displayName: string }
 export interface Invite { path: string; expiresAt: number }
@@ -22,6 +23,7 @@ function ensureDialog() {
   dlg.className = "qrdlg";
   dlg.setAttribute("aria-labelledby", "qrTitle");
   document.body.appendChild(dlg);
+  bindShare(dlg);
   dlg.addEventListener("click", async e => {
     const t = e.target as HTMLElement;
     if (t === dlg || t.closest("[data-qr-close]")) { close(); return; }
@@ -66,9 +68,10 @@ async function render() {
         ? `<p class="sub" style="margin:0">Münsif panelə daxil oldu. Adı bütün ekranlarda görünür.</p>`
         : `<span class="wait">Skan gözlənilir · <span id="qrLeft">${left(invite.expiresAt)}</span></span>
            <p class="sub" style="margin:0;max-width:42ch">QR bir dəfə işləyir. Münsif skan edib adını yazan kimi bu pəncərə yenilənəcək.${known ? " Köhnə QR artıq işləmir, münsifin balları yerindədir." : ""}</p>
-           <span class="link">${esc(url)}</span>`}
+           <span class="link">${esc(url)}</span>
+           ${shareHtml(url, `${juror.displayName}: münsif girişi`)}`}
       <div class="acts">
-        ${claimedAs ? "" : `<button class="btn sm" data-qr-copy>${icon("doc")}Linki kopyala</button><button class="btn sm" data-qr-renew>${icon("retry")}Yenilə</button>`}
+        ${claimedAs ? "" : `<button class="btn sm" data-qr-renew>${icon("retry")}Yenilə</button>`}
         <button class="btn sm ${claimedAs ? "primary" : ""}" data-qr-next>${icon("plus")}Növbəti münsif</button>
         <button class="btn sm ghost" data-qr-close>Bağla</button>
       </div>

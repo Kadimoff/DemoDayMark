@@ -44,7 +44,8 @@ let ACT: ActiveState | null = null;
 let formOpen = false;
 let view: number | null = null;
 
-const d = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString("az-AZ", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
+const p2 = (n: number) => String(n).padStart(2, "0");
+const d = (ms: number | null) => { if (!ms) return ""; const x = new Date(ms); return `${p2(x.getDate())}.${p2(x.getMonth() + 1)}.${x.getFullYear()}`; };
 const f2 = (v: number | null) => (v == null ? "" : (Math.round(v * 100) / 100).toFixed(2));
 const parseClock = (v: string) => { const m = v.trim().match(/^(\d{1,2})(?::([0-5]\d))?$/); return m ? Number(m[1]) * 60 + Number(m[2] ?? 0) : null; };
 const cleanPrefix = (v: string) => v.trim().replace(/\s*(demo\s*day|hakaton|hackathon)\s*$/i, "");

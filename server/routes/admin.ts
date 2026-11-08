@@ -334,7 +334,12 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const { repo } = scopeOf(ctx, req);
       const o = publicOrigin(req);
       const ev = repo.getEvent();
-      const until = (ms: number) => new Date(ms).toLocaleString("az-AZ", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: process.env.TZ || "Asia/Baku" });
+      const until = (ms: number) => {
+        // Baku time (UTC+4, no DST) unless the server says otherwise
+        const p = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: process.env.TZ || "Asia/Baku" }).formatToParts(ms);
+        const g = (t: string) => p.find(x => x.type === t)?.value ?? "";
+        return `${g("day")}.${g("month")} ${g("hour")}:${g("minute")}`;
+      };
       const given = b.invites?.flatMap(i => {
         const token = i.path.startsWith("/j/") ? i.path.slice(3) : "";
         const inv = token ? repo.invite(tokenId(token)) : null;

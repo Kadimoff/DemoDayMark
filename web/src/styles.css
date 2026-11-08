@@ -1923,7 +1923,7 @@ h1[id], h2[id], h3[id], details[id] { scroll-margin-top: 90px; }
 .systab td:first-child { overflow-wrap: anywhere; }
 
 /* v4: the projector keeps only two small icons (sound, fullscreen) in the corner, and slide arrows for an admin session. */
-.tp-dock { left: auto; right: 14px; transform: none; align-items: flex-end; }
+.tp-dock { left: 14px; right: auto; transform: none; align-items: flex-start; }
 .tp-dock .tp-btns { padding: 4px; gap: 4px; }
 .tp-dock .tp-btn.ico { min-height: 34px; width: 34px; padding: 0; justify-content: center; }
 .st-nav { position: fixed; inset: 0; z-index: 64; pointer-events: none; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; transition: opacity .4s ease; }
@@ -2031,3 +2031,10 @@ h1[id], h2[id], h3[id], details[id] { scroll-margin-top: 90px; }
 .bk-nm { min-width: 0; flex: 1 1 260px; } .bk-nm small { display: block; color: var(--muted); font-size: 12.5px; }
 .bk-form { width: 100%; }
 .bk-imp { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; } .bk-imp .ic { color: var(--ok, #2EE59D); flex: 0 0 auto; margin-top: 2px; }
+
+/* v4: seven panel links: short labels on narrower desktops so the header stays one row */
+@media (max-width: 1640px) {
+  .top .nav .nl { display: none; }
+  .top .nav .ns { display: inline; }
+  .top .nav a { padding: 7px 9px; }
+}

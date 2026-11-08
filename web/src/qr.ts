@@ -35,7 +35,8 @@ async function qrSvg(url: string) {
   if (!s) { s = await QRCode.toString(url, { type: "svg", errorCorrectionLevel: "M", margin: 1, color: { dark: "#0B0F19", light: "#FFFFFF" } }); svgCache.set(url, s); }
   return s;
 }
-const until = (ms: number) => new Date(ms).toLocaleString("az-AZ", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const p2 = (n: number) => String(n).padStart(2, "0");
+const until = (ms: number) => { const x = new Date(ms); return `${p2(x.getDate())}.${p2(x.getMonth() + 1)} ${p2(x.getHours())}:${p2(x.getMinutes())}`; };
 
 async function load() {
   try { D = await api<QrData>("/api/admin/qr"); }
