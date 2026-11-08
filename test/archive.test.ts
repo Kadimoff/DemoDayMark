@@ -169,7 +169,7 @@ describe("backups → archived programs (root)", () => {
       expect(f.ok, `v${v}`).toBe(true);
       expect(f.schema).toBe(v);
       const ig = f.events.find(e => e.name === "Ignite DemoDay")!;
-      expect(ig, `v${v}`).toMatchObject({ brand: "Ignite", teams: 8, jurors: 3, scores: 12, history: 12, status: v === 11 ? "archived" : "active", imported: false });
+      expect(ig, `v${v}`).toMatchObject({ brand: expect.stringMatching(/^Ignite/), teams: 8, jurors: 3, scores: 12, history: 12, status: v === 11 ? "archived" : "active", imported: false });
       expect(ig.lastScoreAt).toEqual(expect.any(Number));
     }
     expect(files.find(x => x.file === "demoday-v11.db")!.events.map(e => e.name)).toEqual(["Ignite DemoDay", "TechConnect Hakaton"]);
@@ -296,9 +296,9 @@ describe("IMPORT_ARCHIVE_MATCH", () => {
     fs.writeFileSync(path.join(cfg.backupDir, "junk.db"), "x");
     const A = await buildApp(cfg);
     try {
-      // v11 → v12: a pre-v12 copy of the live database is kept
-      expect(SCHEMA_VERSION).toBe(12);
-      const pre = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith("pre-v12-"));
+      // v11 → current: a pre-migration copy of the live database is kept
+      expect(SCHEMA_VERSION).toBe(13);
+      const pre = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
       expect(pre.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, pre[0]), { readonly: true });
       expect(copy.pragma("user_version", { simple: true })).toBe(11);

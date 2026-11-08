@@ -1,0 +1,20 @@
+# munsif.im: only the landing pages are for search engines; panels, QR links and API are private.
+User-agent: *
+Allow: /$
+Allow: /en/
+Allow: /brand/
+Allow: /landing/
+Disallow: /admin
+Disallow: /root
+Disallow: /juror
+Disallow: /team
+Disallow: /j/
+Disallow: /t/
+Disallow: /o/
+Disallow: /api/
+Disallow: /login
+Disallow: /stage
+Disallow: /timer
+Disallow: /reveal
+Disallow: /pult
+Disallow: /speaker

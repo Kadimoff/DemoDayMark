@@ -15,6 +15,7 @@ import { adminResults, revealPublicView } from "../server/views.js";
 import { ensureBaseline as legacyBaseline } from "./fixtures/legacy-468f2a0/baseline.js";
 import { Repo as LegacyRepo } from "./fixtures/legacy-468f2a0/repo.js";
 import { TeamRepo as LegacyTeamRepo } from "./fixtures/legacy-468f2a0/teamrepo.js";
+import { asV13 } from "./helpers/v13.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ddm-opsmig-"));
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -60,7 +61,7 @@ describe("upgrading the live 468f2a0 (v10) database to score ops (v11)", () => {
     const { cfg, snapshot, ranking, reveal, stage } = await v10Database(path.join(tmp, "a"));
     const A = await buildApp(cfg);
     try {
-      expect(SCHEMA_VERSION).toBe(12);
+      expect(SCHEMA_VERSION).toBe(13);
       const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
       expect(backups.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, backups[0]), { readonly: true });
@@ -71,7 +72,7 @@ describe("upgrading the live 468f2a0 (v10) database to score ops (v11)", () => {
       expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
       expect(db.pragma("integrity_check", { simple: true })).toBe("ok");
       expect(db.pragma("foreign_key_check")).toEqual([]);
-      for (const t of TABLES) expect(db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(snapshot[t]);
+      for (const t of TABLES) expect(db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(asV13(t, snapshot[t]));
       for (const t of EVENT_TABLES_V11) expect(db.prepare(`SELECT COUNT(*) n FROM ${t}`).get(), t).toEqual({ n: 0 });
       const repo = A.ctx.orgs.root.repo;
       expect(adminResults(repo, cfg).results.ranking.map(r => [r.team.id, r.rank, r.score, r.n])).toEqual(ranking);

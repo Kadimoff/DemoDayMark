@@ -340,7 +340,7 @@ function apply(next: RevealPublic) {
   spot.hidden = true;
   spot.innerHTML = "";
   fxFront.embers(0, []);
-  el.ev.innerHTML = brandHtml(next.eventName || "Hakaton");
+  el.ev.innerHTML = brandHtml(next.eventName);
   document.body.classList.toggle("noscores", next.hideScores);
   if (!next.enabled) { waiting(); return; }
   if (boardTotal !== next.total) buildBoard(next.total);

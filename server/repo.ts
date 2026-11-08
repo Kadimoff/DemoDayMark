@@ -45,11 +45,11 @@ interface EventRow {
 }
 
 export interface EventState {
-  /** Brand prefix only ("Ignite"); the display name is displayName → "Ignite Hakaton". */
+  /** The event's name as the organiser typed it ("IDDA Hakaton 2026"). Older rows: a brand prefix ("Ignite"). */
   name: string;
-  /** Event type shown after the prefix. */
+  /** "" (FREE_NAME): `name` is the whole name. Older rows: event type shown after the prefix. */
   product: Product;
-  /** brandName(name, product), e.g. "Ignite Hakaton". */
+  /** brandName(name, product): the name every screen shows. */
   displayName: string;
   date: string;
   currentTeamId: number | null;
@@ -211,6 +211,10 @@ export class Repo {
         +n.revealHideScores, n.revealBatch,
         +n.teamRegistration, +n.teamCanRename, n.uploadDeadline, +n.jurorsSeeMaterials, n.stageMode, n.stageSlide, n.stageIntroAt,
         n.stageScene, n.stageEventFile, n.eventSlide, +n.eventBubble, +n.teamSlideControl, +n.last5Fx, +n.stageSound, this.orgId);
+    // the program list (`events`) shows the same name as every screen
+    if (n.name !== cur.name || n.product !== cur.product) {
+      this.db.prepare("UPDATE events SET name = ? WHERE id = ? AND status = 'active'").run(brandName(n.name, n.product), this.eventId);
+    }
     return this.getEvent();
   }
 

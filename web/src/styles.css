@@ -1466,7 +1466,7 @@ img.mmark { display: none; height: 30px; width: 30px; }
 :root[data-theme="light"] img.mlogo, :root[data-theme="light"] .mlogo-lg img { content: url("/brand/munsif-logo-light.svg"); }
 .brand { gap: 12px; }
 .evpill { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 10px 5px 12px; border-radius: var(--r-pill); background: var(--accent-soft); border: 1px solid var(--line); }
-.evpill b { font-weight: 800; font-size: 13px; letter-spacing: .01em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch; }
+.evpill b { font-weight: 800; font-size: 13px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch; }
 .evpill b i { font-style: normal; color: var(--accent-text); }
 .evpill .role { font-family: var(--f-mono); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 @media (max-width: 720px) { img.mlogo { display: none; } img.mmark { display: block; } .evpill .role { display: none; } .evpill b { max-width: 14ch; } }

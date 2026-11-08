@@ -1,5 +1,5 @@
 import "./styles.css";
-import { brandName, isPlaceholderName, PRODUCTS } from "../../shared/brand";
+import { brandName, FREE_NAME, isPlaceholderName } from "../../shared/brand";
 import { sortable } from "./lib/sortable";
 import { fmtClock } from "../../shared/timer";
 import type { AdminTeam, Criterion, Juror, ScoreRow, StagePayload, TimerState } from "../../shared/types";
@@ -7,7 +7,7 @@ import { api, ApiError } from "./lib/api";
 import { $, esc, icon, initials, toast } from "./lib/dom";
 import { createJuror, jurorJoined, onQrChange, reissue } from "./lib/qr";
 import { live } from "./lib/socket";
-import { brandHtml, topbar } from "./lib/topbar";
+import { topbar } from "./lib/topbar";
 import { adminNav } from "./lib/adminnav";
 import { bindTeamAccess, teamAccessHtml, type MaterialsData } from "./lib/materials";
 import { noticeBell } from "./lib/notices";
@@ -105,10 +105,9 @@ function eventSection(ev: EventState) {
     <div class="row between"><h3 id="h-ev">${icon("medal")}Proqram</h3><span class="saved" id="evSaved"></span></div>
     <form id="evForm" class="stack" novalidate>
       <div class="row" style="align-items:flex-start">
-        <div style="flex:2 1 320px"><label class="f" for="evName">Proqramın adı (brend) və növü</label>
-          <div class="row brandrow" style="flex-wrap:nowrap;gap:8px"><input type="text" id="evName" value="${esc(ev.name)}" maxlength="40" placeholder="məs. Ignite" autocomplete="off">
-          <select id="evProduct" aria-label="Proqram növü" style="width:auto;flex:0 0 auto">${PRODUCTS.map(p => `<option${p === ev.product ? " selected" : ""}>${p}</option>`).join("")}</select>
-          <span class="brandprev" aria-live="polite"><span class="flame" style="width:9px;height:9px;border-radius:50%;background:var(--accent)"></span><b id="evPrev">${brandHtml(brandName(ev.name, ev.product))}</b></span></div></div>
+        <div style="flex:2 1 320px"><label class="f" for="evName">Proqramın adı</label>
+          <input type="text" id="evName" value="${esc(brandName(ev.name, ev.product))}" maxlength="60" placeholder="məs. IDDA Hakaton 2026" autocomplete="off">
+          <p class="sub">Səhnə ekranında, münsiflərin telefonunda və nəticədə yazdığınız kimi görünür.</p></div>
         <div style="flex:1 1 140px"><label class="f" for="evDate">Tarix</label><input type="text" id="evDate" value="${esc(ev.date)}" maxlength="40" placeholder="29.10.2026"></div>
       </div>
       <p class="err" id="evErr" role="alert" style="color:var(--danger);margin:0;font-size:13px;font-weight:600"></p>
@@ -653,23 +652,19 @@ async function saveTags(tags: string[]) {
   } catch (ex) { toast((ex as ApiError).message, "err"); return false; }
 }
 
-const cleanPrefix = (v: string) => v.trim().replace(/\s*(demo\s*day|hakaton|hackathon)\s*$/i, "");
-main.addEventListener("input", e => {
-  const el = e.target as HTMLInputElement;
-  if (el.id === "evName" || el.id === "evProduct") $("#evPrev").innerHTML = brandHtml(brandName(cleanPrefix($<HTMLInputElement>("#evName").value), $<HTMLSelectElement>("#evProduct").value));
-});
 // Event fields save on change too (the page promises "saved when you leave the field"): durations reach every screen at once.
 main.addEventListener("change", e => {
   const id = (e.target as HTMLElement).id;
-  if (["evName", "evProduct", "evDate", "evPitch", "evQa"].includes(id)) saveEvent();
+  if (["evName", "evDate", "evPitch", "evQa"].includes(id)) saveEvent();
 });
 
 async function saveEvent() {
   const err = $("#evErr");
   const pitchSec = parseClock($<HTMLInputElement>("#evPitch").value);
   const qaSec = parseClock($<HTMLInputElement>("#evQa").value);
-  const name = cleanPrefix($<HTMLInputElement>("#evName").value);
-  const product = $<HTMLSelectElement>("#evProduct").value;
+  const name = $<HTMLInputElement>("#evName").value.trim().replace(/\s+/g, " ");
+  const product = FREE_NAME;
+  if (name.length < 2) { err.textContent = "Proqramın adını yazın, məs. IDDA Hakaton 2026."; $("#evName").focus(); return; }
   if (!pitchSec || pitchSec < 10) { err.textContent = "Təqdimat müddətini dəq:san formatında yazın, məs. 3:00."; $("#evPitch").focus(); return; }
   if (!qaSec || qaSec < 10) { err.textContent = "Sual-cavab müddətini dəq:san formatında yazın, məs. 2:00."; $("#evQa").focus(); return; }
   err.textContent = "";

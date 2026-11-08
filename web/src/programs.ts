@@ -6,7 +6,7 @@
 // - Tarixçə: every archived program (programs imported from a backup too) → a full read-only view: final ranking, teams and
 //   their materials, jurors, every juror's scores, the scoring history, Excel / PDF.
 import "./styles.css";
-import { PRODUCTS, brandName } from "../../shared/brand";
+import { FREE_NAME, brandName } from "../../shared/brand";
 import { fmtClock } from "../../shared/timer";
 import type { AdminTeam, Criterion, Juror, ScoreRow, TeamFile } from "../../shared/types";
 import { api, ApiError } from "./lib/api";
@@ -48,7 +48,6 @@ const p2 = (n: number) => String(n).padStart(2, "0");
 const d = (ms: number | null) => { if (!ms) return ""; const x = new Date(ms); return `${p2(x.getDate())}.${p2(x.getMonth() + 1)}.${x.getFullYear()}`; };
 const f2 = (v: number | null) => (v == null ? "" : (Math.round(v * 100) / 100).toFixed(2));
 const parseClock = (v: string) => { const m = v.trim().match(/^(\d{1,2})(?::([0-5]\d))?$/); return m ? Number(m[1]) * 60 + Number(m[2] ?? 0) : null; };
-const cleanPrefix = (v: string) => v.trim().replace(/\s*(demo\s*day|hakaton|hackathon)\s*$/i, "");
 const hashId = () => { const m = location.hash.match(/^#p(\d+)$/); return m ? Number(m[1]) : null; };
 
 async function load() {
@@ -75,7 +74,7 @@ function renderList() {
       <p class="sub">Proqram (tədbir) bir yarışdır: öz komandaları, münsifləri, meyarları və nəticəsi olur. Eyni vaxtda bir proqram aktivdir. Əvvəlki proqramlar tarixçədə oxuma rejimində qalır, heç nə silinmir.</p></div>
       <button class="btn primary" id="newToggle">${icon("plus")}Yeni proqram yarat</button></section>
     ${cur ? `<section class="card pad-lg stack pg-active" aria-labelledby="h-act">
-      <div class="row between"><div><span class="caps">Aktiv proqram</span><h2 id="h-act">${esc(brandName(ev.name, ev.product) || cur.name)}</h2>
+      <div class="row between"><div><span class="caps">Aktiv proqram</span><h2 id="h-act">${esc(brandName(ev.name, ev.product))}</h2>
         <p class="sub">${esc(ev.date)} · ${cur.teams} komanda · ${cur.jurors} münsif · ${cur.scores} qiymət</p></div>${winner(cur) ? `<div class="pg-lead"><small>Hazırda öndədir</small>${winner(cur)}</div>` : ""}</div>
       <div class="row"><a class="btn" href="/admin">${icon("users")}Canlı panel</a><a class="btn" href="/admin/setup">${icon("pencil")}Quraşdırma</a><a class="btn ghost" href="/admin/qr">${icon("qr")}QR kodlar</a></div>
     </section>` : ""}
@@ -101,8 +100,7 @@ function newFormHtml(cur: EventItem | undefined) {
     <form id="newForm" class="stack" novalidate>
       <p class="sub" style="margin:0">Hazırkı proqram (<b>${esc(cur?.name ?? "")}</b>) arxivə keçir: nəticələri, tarixçəsi və Excel/PDF ixracı qalır. Arxivdəki münsiflərin və komandaların girişləri bağlanır.</p>
       <div class="row" style="align-items:flex-start">
-        <div style="flex:2 1 220px"><label class="f" for="neName">Adı (brend)</label><input id="neName" maxlength="40" placeholder="məs. Ignite 2027" required></div>
-        <div style="flex:0 0 auto"><label class="f" for="neProduct">Növü</label><select id="neProduct">${PRODUCTS.map(p => `<option${p === ev.product ? " selected" : ""}>${p}</option>`).join("")}</select></div>
+        <div style="flex:2 1 260px"><label class="f" for="neName">Proqramın adı</label><input id="neName" maxlength="60" placeholder="məs. IDDA Hakaton 2026" autocomplete="off" required></div>
         <div style="flex:1 1 130px"><label class="f" for="neDate">Tarix</label><input id="neDate" maxlength="40" placeholder="${esc(ev.date)}"></div>
       </div>
       <div class="row" style="align-items:flex-start">
@@ -122,7 +120,7 @@ function newFormHtml(cur: EventItem | undefined) {
 
 async function createProgram() {
   const err = $("#neErr");
-  const name = cleanPrefix($<HTMLInputElement>("#neName").value);
+  const name = $<HTMLInputElement>("#neName").value.trim().replace(/\s+/g, " ");
   const pitchSec = parseClock($<HTMLInputElement>("#nePitch").value), qaSec = parseClock($<HTMLInputElement>("#neQa").value);
   const dl = $<HTMLInputElement>("#neDeadline").value;
   if (name.length < 2) { err.textContent = "Yeni proqramın adını yazın."; $("#neName").focus(); return; }
@@ -133,7 +131,7 @@ async function createProgram() {
   go.disabled = true;
   try {
     await api("/api/admin/events", { method: "POST", body: {
-      name, product: $<HTMLSelectElement>("#neProduct").value, date: $<HTMLInputElement>("#neDate").value.trim() || undefined, pitchSec, qaSec,
+      name, product: FREE_NAME, date: $<HTMLInputElement>("#neDate").value.trim() || undefined, pitchSec, qaSec,
       uploadDeadline: dl ? new Date(dl).getTime() : null, copyFrom: Number($<HTMLSelectElement>("#neFrom").value) || null,
       copyCriteria: $<HTMLInputElement>("#neCrit").checked, copyJurors: $<HTMLInputElement>("#neJurors").checked, copyTeams: $<HTMLInputElement>("#neTeams").checked, confirm: true,
     } });

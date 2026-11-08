@@ -11,7 +11,7 @@ import { adminResults } from "./views.js";
 import { DEFAULT_CRITERIA, todayDate } from "./baseline.js";
 import { applyTimerAction } from "../shared/timer.js";
 import { activeFile, materials, teamRow } from "./teamrepo.js";
-import { brandName } from "../shared/brand.js";
+import { asProduct, brandName } from "../shared/brand.js";
 
 export interface NewEventInput {
   name: string;
@@ -136,7 +136,7 @@ export function createEvent(orgs: Orgs, sc: Scope, cfg: Config, actorId: number,
     const teams = db.prepare("SELECT id FROM teams WHERE org_id = ? AND event_id = ?").all(orgId, cur.id) as Array<{ id: number }>;
     db.prepare("DELETE FROM team_sessions WHERE org_id = ? AND event_id = ?").run(orgId, cur.id);
 
-    const product = input.product === "DemoDay" || input.product === "Hakaton" ? input.product : ev.product;
+    const product = input.product !== undefined ? asProduct(input.product) : ev.product;
     const created = db.prepare("INSERT INTO events (org_id, name, status, created_at) VALUES (?, ?, 'active', ?)").run(orgId, brandName(input.name, product), now);
     const newId = Number(created.lastInsertRowid);
     const timer = applyTimerAction({ ...ev.timer, pitchSec: input.pitchSec ?? ev.timer.pitchSec, qaSec: input.qaSec ?? ev.timer.qaSec }, "stop", now);

@@ -14,6 +14,7 @@ import { adminResults, revealPublicView } from "../server/views.js";
 import { ensureBaseline as legacyBaseline } from "./fixtures/legacy-acf187a/baseline.js";
 import { Repo as LegacyRepo } from "./fixtures/legacy-acf187a/repo.js";
 import { TeamRepo as LegacyTeamRepo } from "./fixtures/legacy-acf187a/teamrepo.js";
+import { asV13 } from "./helpers/v13.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ddm-orgmig-"));
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -71,7 +72,7 @@ describe("upgrading the live acf187a (v8) database to organisations (v9)", () =>
     try {
       // a consistent copy of the v8 file was made first
       const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
-      expect(SCHEMA_VERSION).toBe(12); // v8 → v9 (orgs) → v10 (events) → v11 (score ops) → v12 (archive imports) in one start
+      expect(SCHEMA_VERSION).toBe(13); // v8 → v9 (orgs) → v10 (events) → v11 (score ops) → v12 (archive imports) → v13 (free event name) in one start
       expect(backups.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, backups[0]), { readonly: true });
       expect(copy.pragma("user_version", { simple: true })).toBe(8);
@@ -82,7 +83,7 @@ describe("upgrading the live acf187a (v8) database to organisations (v9)", () =>
       expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
       for (const t of TABLES) {
         const now = db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all() as Array<Record<string, unknown>>;
-        const old = snapshot[t] as Array<Record<string, unknown>>;
+        const old = asV13(t, snapshot[t] as Array<Record<string, unknown>>);
         expect(old.length, t).toBeGreaterThan(0);
         // the same rows, the same values in every old column (added columns only appear next to them)
         expect(now.map(r => Object.fromEntries(Object.keys(old[0]).map(k => [k, r[k]]))), t).toEqual(old);

@@ -61,7 +61,7 @@ describe("upgrading a v7 (main) database", () => {
     }
     expect(adminResults(repo, cfg).results.ranking.map(r => [r.team.id, r.rank, r.score, r.demo, r.n])).toEqual(snapshot.ranking);
     expect(repo.teams().every(t => t.approval === "approved")).toBe(true);
-    expect(repo.getEvent()).toMatchObject({ name: "Ignite", product: "DemoDay", locked: true, teamRegistration: false, teamCanRename: false,
+    expect(repo.getEvent()).toMatchObject({ name: "Ignite DemoDay", product: "", displayName: "Ignite DemoDay", locked: true, teamRegistration: false, teamCanRename: false,
       jurorsSeeMaterials: true, uploadDeadline: null, stageMode: "auto", stageSlide: 1, stageIntroAt: null });
     expect(repo.stage().show).toMatchObject({ mode: "auto", slide: 1, pres: null, site: null, members: [] });
     db.close();

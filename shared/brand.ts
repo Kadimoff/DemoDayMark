@@ -1,12 +1,18 @@
-// Event name = organiser's prefix (e.g. "Ignite") + event type ("Hakaton" or "DemoDay") → "Ignite Hakaton".
+// Event name. Since v13 the organiser types the whole name ("IDDA Hakaton 2026") and `product` is "" (FREE_NAME).
+// Older rows (and archived settings) keep a brand prefix ("Ignite") + event type ("Hakaton" / "DemoDay") → "Ignite Hakaton".
 export const PRODUCTS = ["Hakaton", "DemoDay"] as const;
-export type Product = (typeof PRODUCTS)[number];
+/** product value of an event whose `name` is already the full name. */
+export const FREE_NAME = "" as const;
+export type Product = (typeof PRODUCTS)[number] | typeof FREE_NAME;
 export const DEFAULT_PRODUCT: Product = "Hakaton";
-export const asProduct = (v: unknown): Product => (PRODUCTS as readonly unknown[]).includes(v) ? (v as Product) : DEFAULT_PRODUCT;
+export const asProduct = (v: unknown): Product => v === FREE_NAME || (PRODUCTS as readonly unknown[]).includes(v) ? (v as Product) : DEFAULT_PRODUCT;
+/** Shown when a free-named event has no name yet. */
+export const UNNAMED_EVENT = "Tədbir";
 
 export function brandName(prefix: string | null | undefined, product: string = DEFAULT_PRODUCT): string {
   const p = (prefix ?? "").trim();
   const k = asProduct(product);
+  if (k === FREE_NAME) return p || UNNAMED_EVENT;
   return p ? `${p} ${k}` : k;
 }
 

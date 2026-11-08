@@ -111,9 +111,7 @@ export function ago(ms: number, now = Date.now()) {
   return hhmm(ms);
 }
 
-/** "Ignite Hakaton" → `Ignite <i>Hakaton</i>`: the event type (Hakaton / DemoDay) is highlighted. */
+/** The event's name exactly as the organiser typed it (escaped). */
 export function brandHtml(name: string) {
-  const n = (name || "Hakaton").trim();
-  const m = n.match(/^(.*?)\s*(DemoDay|Hakaton)$/i);
-  return m && m[1] ? `${esc(m[1])} <i>${esc(m[2])}</i>` : `<i>${esc(n)}</i>`;
+  return esc((name || "").trim());
 }

@@ -15,6 +15,7 @@ import type { Repo } from "../server/repo.js";
 import { ensureBaseline as legacyBaseline, seedOrgEvent as legacySeedOrg } from "./fixtures/legacy-537b462/baseline.js";
 import { Repo as LegacyRepo } from "./fixtures/legacy-537b462/repo.js";
 import { TeamRepo as LegacyTeamRepo } from "./fixtures/legacy-537b462/teamrepo.js";
+import { asV13 } from "./helpers/v13.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ddm-evmig-"));
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -73,7 +74,7 @@ describe("upgrading the live 537b462 (v9) database to events (v10)", () => {
     const { cfg, snapshot, orgsOut } = await v9Database(path.join(tmp, "a"));
     const A = await buildApp(cfg);
     try {
-      expect(SCHEMA_VERSION).toBe(12);
+      expect(SCHEMA_VERSION).toBe(13);
       const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
       expect(backups.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, backups[0]), { readonly: true });
@@ -87,7 +88,7 @@ describe("upgrading the live 537b462 (v9) database to events (v10)", () => {
       expect(db.pragma("integrity_check", { simple: true })).toBe("ok");
       for (const t of TABLES) {
         const now = db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all() as Array<Record<string, unknown>>;
-        const old = snapshot[t] as Array<Record<string, unknown>>;
+        const old = asV13(t, snapshot[t] as Array<Record<string, unknown>>);
         expect(old.length, t).toBeGreaterThan(0);
         expect(now.map(r => Object.fromEntries(Object.keys(old[0]).map(k => [k, r[k]]))), t).toEqual(old);
       }

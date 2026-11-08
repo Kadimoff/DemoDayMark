@@ -293,6 +293,16 @@ const MIGRATIONS: Array<string | ((db: DB) => void)> = [
   );
   CREATE INDEX archive_imports_key ON archive_imports(org_id, content_key);
   `,
+  // v13 (free event name): the organiser types the event's whole name instead of a brand prefix + "Hakaton"/"DemoDay".
+  // Every event row gets its current display name ("IDDA" + "DemoDay" → "IDDA DemoDay") and product '' (= free name),
+  // so nothing that is shown today changes. Archived events keep their own settings copy and are not touched.
+  `
+  UPDATE event SET
+    name = CASE WHEN trim(name) = '' THEN (CASE WHEN product = 'DemoDay' THEN 'DemoDay' ELSE 'Hakaton' END)
+                ELSE trim(name) || ' ' || (CASE WHEN product = 'DemoDay' THEN 'DemoDay' ELSE 'Hakaton' END) END,
+    product = ''
+  WHERE product <> '';
+  `,
 ];
 
 /** Tables whose rows belong to one event of an organisation (v10). */

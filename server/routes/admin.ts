@@ -12,7 +12,7 @@ import { buildPdf } from "../export/pdf.js";
 import { buildXlsx, exportFileName } from "../export/xlsx.js";
 import { adminResults, revealAdminView, revealSnapshot } from "../views.js";
 import { revealSteps } from "../../shared/reveal.js";
-import { PRODUCTS } from "../../shared/brand.js";
+import { FREE_NAME, PRODUCTS } from "../../shared/brand.js";
 import { adjustTimer } from "../../shared/timer.js";
 import { isPlaceholderName, placeholderName } from "../../shared/brand.js";
 import { buildHistoryXlsx } from "../export/history.js";
@@ -26,7 +26,7 @@ export const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
 const name = (max = 120) => z.string().trim().min(1, "Ad boş ola bilməz.").max(max);
 
 const eventBody = z.object({
-  name: z.string().trim().max(40, "Brend adı 40 simvoldan uzun ola bilməz.").optional(),
+  name: z.string().trim().max(60, "Proqramın adı 60 simvoldan uzun ola bilməz.").optional(),
   feedbackTags: z.array(z.string().trim().min(1).max(60, "Rəy etiketi 60 simvoldan uzun ola bilməz.")).max(20, "Ən çox 20 rəy etiketi ola bilər.").optional(),
   date: z.string().trim().max(40).optional(),
   currentTeamId: z.number().int().positive().nullable().optional(),
@@ -40,7 +40,7 @@ const eventBody = z.object({
   revealTop: z.number().int().min(0, "İki addımla açılan yerlərin sayı 0 ilə 10 arası olmalıdır.").max(10, "İki addımla açılan yerlərin sayı 0 ilə 10 arası olmalıdır.").optional(),
   revealBatch: z.number().int().min(1, "Birlikdə açılan yerlərin sayı 1 ilə 10 arası olmalıdır.").max(10, "Birlikdə açılan yerlərin sayı 1 ilə 10 arası olmalıdır.").optional(),
   revealHideScores: z.boolean().optional(),
-  product: z.enum(PRODUCTS).optional(),
+  product: z.enum([FREE_NAME, ...PRODUCTS]).optional(),
   timerAdd: z.number().int().min(-3600).max(3600).optional(),
   timerSet: z.number().int().min(0).max(3600).optional(),
 });
@@ -56,8 +56,8 @@ const critPatch = z.object({ name: name().optional(), description: z.string().tr
 const reorderBody = z.object({ ids: z.array(z.number().int().positive()).min(1) });
 const wipeBody = z.object({ token: z.string().min(1) });
 const newEventBody = z.object({
-  name: z.string().trim().min(2, "Proqramın adını yazın.").max(40, "Ad 40 simvoldan uzun ola bilməz."),
-  product: z.enum(PRODUCTS).optional(),
+  name: z.string().trim().min(2, "Proqramın adını yazın.").max(60, "Proqramın adı 60 simvoldan uzun ola bilməz."),
+  product: z.enum([FREE_NAME, ...PRODUCTS]).optional(),
   date: z.string().trim().max(40).optional(),
   pitchSec: z.number().int().min(10).max(3600).optional(),
   qaSec: z.number().int().min(10).max(3600).optional(),
