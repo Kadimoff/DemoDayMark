@@ -4,12 +4,17 @@ import type { LoginLimiter } from "./auth.js";
 import type { Config } from "./config.js";
 import type { Realtime } from "./realtime.js";
 import type { Repo } from "./repo.js";
+import type { TeamRepo } from "./teamrepo.js";
+import type { TeamService } from "./teams.js";
 
 export interface Ctx {
   repo: Repo;
   cfg: Config;
   rt: Realtime;
   limiter: LoginLimiter;
+  /** munsif: team links, sessions, files, notifications */
+  trepo: TeamRepo;
+  teams: TeamService;
 }
 
 const FIELD_AZ: Record<string, string> = {
@@ -17,6 +22,7 @@ const FIELD_AZ: Record<string, string> = {
   description: "İzah", note: "Şərh", values: "Ballar", date: "Tarix", ids: "Sıra",
   pitchSec: "Pitch müddəti", qaSec: "Sual-cavab müddəti", currentTeamId: "Komanda", token: "Təsdiq kodu",
   maxScore: "Maksimum bal", entryScore: "Giriş balı", entryMax: "Giriş balının maksimumu", includeEntry: "Giriş balı",
+  members: "Üzvlər", siteUrl: "Sayt linki", videoUrl: "Video linki", code: "Kod", slide: "Slayd", mode: "Rejim", uploadDeadline: "Deadline",
 };
 
 /** Validates with zod; on failure replies 400 with a readable Azerbaijani message and returns null. */

@@ -1,6 +1,18 @@
 import "dotenv/config";
 import { randomBytes } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
+
+/** `which soffice` / `which libreoffice` without spawning a shell. */
+export function findSoffice(): string {
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter).filter(Boolean)) {
+    for (const name of ["soffice", "libreoffice"]) {
+      const p = path.join(dir, name);
+      try { fs.accessSync(p, fs.constants.X_OK); return p; } catch { /* next */ }
+    }
+  }
+  return "";
+}
 
 const bool = (v: string | undefined, def: boolean) =>
   v == null || v === "" ? def : ["1", "true", "yes", "on"].includes(v.toLowerCase());
@@ -29,6 +41,16 @@ export interface Config {
   loginMaxFails: number;
   loginLockMs: number;
   isProd: boolean;
+  /** Team uploads (presentations, logos): inside DATA_DIR so they live on the persistent volume. */
+  uploadsDir: string;
+  /** Pre-migration copies of the database. */
+  backupDir: string;
+  /** Largest accepted presentation, bytes. */
+  maxUploadBytes: number;
+  /** LibreOffice binary for PPTX → PDF ("" = not available: teams are asked to upload a PDF). */
+  soffice: string;
+  sofficeTimeoutMs: number;
+  teamSessionTtlMs: number;
 }
 
 export function loadConfig(overrides: Partial<Config> = {}): Config {
@@ -59,6 +81,12 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     loginMaxFails: 5,
     loginLockMs: 5 * 60 * 1000,
     isProd,
+    uploadsDir: path.join(dataDir, "uploads"),
+    backupDir: path.join(dataDir, "backups"),
+    maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 50) * 1024 * 1024,
+    soffice: process.env.SOFFICE ?? findSoffice(),
+    sofficeTimeoutMs: 90_000,
+    teamSessionTtlMs: 30 * 24 * 3600 * 1000,
     ...overrides,
   };
 }

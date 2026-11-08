@@ -5,7 +5,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp, type App } from "../server/app.js";
 import { loadConfig } from "../server/config.js";
-import { openDb } from "../server/db.js";
+import { openDb, SCHEMA_VERSION } from "../server/db.js";
 import { Repo } from "../server/repo.js";
 import type { HistoryPage } from "../shared/types.js";
 
@@ -103,7 +103,7 @@ describe("scoring history", () => {
 describe("migration v7 backfill", () => {
   it("copies old submits, changes and wipes from the audit log", () => {
     const file = `/tmp/ij-hist-${process.pid}-${Date.now()}.db`;
-    openDb(file).close();
+    openDb(file, { upTo: 7 }).close(); // schema as of v7; later versions are replayed below
     const raw = new Database(file);
     raw.exec("DROP TABLE score_history");
     raw.exec(`INSERT INTO users (id, role, username, display_name, password_hash, created_at) VALUES (9, 'juror', 'j9', 'Leyla', 'x', 1);
@@ -117,7 +117,7 @@ describe("migration v7 backfill", () => {
     raw.pragma("user_version = 6");
     raw.close();
     const db = openDb(file);
-    expect(db.pragma("user_version", { simple: true })).toBe(7);
+    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
     const h = new Repo(db).history();
     expect(h.rows.map(r => r.kind)).toEqual(["wipe", "submit", "update", "submit"]);
     expect(h.rows[2]).toMatchObject({ jurorName: "Leyla", teamName: "Pycore", total: 25, prevTotal: 20, tags: ["Güclü komanda"] });

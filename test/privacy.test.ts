@@ -1,5 +1,9 @@
 // Server-side privacy guarantees: jurors never see other jurors' data, totals or rankings.
+import fs from "node:fs";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { makePdf } from "./helpers/pdf.js";
 import { io as ioc, type Socket } from "socket.io-client";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -44,7 +48,7 @@ async function newQr(id: number) {
 }
 
 function socket(cookie?: string) {
-  const role = cookie?.startsWith("ij_admin=") ? "admin" : cookie?.startsWith("ij_juror=") ? "juror" : undefined;
+  const role = cookie?.startsWith("ij_admin=") ? "admin" : cookie?.startsWith("ij_juror=") ? "juror" : cookie?.startsWith("ij_team=") ? "team" : undefined;
   const s = ioc(base, { transports: ["websocket"], extraHeaders: { origin: origin(), ...(cookie ? { cookie } : {}) }, auth: role ? { role } : {}, forceNew: true });
   sockets.push(s);
   return new Promise<Socket>((res, rej) => { s.on("connect", () => res(s)); s.on("connect_error", rej); });
@@ -54,7 +58,8 @@ function socket(cookie?: string) {
 const fullScore = (v: number) => ({ values: Object.fromEntries(criteriaKeys.map(k => [k, Math.min(v, criteriaMax[k])])), note: `şərh ${v}` });
 
 beforeAll(async () => {
-  A = await buildApp(loadConfig({ dbFile: ":memory:", adminUsername: "admin", adminPassword: "admin-pass-123", origins: [], sessionSecret: "test-secret", webDir: "/nonexistent" }));
+  A = await buildApp(loadConfig({ dbFile: ":memory:", adminUsername: "admin", adminPassword: "admin-pass-123", origins: [], sessionSecret: "test-secret", webDir: "/nonexistent",
+    uploadsDir: fs.mkdtempSync(path.join(os.tmpdir(), "ddm-priv-")), soffice: "" }));
   await A.app.listen({ port: 0, host: "127.0.0.1" });
   base = `http://127.0.0.1:${(A.app.server.address() as AddressInfo).port}`;
   adminCookie = await login("admin", "admin-pass-123");
@@ -551,5 +556,37 @@ describe("login rate limit", () => {
     const r = await post("/api/auth/login").send({ username: "admin", password: "admin-pass-123" });
     expect(r.status).toBe(429);
     expect(r.body.error).toMatch(/dəqiqə/);
+  });
+});
+
+describe("team sessions (munsif)", () => {
+  async function team(i: number) {
+    const l = await post(`/api/admin/teams/${teamIds[i]}/link`, adminCookie).send({});
+    const r = await post(`/api/auth/team${l.body.path.slice(2)}`).send({});
+    expect(r.status).toBe(200);
+    return cookieOf(r);
+  }
+  it("a team session gets no scores, totals or ranking — not over REST and not over its socket", async () => {
+    const t = await team(0);
+    for (const p of ["/api/admin/results", "/api/admin/state", "/api/admin/history", "/api/admin/reveal", "/api/admin/export.pdf", "/api/juror/state"]) {
+      expect([401, 403], p).toContain((await get(p, t)).status);
+    }
+    const st = await get("/api/team/state", t);
+    expect(st.status).toBe(200);
+    expect(JSON.stringify(st.body)).not.toMatch(/"(ranking|results|scores|myScores|values|entryScore|demo)"/);
+    const s = await socket(t);
+    const leaked: string[] = [];
+    for (const ev of ["score:upserted", "results:changed", "my-score:saved", "presence:changed", "progress:changed"]) s.on(ev, () => leaked.push(ev));
+    expect((await request(base).put(`/api/juror/scores/${teamIds[0]}`).set("Origin", origin()).set("Cookie", jurorCookie.ali).send(fullScore(6))).status).toBe(200);
+    await new Promise(r => setTimeout(r, 300));
+    expect(leaked).toEqual([]);
+  });
+  it("another team's file is 403; anonymous is 401", async () => {
+    const a = await team(1), b = await team(2);
+    const up = await post("/api/team/files?kind=presentation", a).set("Content-Type", "application/octet-stream").set("X-File-Name", "a.pdf").send(makePdf(1));
+    expect(up.status).toBe(200);
+    expect((await get(`/api/files/${up.body.file.id}`, b)).status).toBe(403);
+    expect((await get(`/api/files/${up.body.file.id}`)).status).toBe(401);
+    expect((await get(`/api/files/${up.body.file.id}`, a)).status).toBe(200);
   });
 });

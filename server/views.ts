@@ -5,6 +5,7 @@ import { computeResults, jurorTotal } from "../shared/scoring.js";
 import type { JurorStatePayload } from "../shared/types.js";
 import type { Config } from "./config.js";
 import type { Repo } from "./repo.js";
+import { materials, teamRow } from "./teamrepo.js";
 
 export function jurorState(repo: Repo, jurorId: number): JurorStatePayload {
   const me = repo.userById(jurorId)!;
@@ -29,6 +30,11 @@ export function jurorState(repo: Repo, jurorId: number): JurorStatePayload {
       updatedAt: s.updatedAt,
       ...(ev.showJurorTotal ? { total: jurorTotal(s.values, criteria) ?? undefined } : {}),
     })),
+    materials: ev.jurorsSeeMaterials ? repo.teams().filter(t => t.active).map(t => {
+      const m = materials(repo.db, teamRow(repo.db, t.id)!);
+      const p = m.presentation?.viewable ? m.presentation : null;
+      return { teamId: t.id, presentation: p ? { url: p.url, name: p.name, pages: p.pages } : null, siteUrl: m.siteUrl, videoUrl: m.videoUrl };
+    }) : null,
   };
 }
 

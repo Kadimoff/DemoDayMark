@@ -1,0 +1,137 @@
+// munsif: team uploads. Files go to DATA_DIR/uploads (persistent volume) under random names, mode 0600,
+// after a size limit, an extension allow-list and a magic-byte check. PDFs are parsed (page count) with pdf.js;
+// PPTX is converted to PDF by LibreOffice when the server has it (one at a time, 90 s timeout).
+import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import type { Readable } from "node:stream";
+
+export type UploadKind = "presentation" | "logo";
+export const KINDS: Record<UploadKind, { exts: string[]; label: string; maxMb?: number }> = {
+  presentation: { exts: ["pdf", "pptx"], label: "Prezentasiya" },
+  logo: { exts: ["png", "jpg", "jpeg", "webp"], label: "Loqo", maxMb: 5 },
+};
+export const MIME: Record<string, string> = {
+  pdf: "application/pdf", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
+};
+
+export class UploadError extends Error { constructor(readonly status: number, message: string) { super(message); } }
+
+/** Does the start of the file match its extension? */
+export function sniff(head: Buffer, ext: string): boolean {
+  const h = head.subarray(0, 16);
+  if (ext === "pdf") return head.subarray(0, 1024).toString("latin1").includes("%PDF-");
+  if (ext === "png") return h.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (ext === "jpg" || ext === "jpeg") return h[0] === 0xff && h[1] === 0xd8 && h[2] === 0xff;
+  if (ext === "webp") return h.subarray(0, 4).toString("latin1") === "RIFF" && h.subarray(8, 12).toString("latin1") === "WEBP";
+  if (ext === "pptx") return h[0] === 0x50 && h[1] === 0x4b && h[2] === 0x03 && h[3] === 0x04;
+  return false;
+}
+
+/** Stored names are ours only: kind prefix + 32 random hex chars. Anything else is never opened. */
+export const STORED_RE = /^(pres|logo)-[a-f0-9]{32}\.(pdf|pptx|png|jpg|webp)$/;
+export const storedPath = (dir: string, name: string) => {
+  if (!STORED_RE.test(name)) throw new UploadError(404, "Fayl tapılmadı.");
+  return path.join(dir, name);
+};
+
+let pdfjs: typeof import("pdfjs-dist/legacy/build/pdf.mjs") | null = null;
+/** Page count, or null when pdf.js cannot open the file. */
+export async function pdfPages(file: string): Promise<number | null> {
+  try {
+    pdfjs ??= await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const data = new Uint8Array(await fs.promises.readFile(file));
+    const task = pdfjs.getDocument({ data, disableFontFace: true, useSystemFonts: false, verbosity: 0 });
+    const doc = await task.promise;
+    const n = doc.numPages;
+    await task.destroy().catch(() => {});
+    return n;
+  } catch { return null; }
+}
+
+/** Streams the request body to the uploads folder with a hard size limit and validates it. */
+export async function receiveUpload(stream: Readable, opts: { dir: string; kind: UploadKind; origName: string; maxBytes: number; declared?: number }) {
+  const spec = KINDS[opts.kind];
+  if (!spec) throw new UploadError(400, "Yanlış fayl növü.");
+  const ext = (path.extname(opts.origName).slice(1) || "").toLowerCase();
+  if (!spec.exts.includes(ext)) throw new UploadError(415, `${spec.label}: yalnız ${spec.exts.filter(e => e !== "jpeg").map(e => e.toUpperCase()).join(", ")} faylı yükləyin.`);
+  const max = Math.min(opts.maxBytes, (spec.maxMb ?? Infinity) * 1024 * 1024);
+  const mb = Math.round(max / 1048576);
+  if (opts.declared && opts.declared > max) { stream.resume(); throw new UploadError(413, `Fayl ${mb} MB-dan böyük ola bilməz.`); }
+  fs.mkdirSync(path.join(opts.dir, "tmp"), { recursive: true, mode: 0o700 });
+  const stored = `${opts.kind === "presentation" ? "pres" : "logo"}-${randomBytes(16).toString("hex")}.${ext === "jpeg" ? "jpg" : ext}`;
+  const tmp = path.join(opts.dir, "tmp", `${stored}.part`);
+  const fd = await fs.promises.open(tmp, "w", 0o600);
+  let size = 0;
+  let head = Buffer.alloc(0);
+  try {
+    for await (const chunk of stream) {
+      const c = chunk as Buffer;
+      size += c.length;
+      if (size > max) throw new UploadError(413, `Fayl ${mb} MB-dan böyük ola bilməz.`);
+      if (head.length < 4096) head = Buffer.concat([head, c]).subarray(0, 4096);
+      await fd.write(c);
+    }
+  } catch (e) {
+    await fd.close();
+    fs.rmSync(tmp, { force: true });
+    stream.resume();
+    throw e instanceof UploadError ? e : new UploadError(400, "Fayl tam göndərilmədi. Yenidən cəhd edin.");
+  }
+  await fd.close();
+  const fail = (status: number, msg: string) => { fs.rmSync(tmp, { force: true }); return new UploadError(status, msg); };
+  if (size < 8) throw fail(400, "Fayl boşdur.");
+  if (!sniff(head, ext)) throw fail(415, "Faylın məzmunu uzantısına uyğun deyil.");
+  if (ext === "pptx") {
+    const all = await fs.promises.readFile(tmp);
+    if (!all.includes("ppt/", 0, "latin1")) throw fail(415, "Bu PPTX faylı deyil (PowerPoint prezentasiyası gözlənilirdi).");
+  }
+  let pages: number | null = null;
+  if (ext === "pdf") {
+    pages = await pdfPages(tmp);
+    if (!pages) throw fail(415, "PDF faylı oxunmadı (zədələnmiş ola bilər).");
+  }
+  const final = path.join(opts.dir, stored);
+  fs.renameSync(tmp, final);
+  fs.chmodSync(final, 0o600);
+  return { stored, ext: ext === "jpeg" ? "jpg" : ext, size, pages };
+}
+
+/** PPTX → PDF with LibreOffice, one conversion at a time. */
+export class Converter {
+  private chain: Promise<void> = Promise.resolve();
+  constructor(private soffice: string, private dir: string, private profileDir: string, private timeoutMs: number) {}
+  get available() { return !!this.soffice; }
+  convert(stored: string): Promise<{ pdfStored: string; pages: number | null } | null> {
+    const job = this.chain.then(() => this.run(stored));
+    this.chain = job.then(() => {}, () => {});
+    return job;
+  }
+  private run(stored: string): Promise<{ pdfStored: string; pages: number | null } | null> {
+    if (!this.soffice) return Promise.resolve(null);
+    const out = path.join(this.dir, "tmp", `conv-${randomBytes(6).toString("hex")}`);
+    fs.mkdirSync(out, { recursive: true, mode: 0o700 });
+    const args = [`-env:UserInstallation=file://${this.profileDir}`, "--headless", "--norestore", "--nolockcheck", "--convert-to", "pdf", "--outdir", out, path.join(this.dir, stored)];
+    const env = { ...process.env, HOME: this.profileDir };
+    const once = () => new Promise<void>(res => execFile(this.soffice, args, { timeout: this.timeoutMs, killSignal: "SIGKILL", env }, () => res()));
+    return (async () => {
+      try {
+        await once();
+        // A fresh LibreOffice profile sometimes exits right after creating itself: one retry.
+        if (!fs.readdirSync(out).some(n => n.endsWith(".pdf"))) await once();
+        const pdf = fs.readdirSync(out).find(n => n.endsWith(".pdf"));
+        if (!pdf) return null;
+        const name = `pres-${randomBytes(16).toString("hex")}.pdf`;
+        fs.renameSync(path.join(out, pdf), path.join(this.dir, name));
+        fs.chmodSync(path.join(this.dir, name), 0o600);
+        const pages = await pdfPages(path.join(this.dir, name));
+        if (!pages) { fs.rmSync(path.join(this.dir, name), { force: true }); return null; }
+        return { pdfStored: name, pages };
+      } catch { return null; } finally {
+        fs.rmSync(out, { recursive: true, force: true });
+      }
+    })();
+  }
+}

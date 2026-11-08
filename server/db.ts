@@ -167,21 +167,118 @@ const MIGRATIONS: Array<string | ((db: DB) => void)> = [
         teams.get(p.teamId) ?? `Komanda #${p.teamId}`, JSON.stringify(values), p.total ?? null, p.note ?? "", JSON.stringify(p.tags ?? []), actor, null, r.created_at);
     }
   },
+  // v8 (munsif): team sign-in links, team materials (presentation / logo / links), notifications and the
+  // presentation stage (slide, view mode, intro). Additive only: new tables, and new columns with defaults.
+  `
+  ALTER TABLE teams ADD COLUMN approval TEXT NOT NULL DEFAULT 'approved';   -- 'pending' for self-registered teams
+  ALTER TABLE teams ADD COLUMN members_json TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE teams ADD COLUMN site_url TEXT NOT NULL DEFAULT '';
+  ALTER TABLE teams ADD COLUMN video_url TEXT NOT NULL DEFAULT '';
+  ALTER TABLE teams ADD COLUMN site_embeddable INTEGER;
+  ALTER TABLE teams ADD COLUMN extend_until INTEGER;
+  ALTER TABLE teams ADD COLUMN review TEXT NOT NULL DEFAULT 'none';        -- none | submitted | accepted | returned
+  ALTER TABLE teams ADD COLUMN review_note TEXT NOT NULL DEFAULT '';
+  ALTER TABLE teams ADD COLUMN reviewed_at INTEGER;
+  ALTER TABLE teams ADD COLUMN submitted_at INTEGER;
+  CREATE TABLE team_links (
+    id          INTEGER PRIMARY KEY,
+    team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    token_hash  TEXT NOT NULL UNIQUE,         -- sha256 of the code in /t/<code>
+    token_enc   TEXT NOT NULL DEFAULT '',     -- the code, encrypted with SESSION_SECRET (so the admin can show it again)
+    created_at  INTEGER NOT NULL,
+    revoked_at  INTEGER
+  );
+  CREATE INDEX team_links_team ON team_links(team_id);
+  CREATE TABLE team_sessions (
+    id           TEXT PRIMARY KEY,            -- sha256 of the cookie token
+    team_id      INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    created_at   INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    user_agent   TEXT,
+    ip           TEXT
+  );
+  CREATE INDEX team_sessions_team ON team_sessions(team_id);
+  CREATE TABLE team_files (
+    id          INTEGER PRIMARY KEY,
+    team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL CHECK (kind IN ('presentation','logo')),
+    stored      TEXT NOT NULL,                -- random file name inside DATA_DIR/uploads
+    pdf_stored  TEXT,                         -- PPTX converted to PDF
+    orig_name   TEXT NOT NULL,
+    ext         TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    pages       INTEGER,
+    conv        TEXT,                         -- PPTX: pending | running | done | failed | unavailable
+    active      INTEGER NOT NULL DEFAULT 1,
+    uploaded_by TEXT NOT NULL DEFAULT 'team', -- team | admin
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX team_files_team ON team_files(team_id, kind, active);
+  CREATE TABLE notifications (
+    id          INTEGER PRIMARY KEY,
+    target      TEXT NOT NULL CHECK (target IN ('admin','team')),
+    team_id     INTEGER REFERENCES teams(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    body        TEXT NOT NULL DEFAULT '',
+    read_at     INTEGER,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX notifications_target ON notifications(target, team_id, id);
+  ALTER TABLE event ADD COLUMN team_registration INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE event ADD COLUMN team_can_rename INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE event ADD COLUMN upload_deadline INTEGER;
+  ALTER TABLE event ADD COLUMN jurors_see_materials INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE event ADD COLUMN stage_mode TEXT NOT NULL DEFAULT 'auto';    -- auto | timer | site
+  ALTER TABLE event ADD COLUMN stage_slide INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE event ADD COLUMN stage_intro_at INTEGER;
+  `,
 ];
 
-export function openDb(file: string): DB {
+/** Schema version this build migrates a database to. */
+export const SCHEMA_VERSION = MIGRATIONS.length;
+/** How many pre-migration copies are kept in DATA_DIR/backups. */
+export const PRE_MIGRATION_KEEP = 10;
+
+export function openDb(file: string, opts: { upTo?: number } = {}): DB {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new Database(file);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.pragma("busy_timeout = 5000");
-  migrate(db);
+  migrate(db, opts.upTo);
   return db;
 }
 
-function migrate(db: DB) {
+/**
+ * Before a schema upgrade touches an existing database, keep a consistent copy of it
+ * (better-sqlite3 online backup API) as <backupDir>/pre-v<target>-<timestamp>.db; only the newest
+ * PRE_MIGRATION_KEEP copies are kept. Does nothing for a new or already current database.
+ */
+export async function backupBeforeMigrate(file: string, backupDir: string, log: (m: string) => void = () => {}): Promise<string | null> {
+  if (file === ":memory:" || !fs.existsSync(file)) return null;
+  const db = new Database(file, { fileMustExist: true });
+  try {
+    db.pragma("busy_timeout = 5000");
+    const current = db.pragma("user_version", { simple: true }) as number;
+    if (current === 0 || current >= SCHEMA_VERSION) return null;
+    fs.mkdirSync(backupDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").slice(0, 23);
+    const target = path.join(backupDir, `pre-v${SCHEMA_VERSION}-${stamp}.db`);
+    await db.backup(target);
+    log(`pre-migration backup (schema v${current} → v${SCHEMA_VERSION}): ${target}`);
+    const old = fs.readdirSync(backupDir).filter(n => /^pre-v\d+-.*\.db$/.test(n))
+      .map(n => ({ n, t: fs.statSync(path.join(backupDir, n)).mtimeMs })).sort((a, b) => b.t - a.t || (a.n < b.n ? 1 : -1));
+    for (const o of old.slice(PRE_MIGRATION_KEEP)) fs.rmSync(path.join(backupDir, o.n), { force: true });
+    return target;
+  } finally {
+    db.close();
+  }
+}
+
+function migrate(db: DB, upTo = MIGRATIONS.length) {
   const current = db.pragma("user_version", { simple: true }) as number;
-  for (let v = current; v < MIGRATIONS.length; v++) {
+  for (let v = current; v < Math.min(upTo, MIGRATIONS.length); v++) {
     db.transaction(() => {
       const m = MIGRATIONS[v];
       if (typeof m === "string") db.exec(m); else m(db);

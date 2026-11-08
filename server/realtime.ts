@@ -3,6 +3,7 @@
 //   jurors          lock state broadcast to every juror
 //   juror:<id>      that juror's own saved scores
 //   admin           everything
+//   team:<id>       munsif: that team's own notifications and panel refreshes (never scores)
 //   user:<id>, session:<sid>  used only to force-disconnect
 import type { FastifyInstance } from "fastify";
 import { Server, type Socket } from "socket.io";
@@ -12,6 +13,8 @@ import type { Config } from "./config.js";
 import type { Repo } from "./repo.js";
 import { submitScore } from "./scores.js";
 import { adminResults, revealPublicView } from "./views.js";
+import type { TeamRepo } from "./teamrepo.js";
+import { resolveTeam, type TeamAuth } from "./teams.js";
 
 export class Realtime {
   readonly io: Server;
@@ -20,7 +23,10 @@ export class Realtime {
   /** "<jurorId>:<teamId>" → draft progress (count of filled criteria only). In memory: it is live telemetry. */
   private drafts = new Map<string, ProgressEntry>();
 
-  constructor(app: FastifyInstance, private repo: Repo, private cfg: Config) {
+  /** munsif: runs after every stage change (queue reminders to teams). */
+  afterStage: (() => void) | null = null;
+
+  constructor(app: FastifyInstance, private repo: Repo, private cfg: Config, trepo: TeamRepo) {
     this.io = new Server(app.server, {
       path: "/socket.io",
       serveClient: false,
@@ -38,6 +44,7 @@ export class Realtime {
       socket.data.user = role === "admin" || role === "juror"
         ? resolveUser(repo, cfg, cookies, v => app.unsignCookie(v), role)
         : null;
+      socket.data.team = role === "team" ? resolveTeam(trepo, cfg, cookies, v => app.unsignCookie(v)) : null;
       next();
     });
 
@@ -47,6 +54,8 @@ export class Realtime {
   private onConnect(socket: Socket) {
     const user = socket.data.user as AuthUser | null;
     socket.join("public");
+    const team = socket.data.team as TeamAuth | null;
+    if (team) socket.join([`team:${team.teamId}`, `tsession:${team.sessionId}`]);
     if (!user) return;
     socket.join([`user:${user.id}`, `session:${user.sessionId}`]);
     if (user.role === "admin") {
@@ -125,7 +134,10 @@ export class Realtime {
     for (const id of jurorIds) this.io.to(`juror:${id}`).emit("nudge", payload);
   }
 
-  emitStage() { this.io.to("public").emit("stage:changed", this.repo.stage()); }
+  emitStage() {
+    this.io.to("public").emit("stage:changed", this.repo.stage());
+    try { this.afterStage?.(); } catch { /* reminders are best effort */ }
+  }
 
   emitTimer() {
     const s = this.repo.stage();

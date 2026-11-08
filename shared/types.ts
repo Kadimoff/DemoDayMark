@@ -23,6 +23,8 @@ export interface Team {
 /** A team with its pre-Demo-Day entry score (visible to the admin and to jurors). */
 export interface AdminTeam extends Team {
   entryScore: number | null;
+  /** munsif: "pending" = registered itself and waits for the coordinator (inactive until approved). */
+  approval?: "pending" | "approved";
 }
 
 export interface Juror {
@@ -67,6 +69,31 @@ export interface StageTeam {
   total: number;
 }
 
+/** auto = the team's presentation when it has one, otherwise the big timer; timer = always the big timer; site = the team's website. */
+export type StageMode = "auto" | "timer" | "site";
+export const STAGE_MODES: readonly StageMode[] = ["auto", "timer", "site"];
+
+/**
+ * Presentation stage (munsif): what the projector shows besides the timer. Public, like the rest of the
+ * stage payload, but only ever about the team on stage (its presentation URL serves only that team's file).
+ */
+export interface StageShow {
+  mode: StageMode;
+  /** 1-based slide shown on every stage screen. */
+  slide: number;
+  /** When the coordinator started the "Növbəti: …" intro (server time), or null. */
+  introAt: number | null;
+  /** The stage team's presentation as a PDF, or null. `url` is public only while the team is on stage. */
+  pres: { fileId: number; url: string; pages: number | null } | null;
+  /** A PPTX that is still converting (pending/running) or could not be converted (failed/unavailable). */
+  presPending: string | null;
+  site: { url: string; embeddable: boolean | null } | null;
+  logo: string | null;
+  members: string[];
+  /** The team after the one on stage (for the intro and the idle screen). */
+  next: { name: string; project: string } | null;
+}
+
 /** What every client (even anonymous projector screens) may see. */
 export interface StagePayload {
   eventName: string;
@@ -74,6 +101,79 @@ export interface StagePayload {
   team: StageTeam | null;
   timer: TimerState;
   serverNow: number;
+  show: StageShow;
+}
+
+// ---------- teams (munsif): sign-in links, materials, notifications ----------
+export type TeamReview = "none" | "submitted" | "accepted" | "returned";
+export type TeamApproval = "pending" | "approved";
+
+export interface TeamFile {
+  id: number;
+  kind: "presentation" | "logo";
+  name: string;
+  ext: string;
+  size: number;
+  pages: number | null;
+  /** PPTX conversion: pending | running | done | failed | unavailable; null for PDFs and images. */
+  conv: string | null;
+  /** Can be shown with pdf.js (a PDF, or a PPTX that has been converted). */
+  viewable: boolean;
+  active: boolean;
+  uploadedBy: "team" | "admin";
+  createdAt: number;
+  url: string;
+}
+
+export interface TeamMaterials {
+  members: string[];
+  siteUrl: string;
+  videoUrl: string;
+  siteEmbeddable: boolean | null;
+  approval: TeamApproval;
+  review: TeamReview;
+  reviewNote: string;
+  submittedAt: number | null;
+  reviewedAt: number | null;
+  extendUntil: number | null;
+  presentation: TeamFile | null;
+  logo: TeamFile | null;
+}
+
+export interface Notice {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  teamId: number | null;
+  at: number;
+  read: boolean;
+}
+
+export interface TeamQueue { position: number; total: number; current: number; ahead: number | null; onStage: boolean }
+
+/** Everything the team panel (/team) gets: only the team's own data, never scores. */
+export interface TeamStatePayload {
+  team: { id: number; name: string; project: string; active: boolean };
+  materials: TeamMaterials;
+  history: TeamFile[];
+  event: { displayName: string; date: string; deadline: number | null; uploadsOpen: boolean; canRename: boolean; pitchSec: number; qaSec: number };
+  queue: TeamQueue;
+  notices: Notice[];
+  stage: StagePayload;
+  soffice: boolean;
+  maxUploadMb: number;
+}
+
+/** One team in the admin's materials list. */
+export interface AdminTeamMaterials extends TeamMaterials {
+  teamId: number;
+  name: string;
+  project: string;
+  active: boolean;
+  orderIndex: number;
+  link: { code: string | null; createdAt: number } | null;
+  sessions: number;
 }
 
 export interface MyScore {
@@ -98,6 +198,8 @@ export interface JurorStatePayload {
   includeEntry: boolean;
   feedbackTags: string[];
   myScores: MyScore[];
+  /** munsif: links to each active team's presentation / website, or null when the coordinator turned it off. */
+  materials: Array<{ teamId: number; presentation: { url: string; name: string; pages: number | null } | null; siteUrl: string; videoUrl: string }> | null;
 }
 
 export interface PresenceEntry {

@@ -2,7 +2,8 @@
 import type { DB } from "./db.js";
 import { asProduct, brandName, DEFAULT_FEEDBACK_TAGS, type Product } from "../shared/brand.js";
 import { normalizeSnapshot, type RevealSnapshot } from "../shared/reveal.js";
-import type { AdminTeam, Criterion, HistoryPage, HistoryRow, Juror, ScoreRow, StagePayload, TimerState } from "../shared/types.js";
+import { STAGE_MODES, type AdminTeam, type Criterion, type HistoryPage, type HistoryRow, type Juror, type ScoreRow, type StageMode, type StagePayload, type TimerState } from "../shared/types.js";
+import { stageShow } from "./teamrepo.js";
 
 interface EventRow {
   name: string;
@@ -24,6 +25,13 @@ interface EventRow {
   final_order_json: string | null;
   reveal_hide_scores: number;
   reveal_batch: number;
+  team_registration: number;
+  team_can_rename: number;
+  upload_deadline: number | null;
+  jurors_see_materials: number;
+  stage_mode: string;
+  stage_slide: number;
+  stage_intro_at: number | null;
 }
 
 export interface EventState {
@@ -52,6 +60,18 @@ export interface EventState {
   revealHideScores: boolean;
   /** Jurors' final decision: team ids best first, or null = score order. */
   finalOrder: number[] | null;
+  /** munsif: teams may register themselves (they wait for the coordinator's approval). */
+  teamRegistration: boolean;
+  /** munsif: teams may change their team and project name. */
+  teamCanRename: boolean;
+  /** munsif: uploads close at this time (ms), null = no deadline. */
+  uploadDeadline: number | null;
+  /** munsif: jurors see links to each team's presentation and website. */
+  jurorsSeeMaterials: boolean;
+  /** munsif: presentation stage. */
+  stageMode: StageMode;
+  stageSlide: number;
+  stageIntroAt: number | null;
 }
 
 export interface UserRow {
@@ -94,6 +114,13 @@ export class Repo {
       revealBatch: r.reveal_batch,
       revealHideScores: !!r.reveal_hide_scores,
       finalOrder: parseIds(r.final_order_json),
+      teamRegistration: !!r.team_registration,
+      teamCanRename: !!r.team_can_rename,
+      uploadDeadline: r.upload_deadline ?? null,
+      jurorsSeeMaterials: !!r.jurors_see_materials,
+      stageMode: (STAGE_MODES as readonly string[]).includes(r.stage_mode) ? (r.stage_mode as StageMode) : "auto",
+      stageSlide: Math.max(1, r.stage_slide || 1),
+      stageIntroAt: r.stage_intro_at ?? null,
     };
   }
 
@@ -102,11 +129,13 @@ export class Repo {
     const n = { ...cur, ...p, timer: { ...cur.timer, ...(p.timer ?? {}) } };
     this.db.prepare(`UPDATE event SET name=?, date=?, current_team_id=?, timer_visible=?, timer_running=?,
       timer_offset_sec=?, timer_anchor_at=?, pitch_sec=?, qa_sec=?, locked=?, show_juror_total=?, include_entry=?, entry_max=?,
-      feedback_tags_json=?, reveal_top=?, product=?, final_order_json=?, reveal_hide_scores=?, reveal_batch=? WHERE id = 1`)
+      feedback_tags_json=?, reveal_top=?, product=?, final_order_json=?, reveal_hide_scores=?, reveal_batch=?,
+      team_registration=?, team_can_rename=?, upload_deadline=?, jurors_see_materials=?, stage_mode=?, stage_slide=?, stage_intro_at=? WHERE id = 1`)
       .run(n.name, n.date, n.currentTeamId, +n.timer.visible, +n.timer.running, n.timer.offsetSec,
         n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal, +n.includeEntry, n.entryMax,
         JSON.stringify(n.feedbackTags), n.revealTop, n.product, n.finalOrder ? JSON.stringify(n.finalOrder) : null,
-        +n.revealHideScores, n.revealBatch);
+        +n.revealHideScores, n.revealBatch,
+        +n.teamRegistration, +n.teamCanRename, n.uploadDeadline, +n.jurorsSeeMaterials, n.stageMode, n.stageSlide, n.stageIntroAt);
     return this.getEvent();
   }
 
@@ -134,6 +163,7 @@ export class Repo {
       team: t ? { id: t.id, name: t.name, project: t.project, index: i + 1, total: teams.length } : null,
       timer: ev.timer,
       serverNow: now,
+      show: stageShow(this.db, ev, t ? t.id : null, (i >= 0 ? teams[i + 1] : teams[0]) ?? null),
     };
   }
 
@@ -142,7 +172,7 @@ export class Repo {
   teams(): AdminTeam[] {
     return (this.db.prepare("SELECT * FROM teams ORDER BY order_index, id").all() as any[]).map(r => ({
       id: r.id, name: r.name, project: r.project, orderIndex: r.order_index, active: !!r.active,
-      entryScore: r.entry_score ?? null,
+      entryScore: r.entry_score ?? null, approval: r.approval === "pending" ? "pending" : "approved",
     }));
   }
   team(id: number) { return this.teams().find(t => t.id === id) ?? null; }
@@ -156,6 +186,8 @@ export class Repo {
     if (!t) return null;
     const n = { ...t, ...p };
     this.db.prepare("UPDATE teams SET name=?, project=?, active=?, entry_score=? WHERE id=?").run(n.name, n.project, +n.active, n.entryScore, id);
+    // Switching a self-registered team on is the coordinator's approval.
+    if (p.active === true) this.db.prepare("UPDATE teams SET approval='approved' WHERE id=?").run(id);
     return this.team(id);
   }
   deleteTeam(id: number) { return this.db.prepare("DELETE FROM teams WHERE id=?").run(id).changes > 0; }

@@ -9,7 +9,12 @@ import { LoginLimiter, originAllowed, resolveUser, roleForUrl } from "./auth.js"
 import { ensureBaseline } from "./baseline.js";
 import type { Config } from "./config.js";
 import type { Ctx } from "./context.js";
-import { openDb } from "./db.js";
+import { backupBeforeMigrate, openDb } from "./db.js";
+import { createRequire } from "node:module";
+import { TeamRepo } from "./teamrepo.js";
+import { resolveTeam, TeamService } from "./teams.js";
+import { stageRoutes } from "./routes/stage.js";
+import { teamRoutes } from "./routes/team.js";
 import { Realtime } from "./realtime.js";
 import { Repo } from "./repo.js";
 import { revealPublicView } from "./views.js";
@@ -25,10 +30,20 @@ const PAGES: Record<string, { file: string; role?: "admin" | "juror" }> = {
   "/juror": { file: "juror.html", role: "juror" },
   "/admin": { file: "admin.html", role: "admin" },
   "/admin/setup": { file: "setup.html", role: "admin" },
+  "/admin/pult": { file: "pult.html", role: "admin" },
   "/timer": { file: "timer.html" },
+  // munsif: the presentation stage is the projector timer page (same server timer); /stage/demo needs no login.
+  "/stage": { file: "timer.html" },
+  "/stage/demo": { file: "timer.html" },
   "/reveal": { file: "reveal.html" },
   "/speaker": { file: "speaker.html" },
+  // munsif: team panel (team session or the "Komanda girişi" form) — guarded by the team API, not by role.
+  "/team": { file: "team.html" },
 };
+
+const PDFJS_DIR = (() => {
+  try { return path.dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json")); } catch { return ""; }
+})();
 
 export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Promise<App> {
   // Request logs are noisy during the event; LOG_LEVEL=info brings them back.
@@ -36,10 +51,14 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   // silently; otherwise a juror who spent two minutes on the form could send their score into a dead connection.
   const app = Fastify({ logger: opts.logger ? { level: process.env.LOG_LEVEL ?? "warn" } : false, trustProxy: cfg.trustProxy, bodyLimit: 256 * 1024,
     keepAliveTimeout: 4000 });
+  // Keep a copy of an existing database before any schema upgrade touches it.
+  await backupBeforeMigrate(cfg.dbFile, cfg.backupDir, m => (opts.logger ? console.log(m) : undefined));
   const db = openDb(cfg.dbFile);
   const repo = new Repo(db);
+  const trepo = new TeamRepo(db, cfg.sessionSecret);
   await ensureBaseline(repo, cfg, m => app.log.info(m));
   repo.purgeSessions(Date.now() - cfg.sessionTtlMs);
+  trepo.purgeSessions(Date.now() - cfg.teamSessionTtlMs);
 
   await app.register(fastifyCookie, { secret: cfg.sessionSecret });
   // Phones on the venue Wi-Fi / mobile data: every KB counts (CSS 80 KB → ~14 KB, JS ~3×).
@@ -48,10 +67,13 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     global: true, threshold: 1024, encodings: ["br", "gzip"],
     brotliOptions: { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } },
   });
-  const rt = new Realtime(app, repo, cfg);
-  const ctx: Ctx = { repo, cfg, rt, limiter: new LoginLimiter(cfg.loginMaxFails, cfg.loginLockMs) };
+  const rt = new Realtime(app, repo, cfg, trepo);
+  const teams = new TeamService(trepo, repo, cfg, rt);
+  rt.afterStage = () => teams.stageReminders();
+  const ctx: Ctx = { repo, cfg, rt, limiter: new LoginLimiter(cfg.loginMaxFails, cfg.loginLockMs), trepo, teams };
 
   app.decorateRequest("user", null);
+  app.decorateRequest("team", null);
   app.addHook("onRequest", async (req, reply) => {
     // Prefer the session of the role this URL needs. If the browser only has the other role,
     // keep that user so role guards answer 403 (not 401) and pages redirect to the right panel.
@@ -59,6 +81,9 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     const unsign = (v: string) => req.unsignCookie(v);
     req.user = resolveUser(repo, cfg, req.cookies, unsign, want) ?? (want ? resolveUser(repo, cfg, req.cookies, unsign, null) : null);
     if (req.user && Math.random() < 0.2) repo.touchSession(req.user.sessionId);
+    // munsif: team session (own cookie, never an admin/juror user)
+    req.team = req.cookies.ij_team ? resolveTeam(trepo, cfg, req.cookies, unsign) : null;
+    if (req.team && Math.random() < 0.2) trepo.touchSession(req.team.sessionId);
 
     // CSRF: every state-changing API call must come from an allowed origin.
     if (req.url.startsWith("/api/") && !["GET", "HEAD", "OPTIONS"].includes(req.method)) {
@@ -81,9 +106,31 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   // Public: only places the admin has already revealed.
   app.get("/api/reveal", async () => revealPublicView(repo));
 
+  // Which sessions this browser has (never 401: the landing page and the login form ask anonymously).
+  app.get("/api/auth/session", async req => {
+    const unsign = (v: string) => req.unsignCookie(v);
+    const admin = resolveUser(repo, cfg, req.cookies, unsign, "admin");
+    const juror = resolveUser(repo, cfg, req.cookies, unsign, "juror");
+    const panel = admin ? "/admin" : juror ? "/juror" : req.team ? "/team" : null;
+    return { admin: !!admin, juror: !!juror, team: !!req.team, panel };
+  });
+
   authRoutes(app, ctx);
   jurorRoutes(app, ctx);
   adminRoutes(app, ctx);
+  teamRoutes(app, ctx);
+  stageRoutes(app, ctx);
+
+  // pdf.js data files (fonts, character maps, decoders) for the stage, the speaker screen and the team preview.
+  app.get<{ Params: { dir: string; file: string } }>("/vendor/pdfjs/:dir/:file", async (req, reply) => {
+    const { dir, file } = req.params;
+    if (!PDFJS_DIR || !["cmaps", "standard_fonts", "wasm", "iccs"].includes(dir) || !/^[\w.\-]+$/.test(file)) return reply.code(404).send({ error: "Tapılmadı." });
+    const f = path.join(PDFJS_DIR, dir, file);
+    if (!fs.existsSync(f)) return reply.code(404).send({ error: "Tapılmadı." });
+    reply.header("Cache-Control", "public, max-age=2592000");
+    reply.type(file.endsWith(".wasm") ? "application/wasm" : "application/octet-stream");
+    return reply.send(fs.createReadStream(f));
+  });
 
   // ---------- web app ----------
   const hasWeb = fs.existsSync(path.join(cfg.webDir, "login.html"));
@@ -101,7 +148,18 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
       },
     });
   }
-  app.get("/", async (req, reply) => reply.redirect(req.user ? (req.user.role === "admin" ? "/admin" : "/juror") : "/login"));
+  // munsif.im landing (AZ at /, EN at /en/). Signed-in visitors see it too, with a "Panel" button.
+  const landing = (file: string) => async (_req: unknown, reply: import("fastify").FastifyReply) => {
+    const f = path.join(cfg.webDir, "landing", file);
+    if (!fs.existsSync(f)) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
+    reply.header("Cache-Control", "no-cache");
+    reply.header("X-Frame-Options", "DENY");
+    return reply.type("text/html; charset=utf-8").send(fs.createReadStream(f));
+  };
+  app.get("/", landing("index.html"));
+  app.get("/en", async (_req, reply) => reply.redirect("/en/"));
+  app.get("/en/", landing("en/index.html"));
+  app.get("/stage/control", async (_req, reply) => reply.redirect("/admin/pult"));
   for (const [url, page] of Object.entries(PAGES)) {
     app.get(url, async (req, reply) => {
       if (page.role && req.user?.role !== page.role) {
@@ -112,6 +170,12 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
       return reply.sendFile(page.file);
     });
   }
+  // Team sign-in link: public page; the code itself is checked by /api/auth/team/:code.
+  app.get("/t/:code", async (_req, reply) => {
+    if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
+    reply.header("Cache-Control", "no-store");
+    return reply.sendFile("team.html");
+  });
   // QR landing page: public; the token itself is checked by /api/auth/invite/:token.
   app.get("/j/:token", async (_req, reply) => {
     if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
@@ -126,6 +190,6 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   return {
     app,
     ctx,
-    close: async () => { await rt.close(); await app.close(); db.close(); },
+    close: async () => { teams.close(); await rt.close(); await app.close(); db.close(); },
   };
 }

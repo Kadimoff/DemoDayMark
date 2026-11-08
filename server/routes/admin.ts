@@ -115,6 +115,8 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         revealHideScores: b.revealHideScores ?? cur.revealHideScores,
         product: b.product ?? cur.product,
         timer,
+        // munsif: a new team on stage starts on its first slide, in the default view.
+        ...(stageChanged && b.currentTeamId !== undefined && b.currentTeamId !== cur.currentTeamId ? { stageSlide: 1, stageMode: "auto" as const, stageIntroAt: null } : {}),
       });
       if (b.locked !== undefined && b.locked !== cur.locked) {
         repo.audit(actor, b.locked ? "event.lock" : "event.unlock");
@@ -153,6 +155,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const ev = repo.updateEvent({
         currentTeamId: next?.id ?? null,
         timer: applyTimerAction(cur.timer, next ? "reset" : "stop", Date.now()),
+        stageSlide: 1, stageMode: "auto", stageIntroAt: null,
       });
       repo.audit(req.user!.id, "stage.change", { teamId: ev.currentTeamId });
       rt.emitStage();
