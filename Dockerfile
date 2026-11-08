@@ -21,6 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
       libreoffice-impress fonts-dejavu fonts-crosextra-carlito fonts-liberation2 \
   && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/app/data ASSETS_DIR=/app/assets WEB_DIR=/app/dist/web
+# Shown in /api/health and the platform panel (Coolify passes SOURCE_COMMIT when "include source commit" is on).
+ARG SOURCE_COMMIT=""
+ENV SOURCE_COMMIT=${SOURCE_COMMIT}
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server

@@ -1,0 +1,27 @@
+# munsif.im CI: the same gate as the Docker build (typecheck → tests → build) on every push and pull request,
+# plus a short load + chaos run (30 jurors, SIGKILL restart mid-run: lost scores must be 0).
+name: CI
+on:
+  push:
+  pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Load test (short)
+        run: npx tsx scripts/loadtest/run.ts --jurors 30 --screens 4 --teams 10 --port 3078
+      - name: Chaos test (short, server restart mid-run)
+        run: npx tsx scripts/loadtest/run.ts --chaos --jurors 30 --screens 4 --teams 10 --port 3078
