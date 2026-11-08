@@ -324,10 +324,10 @@ function visuals(kind: PhaseKind, timer: TimerState, ready: boolean) {
     el.badge.textContent = "Təqdimat bitdi • Sual-cavab";
     el.sub.textContent = `Münsiflərin sual-cavab vaxtı (${minShort(Q)})`;
   } else {
-    el.banner.textContent = "VAXT BİTDİ! • ÇIXIŞ YEKUNLAŞDI";
+    el.banner.textContent = "VAXT BİTDİ! • ÇIXIŞ BAŞA ÇATDI";
     el.rim.textContent = " • VAXT BİTDİ! • TƏQDİMAT VƏ SUAL-CAVAB TAMAMLANDI • VAXT BİTDİ! • TƏŞƏKKÜRLƏR! ";
-    el.badge.textContent = "Vaxt tamamlandı!";
-    el.sub.textContent = "Təşəkkür edirik! Növbəti komandaya keçid edin.";
+    el.badge.textContent = "Vaxt bitdi";
+    el.sub.textContent = "Təşəkkürlər! Növbəti komanda hazırlaşsın.";
   }
 }
 

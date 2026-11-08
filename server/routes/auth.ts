@@ -114,7 +114,7 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
     limiter.success(key);
     // Jurors sign in only by scanning the QR the coordinator shows them.
     if (u.role === "juror") return reply.code(403).send({ error: "Münsiflər QR kodla daxil olur. Koordinatordan QR kodu istəyin." });
-    if (!u.is_root && !orgActive(repo, u.org_id)) return reply.code(403).send({ error: "Təşkilatınızın hesabı deaktiv edilib. Platforma ilə əlaqə saxlayın." });
+    if (!u.is_root && !orgActive(repo, u.org_id)) return reply.code(403).send({ error: "Təşkilatınızın hesabı deaktiv edilib. munsif.im ilə əlaqə saxlayın." });
     startSession(req, reply, u);
     // The platform owner starts every sign-in in its own organisation (no leftover "viewing another organisation").
     if (u.is_root) reply.clearCookie("ij_org", { path: "/" });

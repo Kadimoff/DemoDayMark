@@ -132,9 +132,9 @@ function eventSection(ev: EventState) {
           <div style="flex:1 1 130px"><label class="f" for="neDate">Tarix</label><input id="neDate" maxlength="40" placeholder="${esc(ev.date)}"></div>
         </div>
         <div class="row" style="align-items:flex-start">
-          <div style="flex:1 1 110px"><label class="f" for="nePitch">Pitch (dəq:san)</label><input id="nePitch" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.pitchSec)}"></div>
+          <div style="flex:1 1 110px"><label class="f" for="nePitch">Təqdimat (dəq:san)</label><input id="nePitch" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.pitchSec)}"></div>
           <div style="flex:1 1 110px"><label class="f" for="neQa">Sual-cavab (dəq:san)</label><input id="neQa" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.qaSec)}"></div>
-          <div style="flex:2 1 220px"><label class="f" for="neDeadline">Yükləmə deadline-ı (istəyə bağlı)</label><input id="neDeadline" type="datetime-local"></div>
+          <div style="flex:2 1 220px"><label class="f" for="neDeadline">Yükləmə üçün son tarix (istəyə bağlı)</label><input id="neDeadline" type="datetime-local"></div>
         </div>
         <label class="check"><input type="checkbox" id="neCrit" checked> Meyarları köçür (${S!.criteria.length} meyar)</label>
         <label class="check"><input type="checkbox" id="neTeams"> Komandaların adlarını köçür (fayl, link və ballar köçmür)</label>
@@ -159,12 +159,12 @@ function stageTimerSection(ev: EventState) {
   return `<section class="card pad stack" aria-labelledby="h-st">
     <div class="row between"><h3 id="h-st">${icon("timer")}Səhnə taymeri</h3><span class="saved" id="stSaved"></span></div>
     <div class="row" style="align-items:flex-start">
-      <div style="flex:1 1 140px"><label class="f" for="evPitch">Pitch müddəti (dəq:san)</label><input type="text" id="evPitch" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.pitchSec)}"></div>
+      <div style="flex:1 1 140px"><label class="f" for="evPitch">Təqdimat müddəti (dəq:san)</label><input type="text" id="evPitch" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.pitchSec)}"></div>
       <div style="flex:1 1 140px"><label class="f" for="evQa">Sual-cavab müddəti (dəq:san)</label><input type="text" id="evQa" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.qaSec)}"></div>
     </div>
-    ${sw("last5Fx", ev.last5Fx, "Son 5 saniyə effekti", "Proyektorda taymer mərkəzə uçur, rəqəmlər böyük düşür (pitch və sual-cavabın sonunda).")}
-    ${sw("stageSound", ev.stageSound, "Səs siqnalları", "Proyektorda tik-səslər, keçid melodiyası və “vaxt bitdi” siqnalı.")}
-    ${sw("teamSlideControl", ev.teamSlideControl, "Komanda öz slaydlarını çevirə bilsin", "Səhnədə olan komanda telefonundan (/team) yalnız öz prezentasiyasını ← → ilə çevirir. Səhnədən düşəndə hüquq itir.")}
+    ${sw("last5Fx", ev.last5Fx, "Son 5 saniyə effekti", "Təqdimatın və sual-cavabın son 5 saniyəsində taymer səhnə ekranının ortasına keçir.")}
+    ${sw("stageSound", ev.stageSound, "Səs siqnalları", "Səhnə ekranında tik səsi, keçid melodiyası və “vaxt bitdi” siqnalı.")}
+    ${sw("teamSlideControl", ev.teamSlideControl, "Komanda öz slaydlarını çevirə bilsin", "Səhnədəki komanda öz prezentasiyasını telefondan (/team) çevirir. Səhnədən düşəndə bu imkan bağlanır.")}
   </section>`;
 }
 
@@ -172,12 +172,12 @@ function deadlineSection() {
   const dl = MAT?.settings.uploadDeadline ?? null;
   const ext = (MAT?.teams ?? []).filter(t => t.extendUntil && (!dl || t.extendUntil > dl));
   return `<section class="card pad stack" aria-labelledby="h-dl">
-    <div class="row between"><h3 id="h-dl">${icon("lock")}Yükləmə deadline-ı</h3><span class="saved" id="taSaved"></span></div>
-    <div class="toggle" style="border-top:0;padding-top:0"><div><b>Deadline</b><small>Bu vaxtdan sonra komandalar prezentasiya, sayt və video linkini dəyişə bilmir. Bir saat qalmış prezentasiyası olmayan komandalara xatırlatma gedir. Boş = deadline yoxdur.</small></div>
+    <div class="row between"><h3 id="h-dl">${icon("lock")}Yükləmə üçün son tarix</h3><span class="saved" id="taSaved"></span></div>
+    <div class="toggle" style="border-top:0;padding-top:0"><div><b>Son tarix</b><small>Bu vaxtdan sonra komandalar prezentasiyanı, sayt və video linkini dəyişə bilmir. Bir saat qalmış prezentasiyası olmayan komandalara xatırlatma gedir. Boş qalsa, son tarix yoxdur.</small></div>
       <div class="row dlrow"><input type="datetime-local" id="taDeadline" value="${dtLocal(dl)}">
       ${dl ? `<button class="btn sm ghost" type="button" data-tset-clear>Sil</button>` : ""}</div></div>
-    <p class="sub" style="margin:0">${dl ? `Komandalar /team səhifəsində geri sayımı görür. ${Date.now() > dl ? `<b class="danger-t">Deadline keçib.</b>` : ""}` : "Deadline qoyulmayıb."}
-      Konkret komandaya əlavə vaxt: aşağıda komandanı açın → “Deadline-ı uzat”.${ext.length ? ` Uzadılıb: ${ext.map(t => `<b>${esc(t.name)}</b> (${dtShow(t.extendUntil!)})`).join(", ")}.` : ""}</p>
+    <p class="sub" style="margin:0">${dl ? `Komandalar /team səhifəsində geri sayımı görür. ${Date.now() > dl ? `<b class="danger-t">Son tarix keçib.</b>` : ""}` : "Son tarix qoyulmayıb."}
+      Bir komandaya əlavə vaxt vermək üçün aşağıda komandanı açın → “Son tarixi uzat”.${ext.length ? ` Uzadılıb: ${ext.map(t => `<b>${esc(t.name)}</b> (${dtShow(t.extendUntil!)})`).join(", ")}.` : ""}</p>
   </section>`;
 }
 
@@ -189,7 +189,7 @@ function teamsSection(ev: EventState) {
     <div class="row between"><h3 id="h-teams">${icon("list")}Komandalar (${S!.teams.length})</h3>
       <div class="row" style="gap:6px"><button class="btn sm ghost" type="button" id="accAll">${openTeams.size ? "Hamısını bağla" : "Hamısını aç"}</button>
       <button class="btn sm" data-add="teams">${icon("plus")}Komanda əlavə et</button></div></div>
-    ${nScores ? `<p class="note">Artıq <b>${nScores}</b> qiymət var. Qiyməti olan komandanı silsəniz, qiymətləri də silinəcək — bunun əvəzinə deaktiv edə bilərsiniz.</p>` : ""}
+    ${nScores ? `<p class="note">Artıq <b>${nScores}</b> qiymət var. Qiyməti olan komandanı silsəniz, qiymətləri də silinəcək. Bunun əvəzinə komandanı deaktiv edə bilərsiniz.</p>` : ""}
     <p class="sub" style="margin:0">Sıranı dəyişmək üçün <b>⋮⋮</b> tutub sürüşdürün. Komandanı açın: ad, layihə, giriş linki (QR), materiallar.</p>
     <div class="accs" role="list">${S!.teams.map((t, i) => {
       const m = mat.get(t.id);
@@ -223,9 +223,9 @@ function teamsSection(ev: EventState) {
               ${p?.viewable ? `<button class="btn sm" type="button" data-view="${t.id}" style="margin-top:6px">${icon("expand")}Bax</button>` : ""}</div>
             <div><span class="f">Sayt / video</span>${m?.siteUrl ? `<a href="${esc(m.siteUrl)}" target="_blank" rel="noopener noreferrer">${esc(m.siteUrl)}</a>` : `<span class="faint">Sayt yoxdur</span>`}
               ${m?.videoUrl ? `<br><a href="${esc(m.videoUrl)}" target="_blank" rel="noopener noreferrer">Demo video</a>` : ""}</div>
-            <div><span class="f">Deadline-ı uzat (yalnız bu komanda)</span><div class="row dlrow"><input type="datetime-local" data-ext="${t.id}" value="${dtLocal(m?.extendUntil ?? null)}">
+            <div><span class="f">Son tarixi uzat (yalnız bu komanda)</span><div class="row dlrow"><input type="datetime-local" data-ext="${t.id}" value="${dtLocal(m?.extendUntil ?? null)}">
               ${m?.extendUntil ? `<button class="btn sm ghost" type="button" data-ext-clear="${t.id}">Sil</button>` : ""}</div>
-              <small class="sub">${m?.extendUntil && (!dl || m.extendUntil > dl) ? `Bu komanda ${dtShow(m.extendUntil)}-dək yükləyə bilər.` : dl ? `Ümumi deadline: ${dtShow(dl)}` : "Ümumi deadline yoxdur."}</small></div>
+              <small class="sub">${m?.extendUntil && (!dl || m.extendUntil > dl) ? `Bu komanda ${dtShow(m.extendUntil)}-dək yükləyə bilər.` : dl ? `Ümumi son tarix: ${dtShow(dl)}` : "Ümumi son tarix yoxdur."}</small></div>
           </div>
           ${confirmRow("teams", t.id)}
         </div>
@@ -237,7 +237,7 @@ function teamsSection(ev: EventState) {
 function eventFilesSection() {
   return `<section class="card pad stack" aria-labelledby="h-evfiles">
     <div class="row between"><h3 id="h-evfiles">${icon("doc")}Tədbirin prezentasiyası</h3><span class="saved" id="efSaved"></span></div>
-    <p class="sub" style="margin:0">Açılış, fasilə, sponsorlar, qaydalar — komandaların prezentasiyasından ayrı. Canlı paneldə (Səhnə) və ya pultda “Proyektora” ilə göstərilir;
+    <p class="sub" style="margin:0">Açılış, fasilə, sponsorlar və qaydalar üçün, komandaların prezentasiyasından ayrıdır. Canlı paneldə (Səhnə) və ya pultda “Ekrana çıxar” ilə göstərilir;
       slaydları ← →, pult və ya kliker çevirir. PDF${EFM.soffice ? " və ya PPTX (avtomatik PDF-ə çevrilir)" : ""}, maks. ${EFM.maxUploadMb} MB.</p>
     ${EF.length ? `<div class="efl">${EF.map((f, i) => `<div class="efl-row" data-ef="${f.id}">
         <span class="ix mono">${i + 1}</span>
@@ -265,7 +265,7 @@ function render() {
   main.innerHTML = `
     <div class="stack">
       <div><h1>Quraşdırma</h1><p class="sub">Hər sahə xanadan çıxanda yadda saxlanılır və bütün ekranlarda dərhal yenilənir.</p>
-        <nav class="jump">${[["h-ev", "Tədbir"], ["h-teams", "Komandalar"], ["h-dl", "Deadline"], ["h-st", "Səhnə taymeri"], ["h-evfiles", "Tədbirin prezentasiyası"], ["h-jur", "Münsiflər"], ["h-cr", "Meyarlar"], ["h-sc", "Nəticə"], ["h-tacc", "Komanda girişi"]].map(([id, l]) => `<a href="#${id}">${l}</a>`).join("")}</nav></div>
+        <nav class="jump">${[["h-ev", "Tədbir"], ["h-teams", "Komandalar"], ["h-dl", "Son tarix"], ["h-st", "Səhnə taymeri"], ["h-evfiles", "Tədbirin prezentasiyası"], ["h-jur", "Münsiflər"], ["h-cr", "Meyarlar"], ["h-sc", "Nəticə"], ["h-tacc", "Komanda girişi"]].map(([id, l]) => `<a href="#${id}">${l}</a>`).join("")}</nav></div>
       ${eventSection(ev)}
       ${teamsSection(ev)}
       ${deadlineSection()}
@@ -290,7 +290,7 @@ function render() {
             </div>
             <div class="acts">
               <button type="button" class="btn sm ${waiting ? "outline-acc" : ""}" data-qr>${icon("qr")}${waiting ? "QR göstər" : "Yeni QR"}</button>
-              ${j.sessionCount ? `<button type="button" class="btn ghost sm" data-logout>Sessiyaları bağla</button>` : ""}
+              ${j.sessionCount ? `<button type="button" class="btn ghost sm" data-logout>Cihazlardan çıxart</button>` : ""}
               <span class="f" style="margin:0">Aktiv</span><button type="button" class="sw" role="switch" data-active aria-checked="${j.active}" aria-label="${esc(j.displayName)} aktivdir"></button>
               <button type="button" class="x del" data-del aria-label="${esc(j.displayName)} sil">${icon("trash")}</button>
             </div>
@@ -412,7 +412,7 @@ main.addEventListener("change", async e => {
   const el = e.target as HTMLInputElement;
   if (el.id === "scTop") {
     const v = Number(el.value);
-    if (!Number.isInteger(v) || v < 0 || v > 10) { toast("İntizarlı yer sayı 0–10 arası tam ədəd olmalıdır.", "err"); el.value = String(S!.event.revealTop); return; }
+    if (!Number.isInteger(v) || v < 0 || v > 10) { toast("İki addımla açılan yerlərin sayı 0–10 arası tam ədəd olmalıdır.", "err"); el.value = String(S!.event.revealTop); return; }
     await patchScoring({ revealTop: v });
     return;
   }
@@ -515,7 +515,7 @@ main.addEventListener("click", async e => {
     const sw = t.closest<HTMLElement>("[data-active]")!;
     const next = sw.getAttribute("aria-checked") !== "true";
     await patchRow(r.kind, r.id, { active: next }, r.el, true);
-    if (r.kind === "jurors" && !next) toast("Münsif deaktiv edildi; sessiyaları bağlandı");
+    if (r.kind === "jurors" && !next) toast("Münsif deaktiv edildi və cihazlardan çıxarıldı");
     return;
   }
   const mv = t.closest<HTMLElement>("[data-move]");
@@ -549,7 +549,7 @@ main.addEventListener("click", async e => {
   if (t.closest("[data-logout]")) {
     try {
       const res = await api<{ closed: number }>(`/api/admin/jurors/${r.id}/logout`, { method: "POST" });
-      toast(`${res.closed} sessiya bağlandı`);
+      toast(`${res.closed} cihazdan çıxarıldı`);
       await load();
     } catch (ex) { toast((ex as ApiError).message, "err"); }
   }
@@ -582,7 +582,7 @@ main.addEventListener("click", async e => {
       await api("/api/admin/settings/stage", { method: "PATCH", body: { [key]: next } });
       ss.setAttribute("aria-checked", String(next));
       (S.event as unknown as Record<string, unknown>)[key] = next;
-      flash("stSaved", "Saxlanıldı · proyektorda dərhal tətbiq olunur");
+      flash("stSaved", "Saxlanıldı · səhnə ekranında dərhal tətbiq olunur");
     } catch (ex) { toast((ex as ApiError).message, "err"); }
     return;
   }
@@ -610,7 +610,7 @@ main.addEventListener("click", async e => {
   const efd = t.closest<HTMLElement>("[data-ef-del]");
   if (efd) {
     const f = EF.find(x => x.id === Number(efd.dataset.efDel));
-    if (!f || !window.confirm(`“${f.title}” siyahıdan silinsin? (Proyektorda göstərilirsə, proyektor komandaya qayıdır.)`)) return;
+    if (!f || !window.confirm(`“${f.title}” silinsin? Səhnə ekranında göstərilirsə, ekran komandaya qayıdacaq.`)) return;
     try { EF = (await api<{ files: EventFile[] }>(`/api/admin/event-files/${f.id}`, { method: "DELETE" })).files; toast("Silindi"); render(); } catch (ex) { toast((ex as ApiError).message, "err"); }
     return;
   }
@@ -618,7 +618,7 @@ main.addEventListener("click", async e => {
   if (ar) { void showArchive(Number(ar.dataset.arch)); return; }
 });
 async function saveExtension(teamId: number, ms: number | null) {
-  try { await api(`/api/admin/teams/${teamId}/materials`, { method: "PATCH", body: { extendUntil: ms } }); toast(ms ? "Deadline bu komanda üçün uzadıldı" : "Uzadılma silindi"); await load(); }
+  try { await api(`/api/admin/teams/${teamId}/materials`, { method: "PATCH", body: { extendUntil: ms } }); toast(ms ? "Son tarix bu komanda üçün uzadıldı" : "Uzadılma silindi"); await load(); }
   catch (ex) { toast((ex as ApiError).message, "err"); }
 }
 main.addEventListener("change", async e => {
@@ -661,7 +661,7 @@ function uploadEventFile(file: File) {
     if (xhr.status >= 200 && xhr.status < 300 && data.files) { EF = data.files; toast("Tədbirin prezentasiyası yükləndi"); render(); }
     else { toast(data.error ?? `Yükləmə alınmadı (${xhr.status})`, "err"); if (box) box.hidden = true; }
   };
-  xhr.onerror = () => { efBusy = false; toast("Bağlantı kəsildi — yenidən cəhd edin", "err"); if (box) box.hidden = true; };
+  xhr.onerror = () => { efBusy = false; toast("Bağlantı kəsildi. Yenidən cəhd edin.", "err"); if (box) box.hidden = true; };
   xhr.send(file);
 }
 
@@ -684,7 +684,7 @@ async function createEvent() {
     } });
     newEventOpen = false;
     openTeams.clear();
-    toast("Yeni tədbir yaradıldı — köhnəsi arxivdədir");
+    toast("Yeni tədbir yaradıldı, köhnəsi arxivə keçdi");
     await load();
     document.getElementById("h-ev")?.scrollIntoView({ behavior: "smooth" });
   } catch (ex) { err.textContent = (ex as ApiError).message; go.disabled = false; }
@@ -750,7 +750,7 @@ async function saveEvent() {
   const qaSec = parseClock($<HTMLInputElement>("#evQa").value);
   const name = cleanPrefix($<HTMLInputElement>("#evName").value);
   const product = $<HTMLSelectElement>("#evProduct").value;
-  if (!pitchSec || pitchSec < 10) { err.textContent = "Pitch müddətini dəq:san formatında yazın, məs. 3:00."; $("#evPitch").focus(); return; }
+  if (!pitchSec || pitchSec < 10) { err.textContent = "Təqdimat müddətini dəq:san formatında yazın, məs. 3:00."; $("#evPitch").focus(); return; }
   if (!qaSec || qaSec < 10) { err.textContent = "Sual-cavab müddətini dəq:san formatında yazın, məs. 2:00."; $("#evQa").focus(); return; }
   err.textContent = "";
   try {

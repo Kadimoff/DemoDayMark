@@ -84,7 +84,7 @@ function render() {
         <div><label class="f" for="nPass">Koordinator şifrəsi (min. 8)</label><input type="password" id="nPass" autocomplete="new-password"></div>
         <button class="btn primary" type="submit" id="nGo">${icon("plus")}Yarat</button>
       </form>
-      <p class="sub" style="margin:0">Yeni təşkilat boş tədbirlə başlayır: standart meyarlar, pitch 3:00 + sual-cavab 2:00, komanda və münsif yoxdur. Proyektor linkləri <span class="mono">/o/&lt;qısa ad&gt;/stage</span>, <span class="mono">/o/&lt;qısa ad&gt;/reveal</span>.</p>
+      <p class="sub" style="margin:0">Yeni təşkilat boş tədbirlə başlayır: standart meyarlar, təqdimat 3:00 + sual-cavab 2:00, komanda və münsif yoxdur. Ekran linkləri <span class="mono">/o/&lt;qısa ad&gt;/stage</span>, <span class="mono">/o/&lt;qısa ad&gt;/reveal</span>.</p>
       <p class="err-t" id="nErr" role="alert"></p>
     </section>
     <div class="orgs-grid section-gap">${orgs.map(orgCard).join("")}</div>`;

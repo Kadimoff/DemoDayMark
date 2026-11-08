@@ -26,7 +26,7 @@ function header(signedIn: boolean, title = "Komanda girişi") {
     <span class="spacer"></span>
     ${signedIn ? `<span id="bellSlot"></span>` : ""}
     <span class="th1" id="themeOne">${themeToggleHtml()}</span>
-    ${signedIn ? `<button class="icon-btn" id="logout" title="Çıxış" aria-label="Çıxış">${icon("logout")}</button>` : ""}
+    ${signedIn ? `<button class="icon-btn" id="logout" title="Hesabdan çıx" aria-label="Hesabdan çıx">${icon("logout")}</button>` : ""}
   </div>
   <div class="wrap narrow tsub"><b>${esc(title)}</b></div>`;
   $("#themeOne").addEventListener("click", () => { toggleTheme(); $("#themeOne").innerHTML = themeToggleHtml(); });
@@ -47,7 +47,7 @@ async function signedOut(err = "") {
     <section class="tcard hero-card fade">
       <span class="kicker">${esc(reg.eventName || "munsif.im")}</span>
       <h1 class="tgrad">Komanda girişi</h1>
-      <p class="sub">Təşkilatçının göndərdiyi <b>komanda linkini</b> açın və ya linkdəki kodu yazın. Komandanın bütün üzvləri eyni linklə daxil ola bilər.</p>
+      <p class="sub">Koordinatorun göndərdiyi <b>komanda linkini</b> açın və ya linkdəki kodu bura yazın. Komandanın bütün üzvləri eyni linklə daxil olur.</p>
       <form id="codeForm" class="stack" novalidate>
         <div><label class="f" for="code">Komanda kodu və ya link</label>
           <input id="code" name="code" class="mono" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH-JKMN" required></div>
@@ -57,7 +57,7 @@ async function signedOut(err = "") {
     </section>
     ${reg.open ? `<section class="tcard fade">
       <h2>Qeydiyyat</h2>
-      <p class="sub">Komandanız siyahıda yoxdursa, qeydiyyatdan keçin. Təşkilatçı təsdiqləyəndən sonra çıxış sırasına düşəcəksiniz.</p>
+      <p class="sub">Komandanız siyahıda yoxdursa, burada qeydiyyatdan keçin. Koordinator təsdiqləyəndən sonra çıxış sırasına düşəcəksiniz.</p>
       <form id="regForm" class="stack" novalidate>
         <div><label class="f" for="rName">Komandanın adı</label><input id="rName" name="name" maxlength="120" required autocomplete="organization"></div>
         <div><label class="f" for="rProj">Layihə</label><input id="rProj" name="project" maxlength="160" placeholder="məs. Ağıllı parkinq"></div>
@@ -77,7 +77,7 @@ async function signedOut(err = "") {
     const name = $<HTMLInputElement>("#rName").value.trim(), project = $<HTMLInputElement>("#rProj").value.trim();
     try {
       const r = await api<{ code: string; path: string }>("/api/team/register", { method: "POST", body: { name, project } });
-      toast(`Komanda kodunuz: ${r.code} — yadda saxlayın`);
+      toast(`Komanda kodunuz: ${r.code}. Onu yadda saxlayın.`);
       sessionStorage.setItem("munsif-newcode", r.code);
       await boot();
     } catch (ex) { $("#rErr").textContent = (ex as ApiError).message; }
@@ -98,8 +98,8 @@ function deadlineHtml() {
   const open = S.event.uploadsOpen;
   const ms = dl - Date.now();
   const cls = !open ? "danger" : ms < 3600_000 ? "warn" : "";
-  return `<div class="tdl ${cls}" id="tdl">${icon("timer")}<span><b>${open ? `Yükləməyə <span class="mono" id="tdlLeft">${left(ms)}</span> qalıb` : "Deadline keçib — yükləmə bağlıdır"}</b>
-    <small>Deadline: ${dt(dl)}${S.event.extendedUntil ? " (sizin üçün uzadılıb)" : ""}${open ? "" : " · təşkilatçıya müraciət edin"}</small></span></div>`;
+  return `<div class="tdl ${cls}" id="tdl">${icon("timer")}<span><b>${open ? `Yükləməyə <span class="mono" id="tdlLeft">${left(ms)}</span> qalıb` : "Son tarix keçib, yükləmə bağlıdır"}</b>
+    <small>Son tarix: ${dt(dl)}${S.event.extendedUntil ? " (sizin üçün uzadılıb)" : ""}${open ? "" : " · koordinatora yazın"}</small></span></div>`;
 }
 
 function stageHtml() {
@@ -108,13 +108,13 @@ function stageHtml() {
   const sc = s.slideControl;
   return `<section class="tcard onstage-card fade" id="onStage">
     <div class="os-head"><span class="os-dot"></span><b>Səhnədəsiniz!</b><span class="sub" style="margin:0">${esc(s.event.displayName)}</span></div>
-    ${sc.allowed ? `<p class="sub" style="margin:0">Slaydlarınızı buradan çevirin — proyektorda dərhal dəyişir.</p>
+    ${sc.allowed ? `<p class="sub" style="margin:0">Slaydları buradan çevirin, səhnə ekranında dərhal dəyişir.</p>
       <div class="os-thumb" id="osThumb"></div>
       <div class="os-ctl">
         <button class="os-btn" data-slide="-1" ${sc.slide <= 1 ? "disabled" : ""} aria-label="Əvvəlki slayd">${icon("back")}</button>
         <div class="os-n"><small>Slayd</small><b class="mono" id="osN">${sc.slide}${sc.pages ? ` / ${sc.pages}` : ""}</b></div>
         <button class="os-btn go" data-slide="1" ${sc.pages && sc.slide >= sc.pages ? "disabled" : ""} aria-label="Növbəti slayd">${icon("next")}</button>
-      </div>` : `<p class="note" style="margin:0">${esc(sc.reason ?? "Slaydları təşkilatçı idarə edir.")}</p>`}
+      </div>` : `<p class="note" style="margin:0">${esc(sc.reason ?? "Slaydları koordinator çevirir.")}</p>`}
   </section>`;
 }
 
@@ -122,11 +122,11 @@ function statusHtml() {
   const s = S!;
   const m = s.materials;
   const q = s.queue;
-  const st = m.approval === "pending" ? { cls: "warn", t: "Təsdiq gözləyir", d: "Təşkilatçı təsdiqləyəndən sonra çıxış sırasına düşəcəksiniz. Materialları indidən yükləyə bilərsiniz." }
-    : !m.presentation ? { cls: "", t: "Prezentasiya gözlənilir", d: "Prezentasiyanızı aşağıda yükləyin (PDF və ya PPTX)." }
-    : m.review === "returned" ? { cls: "danger", t: "Düzəliş istənir", d: m.reviewNote || "Təşkilatçı düzəliş istəyir." }
-    : m.review === "accepted" ? { cls: "ok", t: "Hazırdır", d: "Prezentasiyanız yüklənib və təşkilatçı təsdiqləyib." }
-    : { cls: "ok", t: "Prezentasiya yüklənib", d: "Təşkilatçı baxa bilər. Dəyişmək üçün yeni versiya yükləyin." };
+  const st = m.approval === "pending" ? { cls: "warn", t: "Təsdiq gözləyir", d: "Koordinator təsdiqləyəndən sonra çıxış sırasına düşəcəksiniz. Faylları indidən yükləyə bilərsiniz." }
+    : !m.presentation ? { cls: "", t: "Prezentasiya yüklənməyib", d: "Prezentasiyanızı aşağıda yükləyin (PDF və ya PPTX)." }
+    : m.review === "returned" ? { cls: "danger", t: "Düzəliş lazımdır", d: m.reviewNote || "Koordinator düzəliş istəyir." }
+    : m.review === "accepted" ? { cls: "ok", t: "Hazırdır", d: "Koordinator prezentasiyanızı qəbul edib." }
+    : { cls: "ok", t: "Prezentasiya yüklənib", d: "Koordinator ona baxa bilər. Dəyişmək üçün yeni versiyanı yükləyin." };
   const queue = !s.team.active ? "Sırada deyilsiniz"
     : q.onStage ? `<b class="ok-t">Səhnədəsiniz</b>`
     : q.ahead != null ? `Sıranız <b>${q.position}</b> / ${q.total} · qabaqda <b>${q.ahead}</b> komanda`
@@ -140,8 +140,8 @@ function statusHtml() {
     </div>
     <div class="tstep ${st.cls}"><b>${st.t}</b><span>${esc(st.d)}</span></div>
     ${deadlineHtml()}
-    <div class="tmeta"><span>${icon("list")}${queue}</span><span>${icon("timer")}Pitch ${Math.round(s.event.pitchSec / 6) / 10} dəq + sual-cavab ${Math.round(s.event.qaSec / 6) / 10} dəq</span></div>
-    ${newCode ? `<div class="note" style="margin-top:12px">Komanda kodunuz: <b class="mono">${esc(newCode)}</b> — üzvlərlə paylaşın (munsif.im/team səhifəsində yazılır).</div>` : ""}
+    <div class="tmeta"><span>${icon("list")}${queue}</span><span>${icon("timer")}Təqdimat ${Math.round(s.event.pitchSec / 6) / 10} dəq + sual-cavab ${Math.round(s.event.qaSec / 6) / 10} dəq</span></div>
+    ${newCode ? `<div class="note" style="margin-top:12px">Komanda kodunuz: <b class="mono">${esc(newCode)}</b>. Üzvlərə göndərin, onlar kodu munsif.im/team səhifəsində yazıb daxil olacaq.</div>` : ""}
     ${"Notification" in window && Notification.permission === "default" ? `<button class="btn sm" id="allowNotif" style="margin-top:12px">${icon("bell")}Bildirişlərə icazə ver</button>` : ""}
   </section>`;
 }
@@ -155,7 +155,7 @@ function formHtml() {
   const conv = p?.ext === "pptx"
     ? p.conv === "done" ? `<span class="pill ok">PDF-ə çevrildi</span>`
       : p.conv === "running" || p.conv === "pending" ? `<span class="pill hot">PDF-ə çevrilir…</span>`
-      : `<span class="pill danger">PPTX göstərilə bilmir — PDF yükləyin</span>`
+      : `<span class="pill danger">PPTX açılmadı, PDF yükləyin</span>`
     : "";
   const versions = s.history.filter(f => f.kind === "presentation");
   return `<section class="tcard tform">
@@ -164,10 +164,10 @@ function formHtml() {
         <div><label class="f" for="pName">Komanda adı</label><input id="pName" maxlength="120" value="${esc(s.team.name)}" ${canName ? "" : "disabled"}></div>
         <div><label class="f" for="pProj">Layihə</label><input id="pProj" maxlength="160" value="${esc(s.team.project)}" ${canName ? "" : "disabled"}></div>
       </div>
-      ${canName ? "" : `<p class="sub" style="margin:-8px 0 0">Adı dəyişmək üçün təşkilatçıya yazın.</p>`}
+      ${canName ? "" : `<p class="sub" style="margin:-8px 0 0">Adı dəyişmək üçün koordinatora yazın.</p>`}
       <div><label class="f" for="pMembers">Üzvlər <small>(hər sətirdə bir nəfər)</small></label><textarea id="pMembers" rows="3" maxlength="1000" placeholder="Aysel Məmmədova&#10;Rəşad Quliyev">${esc(m.members.join("\n"))}</textarea></div>
       <div><label class="f" for="pSite">Sayt linki</label><input id="pSite" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${esc(m.siteUrl)}" ${open ? "" : "disabled"}>
-        ${m.siteUrl ? `<small class="sub">${m.siteEmbeddable === false ? "Sayt səhnədə açılmır — səhnədə QR kod göstəriləcək." : m.siteEmbeddable ? "Sayt səhnədə açılır." : "Sayt yoxlanılır…"}</small>` : ""}</div>
+        ${m.siteUrl ? `<small class="sub">${m.siteEmbeddable === false ? "Sayt səhnə ekranında açılmır, onun yerinə QR kod göstəriləcək." : m.siteEmbeddable ? "Sayt səhnə ekranında açılır." : "Sayt yoxlanılır…"}</small>` : ""}</div>
       <div><span class="f">Prezentasiya</span>
         ${p ? `<div class="pres-now">
           <div class="thumb" id="thumb">${p.viewable ? `<span class="spin"></span>` : icon("doc")}</div>
@@ -181,9 +181,9 @@ function formHtml() {
           <span class="btn sm primary" aria-hidden="true">${icon("plus")}Fayl seç</span>
           <div class="upbar" hidden><i></i></div>
         </label>
-        ${versions.length > 1 ? `<details class="vers"><summary>Əvvəlki versiyalar (${versions.length - 1})</summary><ul>${versions.slice(1).map((f: TeamFile) => `<li><span>${esc(f.name)}</span><small>${fmtSize(f.size)} · ${dt(f.createdAt)}${f.uploadedBy === "admin" ? " · təşkilatçı" : ""}</small></li>`).join("")}</ul></details>` : ""}
+        ${versions.length > 1 ? `<details class="vers"><summary>Əvvəlki versiyalar (${versions.length - 1})</summary><ul>${versions.slice(1).map((f: TeamFile) => `<li><span>${esc(f.name)}</span><small>${fmtSize(f.size)} · ${dt(f.createdAt)}${f.uploadedBy === "admin" ? " · koordinator" : ""}</small></li>`).join("")}</ul></details>` : ""}
       </div>
-      <details class="vers more-f"${m.videoUrl || m.logo ? " open" : ""}><summary>Əlavə (istəyə bağlı): demo video, loqo</summary>
+      <details class="vers more-f"${m.videoUrl || m.logo ? " open" : ""}><summary>Əlavə: demo video və loqo (istəyə bağlı)</summary>
         <div class="stack" style="margin-top:10px">
           <div><label class="f" for="pVideo">Demo video linki</label><input id="pVideo" type="url" inputmode="url" maxlength="500" placeholder="https://" value="${esc(m.videoUrl)}" ${open ? "" : "disabled"}></div>
           <label class="btn sm ghost" style="justify-self:start" ${open ? "" : "aria-disabled=\"true\""}>${icon("plus")}${m.logo ? "Loqonu dəyiş" : "Loqo yüklə"}<input type="file" id="logo" accept="image/png,image/jpeg,image/webp" hidden ${open ? "" : "disabled"}></label>
@@ -296,11 +296,11 @@ function upload(file: File, kind: "presentation" | "logo") {
     try { data = JSON.parse(xhr.responseText); } catch { /* not json */ }
     if (xhr.status >= 200 && xhr.status < 300 && data.state) {
       S = data.state;
-      toast(kind === "presentation" ? "Prezentasiya yükləndi — təşkilatçıya bildiriş getdi" : "Loqo yükləndi");
+      toast(kind === "presentation" ? "Prezentasiya yükləndi, koordinatora bildiriş getdi" : "Loqo yükləndi");
       render();
     } else { toast(data.error ?? `Yükləmə alınmadı (${xhr.status})`, "err"); if (barBox) barBox.hidden = true; }
   };
-  xhr.onerror = () => { busy = false; toast("Bağlantı kəsildi — yenidən cəhd edin", "err"); if (barBox) barBox.hidden = true; };
+  xhr.onerror = () => { busy = false; toast("Bağlantı kəsildi. Yenidən cəhd edin.", "err"); if (barBox) barBox.hidden = true; };
   xhr.send(file);
 }
 

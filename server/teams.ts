@@ -119,11 +119,11 @@ export class TeamService {
     const st = this.repo.stage();
     const pages = st.show.pres?.pages ?? null;
     const no = (reason: string) => ({ allowed: false, reason, slide: ev.stageSlide, pages });
-    if (ev.currentTeamId !== teamId) return no("Növbəniz çatanda (səhnədə olanda) slaydları buradan çevirə biləcəksiniz.");
-    if (ev.stageScene !== "team") return no("Hazırda proyektorda tədbirin öz prezentasiyası göstərilir.");
-    if (!ev.teamSlideControl) return no("Slaydları təşkilatçı idarə edir.");
+    if (ev.currentTeamId !== teamId) return no("Növbəniz çatıb səhnəyə çıxanda slaydları buradan çevirə biləcəksiniz.");
+    if (ev.stageScene !== "team") return no("İndi səhnə ekranında tədbirin öz prezentasiyası göstərilir.");
+    if (!ev.teamSlideControl) return no("Slaydları koordinator çevirir.");
     if (!st.show.pres) return no(st.show.presPending ? "Prezentasiyanız hələ hazırlanır (PDF-ə çevrilir)." : "Səhnədə prezentasiyanız yoxdur.");
-    if (ev.stageMode !== "auto") return no("Proyektorda hazırda taymer və ya sayt göstərilir.");
+    if (ev.stageMode !== "auto") return no("İndi səhnə ekranında taymer və ya sayt göstərilir.");
     return { allowed: true, reason: null, slide: ev.stageSlide, pages };
   }
 
@@ -156,7 +156,7 @@ export class TeamService {
     this.rt.to("admin").emit("materials:changed", { teamId });
   }
 
-  /** Called after the team on stage changed: "Səhnəyə dəvət olunursunuz" / "Növbəti sizsiniz" / "Sıranız yaxınlaşır". */
+  /** Called after the team on stage changed: "Sıra sizdədir" / "Növbəti sizsiniz" / "Sıranız yaxınlaşır". */
   stageReminders() {
     const list = this.repo.teams().filter(t => t.active);
     const cur = this.repo.getEvent().currentTeamId;
@@ -172,9 +172,9 @@ export class TeamService {
       if (this.trepo.sentSince(t.id, kind, Date.now() - 30 * 60_000)) return;
       this.notifyTeam(t.id, kind, title, body);
     };
-    send(0, "stage.invite", "Səhnəyə dəvət olunursunuz", `${list[ci].name}, sıra sizdədir — səhnəyə buyurun!`);
+    send(0, "stage.invite", "Sıra sizdədir", `${list[ci].name}, səhnəyə buyurun.`);
     send(1, "stage.next", "Növbəti sizsiniz", "Sizdən əvvəl 1 komanda qalıb. Hazır olun.");
-    send(2, "stage.soon", "Sıranız yaxınlaşır", "Sizdən əvvəl 2 komanda qalıb. Səhnə arxasına yaxınlaşın.");
+    send(2, "stage.soon", "Sıranız yaxınlaşır", "Sizdən əvvəl 2 komanda var. Səhnəyə yaxınlaşın.");
     for (const t of list) this.rt.io.to(`team:${t.id}`).emit("team:changed");
   }
 
@@ -186,7 +186,7 @@ export class TeamService {
       if (this.trepo.activeFile(t.id, "presentation")) continue;
       if (this.trepo.sentSince(t.id, "deadline", dl - 2 * 3600_000)) continue;
       const min = Math.max(1, Math.round((dl - now) / 60000));
-      this.notifyTeam(t.id, "deadline", "Deadline yaxınlaşır", `Prezentasiya yükləməyə ${min} dəqiqə qalıb.`);
+      this.notifyTeam(t.id, "deadline", "Son tarix yaxınlaşır", `Prezentasiyanı yükləmək üçün ${min} dəqiqə qalıb.`);
     }
   }
 }

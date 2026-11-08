@@ -34,8 +34,8 @@ const eventBody = z.object({
   timer: z.enum(["pitch", "qa", "toggle", "pause", "resume", "reset", "stop"]).optional(),
   includeEntry: z.boolean().optional(),
   entryMax: z.number().min(1, "Giriş balının maksimumu ən azı 1 olmalıdır.").max(1000).optional(),
-  revealTop: z.number().int().min(0, "İntizarlı yer sayı 0–10 arası olmalıdır.").max(10, "İntizarlı yer sayı 0–10 arası olmalıdır.").optional(),
-  revealBatch: z.number().int().min(1, "Toplu açılış 1–10 arası olmalıdır.").max(10, "Toplu açılış 1–10 arası olmalıdır.").optional(),
+  revealTop: z.number().int().min(0, "İki addımla açılan yerlərin sayı 0–10 arası olmalıdır.").max(10, "İki addımla açılan yerlərin sayı 0–10 arası olmalıdır.").optional(),
+  revealBatch: z.number().int().min(1, "Birlikdə açılan yerlərin sayı 1–10 arası olmalıdır.").max(10, "Birlikdə açılan yerlərin sayı 1–10 arası olmalıdır.").optional(),
   revealHideScores: z.boolean().optional(),
   product: z.enum(PRODUCTS).optional(),
   timerAdd: z.number().int().min(-3600).max(3600).optional(),
@@ -372,7 +372,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         if (n) return reply.code(409).send({ error: `${n} qiymətdə bu meyar üzrə ${b.maxScore}-dən yüksək bal var. Maksimum azaldılsa, həmin qiymətlər nəticəyə düşməyəcək.`, scoreCount: n });
       }
       const c = repo.updateCriterion(cid, b);
-      if (!c) return reply.code(404).send({ error: "Kriteriya tapılmadı." });
+      if (!c) return reply.code(404).send({ error: "Meyar tapılmadı." });
       repo.audit(req.user!.id, "criterion.update", { id: cid, ...b });
       changed(rt);
       return c;
@@ -382,10 +382,10 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const cid = id(req.params, reply); if (!cid) return;
       const n = repo.scoreCount();
       if (n && req.query.force !== "1") {
-        return reply.code(409).send({ error: `Artıq ${n} qiymət var. Kriteriya silinsə, yekun ballar yenidən hesablanacaq.`, scoreCount: n });
+        return reply.code(409).send({ error: `Artıq ${n} qiymət var. Meyar silinsə, yekun ballar yenidən hesablanacaq.`, scoreCount: n });
       }
-      if (repo.criteria().length <= 1) return reply.code(400).send({ error: "Ən azı bir kriteriya qalmalıdır." });
-      if (!repo.deleteCriterion(cid)) return reply.code(404).send({ error: "Kriteriya tapılmadı." });
+      if (repo.criteria().length <= 1) return reply.code(400).send({ error: "Ən azı bir meyar qalmalıdır." });
+      if (!repo.deleteCriterion(cid)) return reply.code(404).send({ error: "Meyar tapılmadı." });
       repo.audit(req.user!.id, "criterion.delete", { id: cid });
       changed(rt);
       return { ok: true };

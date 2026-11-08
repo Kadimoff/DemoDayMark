@@ -233,7 +233,7 @@ describe("review and notifications", () => {
     const s3 = await socket(c.cookie, "team");
     const soon = waitFor<{ title: string }>(s3, "notice", n => n.title === "Sıranız yaxınlaşır");
     const ts = await socket(teamA.cookie, "team");
-    const invite = waitFor<{ title: string }>(ts, "notice", n => n.title === "Səhnəyə dəvət olunursunuz");
+    const invite = waitFor<{ title: string }>(ts, "notice", n => n.title === "Sıra sizdədir");
     await patch("/api/admin/event", admin).send({ currentTeamId: teamIds[0] });
     await soon; await invite;
   });

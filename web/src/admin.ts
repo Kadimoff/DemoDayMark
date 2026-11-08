@@ -198,12 +198,12 @@ function renderScreens() {
   if (!box || !S) return;
   const link = (href: string, label: string, hint: string, ic: string) => `<a class="scr" href="${href}" target="_blank" rel="noopener">${icon(ic)}<span><b>${label}</b><small>${hint}</small></span></a>`;
   box.innerHTML = `<div class="head"><div><h2 id="h-screens">${icon("expand")}Ekranlar</h2>
-      <p class="sub">Bütün ekranlar eyni server saatı ilə sinxron işləyir. Proyektorda idarə düymələri yoxdur — səhnəni buradan və ya telefon pultundan idarə edin.</p></div></div>
+      <p class="sub">Bütün ekranlar eyni saniyəni göstərir. Səhnə ekranında düymə yoxdur, onu buradan və ya pultdan idarə edirsiniz.</p></div></div>
     <div class="scrs">
-      ${link("/stage", "Proyektor (səhnə)", "Prezentasiya + taymer", "expand")}
-      ${link("/admin/pult", "Telefon pultu", "Taymer, slayd, nəticə", "timer")}
+      ${link("/stage", "Səhnə ekranı", "Prezentasiya və taymer", "expand")}
+      ${link("/admin/pult", "Pult", "Telefondan taymer, slayd, nəticə", "timer")}
       <button class="scr" type="button" id="speakerQr">${icon("qr")}<span><b>Danışan ekranı</b><small>Çıxış edənin telefonu (QR)</small></span></button>
-      ${link("/reveal", "Nəticə ekranı", "Açıqlama proyektoru", "medal")}
+      ${link("/reveal", "Nəticə ekranı", "Yerlər bir-bir açılır", "medal")}
     </div>`;
 }
 
@@ -255,8 +255,8 @@ function renderKpis(v?: TimerView) {
         <div class="ln" id="kpiTime">${cur ? "" : "Aşağıdan komanda seçin"}</div>
       </div>
       <div class="kpi">
-        <div class="top-r"><h3>Səsvermə irəliləyişi</h3><span class="pill ok">${pct}% tamam</span></div>
-        <div class="big mono">${done}<small>/ ${need} səs qəbul edildi</small></div>
+        <div class="top-r"><h3>İrəliləyiş</h3><span class="pill ok">${pct}% tamam</span></div>
+        <div class="big mono">${done}<small>/ ${need} qiymət göndərilib</small></div>
         <div class="ln">${teams.length} komanda × ${jurors.length} münsif</div>
         <div class="progress"><i style="width:${pct}%"></i></div>
       </div>
@@ -266,8 +266,8 @@ function renderKpis(v?: TimerView) {
         <div class="ln">${!jurors.length ? "Münsif yoxdur" : pending ? `<span class="warn-t">${pending} münsif QR gözləyir</span>` : onlineN === jurors.length ? "Hamı onlayndır" : `${jurors.length - onlineN} münsif oflayndır`}</div>
       </div>
       <div class="kpi">
-        <div class="top-r"><h3>Sistem vəziyyəti</h3><span class="pill ${S.event.locked ? "warn" : "ok"}">${S.event.locked ? "Bağlı" : "Açıq"}</span></div>
-        <div class="row between" style="flex-wrap:nowrap"><div class="big" style="font-size:18px">${S.event.locked ? "Səsvermə bağlıdır" : "Səsvermə açıqdır"}</div>
+        <div class="top-r"><h3>Qiymətləndirmə</h3></div>
+        <div class="row between" style="flex-wrap:nowrap"><div class="big" style="font-size:18px">${S.event.locked ? `<span class="warn-t">Bağlıdır</span>` : `<span class="ok-t">Açıqdır</span>`}</div>
           <button class="sw" role="switch" aria-checked="${S.event.locked}" id="lockSw" aria-label="Qiymətləndirməni bağla"></button></div>
         <div class="ln">Açıqlama: ${rv?.enabled ? `<span class="acc-t mono">${rv.step}/${rv.stepsTotal} addım</span>` : "gözləmədə"}</div>
       </div>`;
@@ -278,7 +278,7 @@ function renderKpis(v?: TimerView) {
   const view = v ?? null;
   if (kp) kp.textContent = !cur ? "—" : !view || view.kind === "idle" ? "Hazırlıq" : view.ready ? "Hazır" : `Faza: ${PHASE_LABEL[view.kind]}`;
   if (kt && cur) kt.innerHTML = !view || view.kind === "idle" ? `<span class="dot"></span>Taymer başlamayıb`
-    : `<span class="dot ${view.kind === "done" ? "off" : view.running ? "on" : "busy"}"></span>${PHASE_LABEL[view.kind]} · <span class="mono">${fmtClock(view.remaining)}</span> qalıb${!view.running && view.kind !== "done" ? " · fasilə" : ""}`;
+    : `<span class="dot ${view.kind === "done" ? "off" : view.running ? "on" : "busy"}"></span><span style="white-space:nowrap">${PHASE_LABEL[view.kind]} ·</span> <span class="mono">${fmtClock(view.remaining)}</span> qalıb${!view.running && view.kind !== "done" ? " · fasilə" : ""}`;
 }
 
 // ---------- stage + timer control ----------
@@ -293,7 +293,7 @@ function renderStage() {
   card.innerHTML = `
     <div class="bar1">
       <div class="row">
-        ${cur ? `<span class="pill live">Səhnədə aktivdir</span>` : `<span class="pill">Səhnə boşdur</span>`}
+        ${cur ? `<span class="pill live">Səhnədədir</span>` : `<span class="pill">Səhnə boşdur</span>`}
         ${cur && S.event.includeEntry ? `<span class="caps">Giriş balı: <span class="mono" style="color:var(--fg)">${cur.entryScore != null ? fmtE(cur.entryScore) : "—"} / ${fmtE(E)}</span></span>` : ""}
       </div>
       ${cur ? `<button class="btn sm" id="rename">${icon("pencil")}Adı dəyiş</button>` : ""}
@@ -302,9 +302,9 @@ function renderStage() {
       ${cur ? `<span class="caps acc-t">Komanda #${String(teams.indexOf(cur) + 1).padStart(2, "0")} · ${teams.indexOf(cur) + 1} / ${teams.length}</span>
         <div class="row between" style="align-items:flex-end;margin-top:4px">
           <div style="min-width:0;flex:1 1 280px"><div class="tname">${esc(cur.name)}</div><p class="tproj">${esc(cur.project || "Layihə adı yoxdur")}</p></div>
-          <div class="phases" id="phases"><span data-ph="pitch">Pitch (${fmtClock(S.stage.timer.pitchSec)})</span><span data-ph="qa">Sual-cavab (${fmtClock(S.stage.timer.qaSec)})</span><span data-ph="done">Vaxt bitdi</span></div>
+          <div class="phases" id="phases"><span data-ph="pitch">Təqdimat (${fmtClock(S.stage.timer.pitchSec)})</span><span data-ph="qa">Sual-cavab (${fmtClock(S.stage.timer.qaSec)})</span><span data-ph="done">Vaxt bitdi</span></div>
         </div>`
-      : `<div class="tname faint">Səhnədə komanda yoxdur</div><p class="tproj">Sağdakı siyahıdan komandanı seçin və ya “Növbəti” düyməsini basın.</p>`}
+      : `<div class="tname faint">Səhnədə komanda yoxdur</div><p class="tproj">Siyahıdan komandanı seçin və ya “Növbəti”ni basın.</p>`}
     </div>
     <div class="clockbox" id="clockbox"><div class="lbl">Qalan müddət</div>
       <b id="clockT" title="Toxunun və vaxtı yazın" tabindex="0" role="button" aria-label="Qalan vaxtı dəyiş">—</b>
@@ -339,10 +339,10 @@ function renderTimerCtl(v?: TimerView) {
       <button class="btn stackd" data-timer="reset" ${kind === "idle" ? "disabled" : ""}><span>${icon("reset")}Sıfırla</span><span class="kbd">[R] Hazır</span></button>
       <button class="btn stackd" id="nextTeam"><span>${icon("next")}Növbəti</span><span class="kbd">[N] Çıxar</span></button>`;
     $("#tmore").innerHTML = `
-      <button class="btn sm ${kind === "pitch" && running ? "on" : ""}" data-timer="pitch" ${hasTeam ? "" : "disabled"}>${icon("play")}Pitch-i başdan · ${fmtClock(t.pitchSec)}</button>
+      <button class="btn sm ${kind === "pitch" && running ? "on" : ""}" data-timer="pitch" ${hasTeam ? "" : "disabled"}>${icon("play")}Təqdimatı başdan · ${fmtClock(t.pitchSec)}</button>
       <button class="btn sm ghost" data-timer="stop" ${kind === "idle" ? "disabled" : ""}>${icon("stop")}Taymeri gizlət</button>
       <button class="btn sm ghost" id="clearStage" ${hasTeam ? "" : "disabled"}>Səhnəni boşalt</button>
-      <a class="btn sm ghost" href="/stage" target="_blank" rel="noopener">${icon("ext")}Proyektor</a>`;
+      <a class="btn sm ghost" href="/stage" target="_blank" rel="noopener">${icon("ext")}Səhnə ekranı</a>`;
   }
   const cb = document.getElementById("clockbox");
   if (!cb) return;
@@ -383,7 +383,7 @@ function renderOrder() {
       const st = t.id === cur ? `<span class="pill fill">Səhnədə</span>`
         : nJ && n >= nJ ? `<span class="pill ok">${icon("check")}${n}/${nJ}</span>`
         : ci >= 0 && i === ci + 1 ? `<span class="st acc-t">Növbədə</span>`
-        : n ? `<span class="st">${n}/${nJ} səs</span>` : `<span class="st">Gözləyir</span>`;
+        : n ? `<span class="st">${n}/${nJ} münsif</span>` : `<span class="st">Gözləyir</span>`;
       return `<button data-cur="${t.id}" data-id="${t.id}" aria-pressed="${t.id === cur}"><span class="grip" title="Sürüşdürüb yerini dəyiş" aria-hidden="true">⋮⋮</span><span class="ix">#${String(i + 1).padStart(2, "0")}</span>
         <span class="nm"><b>${esc(t.name)}</b>${t.project ? `<small>${esc(t.project)}</small>` : ""}</span>${st}</button>`;
     }).join("") || `<p class="note">Aktiv komanda yoxdur.</p>`}</div>
@@ -394,7 +394,7 @@ async function reorderTeams(activeIds: number[]) {
   const rest = S.teams.filter(t => !t.active).map(t => t.id);
   try {
     await api("/api/admin/teams/reorder", { method: "POST", body: { ids: [...activeIds, ...rest] } });
-    toast("Püşk ardıcıllığı yeniləndi");
+    toast("Çıxış sırası yeniləndi");
   } catch (e) { toast((e as ApiError).message, "err"); }
   await load();
 }
@@ -426,7 +426,7 @@ function renderFinal() {
   const manual = !!S.event.finalOrder?.length && list.some((x, i) => x.rank !== i + 1);
   card.innerHTML = `
     <div class="head">
-      <div><h2 id="h-final">${icon("medal")}Yekun sıra <span class="pill ${manual ? "hot" : ""}">${manual ? "Münsif qərarı" : "Ballara görə"}</span></h2>
+      <div><h2 id="h-final">${icon("medal")}Yekun sıra <span class="pill ${manual ? "hot" : ""}">${manual ? "Münsiflərin qərarı" : "Ballara görə"}</span></h2>
         <p class="sub">Münsiflər müzakirədən sonra qalibləri dəyişə bilər: komandanı <b>⋮⋮</b> tutub yeni yerinə sürüşdürün. Nəticə açıqlaması bu sıra ilə gedir, ballar dəyişmir.</p></div>
       <div class="row">
         <button class="btn sm" id="finalReset" ${S.event.finalOrder?.length ? "" : "disabled"}>${icon("reset")}Ballara görə sırala</button>
@@ -454,7 +454,7 @@ async function saveFinal(ids: number[] | null) {
 // ---------- jurors: live voting state ----------
 type JState = "sent" | "busy" | "wait" | "off" | "qr";
 const STATE_ORDER: Record<JState, number> = { wait: 0, busy: 1, off: 2, qr: 3, sent: 4 };
-const STATE_LABEL: Record<JState, string> = { wait: "Gözləyir", busy: "Doldurur", off: "Oflayn", qr: "QR gözləyir", sent: "Səs verdi" };
+const STATE_LABEL: Record<JState, string> = { wait: "Gözləyir", busy: "Doldurur", off: "Oflayn", qr: "QR gözləyir", sent: "Bal verdi" };
 
 function jurorRows() {
   if (!S) return [];
@@ -526,10 +526,10 @@ function renderJury() {
   card.innerHTML = `
     <div class="head">
       <div><h2 id="h-jury">${icon("users")}Münsiflərin izlənməsi ${cur ? `<span class="pill">#${String(teams.indexOf(cur) + 1).padStart(2, "0")} ${esc(cur.name)}</span>` : ""}</h2>
-        <p class="sub">${cur ? `Səhnədəki komanda üzrə kim səs verib, kim gözlənilir. Bal dəyərləri yalnız göndəriləndən sonra görünür.` : "Səhnədə komanda yoxdur. Kartlarda hər münsifin neçə komandaya səs verdiyi görünür."}</p></div>
+        <p class="sub">${cur ? `Səhnədəki komandaya kimin bal verdiyi, kimin hələ vermədiyi görünür. Ballar münsif göndərəndən sonra görünür.` : "Səhnədə komanda yoxdur. Kartlarda hər münsifin neçə komandaya bal verdiyi görünür."}</p></div>
       <div class="row">
-        <button class="btn sm primary" id="nudge" ${cur && waiting && !S.event.locked ? "" : "disabled"}>${icon("bell")}Xəbərdar et${cur && waiting ? ` (${waiting})` : ""}</button>
-        <button class="btn sm" id="lockBtn">${icon("lock")}${S.event.locked ? "Kilidi aç" : "Səsverməni bağla"}</button>
+        <button class="btn sm primary" id="nudge" ${cur && waiting && !S.event.locked ? "" : "disabled"}>${icon("bell")}Xatırlat${cur && waiting ? ` (${waiting})` : ""}</button>
+        <button class="btn sm" id="lockBtn">${icon("lock")}${S.event.locked ? "Qiymətləndirməni aç" : "Qiymətləndirməni bağla"}</button>
         <div class="seg" role="group" aria-label="Görünüş"><button data-jv="cards" aria-pressed="${juryView === "cards"}">${icon("users")}Kartlar</button><button data-jv="table" aria-pressed="${juryView === "table"}">${icon("sheet")}Cədvəl</button></div>
       </div>
     </div>
@@ -537,7 +537,7 @@ function renderJury() {
       ${chip("all", "Hamısı", rows.length)}
       ${cur ? chip("wait", "Gözləyir", count("wait"), "on") : ""}
       ${cur ? chip("busy", "Doldurur", count("busy"), "busy") : ""}
-      ${cur ? chip("sent", "Səs verdi", count("sent"), "on") : ""}
+      ${cur ? chip("sent", "Bal verdi", count("sent"), "on") : ""}
       ${chip("off", "Oflayn", count("off"), "off")}
       ${count("qr") ? chip("qr", "QR gözləyir", count("qr")) : ""}
     </div>
@@ -565,8 +565,8 @@ function renderReveal() {
   const done = rv.enabled && !n && rv.stepsTotal > 0;
   const susp = rv.public?.suspense;
   const top = rv.top;
-  const what = !rv.snapshotAt ? `İcazə verəndə qiymətləndirmə bağlanır və həmin anın reytinqi dondurulur. Daxil olan qiymətlər: <b class="mono">${rv.progress.done}/${rv.progress.need}</b>.`
-    : !rv.enabled ? "Proyektorda “Nəticələr tezliklə açıqlanacaq” yazısı görünür. İrəliləyiş saxlanılıb."
+  const what = !rv.snapshotAt ? `İcazə verəndə qiymətləndirmə bağlanır və həmin anın reytinqi qeydə alınır. Daxil olan qiymətlər: <b class="mono">${rv.progress.done}/${rv.progress.need}</b>.`
+    : !rv.enabled ? "Nəticə ekranında “Nəticələr tezliklə açıqlanacaq” yazısı görünür. Açılan yerlər yadda qalıb."
     : done ? "Bütün yerlər açıqlanıb. Qalib ekranda qalır."
     : n!.kind === "suspense" ? `Növbəti basış: ekranda böyük <b>${ordinal(n!.entry.rank)} yer</b> nömrəsi görünür. Ad hələ göndərilmir.`
     : n!.entries?.length > 1 ? `Növbəti basış: <b>${Math.max(...n!.entries.map(e => e.rank))}–${ordinal(Math.min(...n!.entries.map(e => e.rank)))} yerlər</b> birlikdə açılır (${n!.entries.length} komanda).`
@@ -586,7 +586,7 @@ function renderReveal() {
   card.innerHTML = `
     <div class="head">
       <div><h2 id="h-rv">${icon("medal")}Nəticə açıqlaması <span class="pill ${rv.enabled ? "ok" : ""}">${rv.enabled ? `Aktiv · ${rv.step}/${rv.stepsTotal} addım` : "Gözləmədə"}</span></h2>
-        <p class="sub">Proyektorda <a href="/reveal" target="_blank" rel="noopener">/reveal</a> açın. Yerlər sonuncudan birinciyə doğru, hər basışda bir addım açılır.</p></div>
+        <p class="sub">Nəticə ekranı üçün proyektorda <a href="/reveal" target="_blank" rel="noopener">/reveal</a> açın. Yerlər sonuncudan birinciyə doğru, hər basışda bir addım açılır.</p></div>
       <div class="allow"><span>Ekrana icazə</span><button class="sw" role="switch" aria-checked="${rv.enabled}" id="rvAllow" aria-label="Açıqlamaya icazə ver"></button></div>
     </div>
     ${rvConfirm === "enable" ? `<div class="confirm"><span>Qiymətləndirmə bağlanacaq və cari reytinq qeydə alınacaq. Daxil olan qiymətlər: <b class="mono">${rv.progress.done}/${rv.progress.need}</b>${rv.progress.done < rv.progress.need ? " (hamısı daxil olmayıb!)" : ""}${rv.unscored ? ` · ${rv.unscored} komanda qiymətləndirilməyib və açıqlamaya düşməyəcək.` : ""}</span>
@@ -613,7 +613,7 @@ function renderReveal() {
           <span class="row" style="gap:8px"><span class="caps">Balları göstər</span>
             <button class="sw" role="switch" id="rvScores" aria-checked="${!S.event.revealHideScores}" aria-label="Açıqlamada balları göstər"></button></span>
         </div>
-        ${rv.snapshotAt && S.event.revealBatch !== rv.batch ? `<p class="sub" style="margin:0">Toplu açılış (${S.event.revealBatch}) “Sıfırla”dan sonra tətbiq olunur.</p>` : ""}
+        ${rv.snapshotAt && S.event.revealBatch !== rv.batch ? `<p class="sub" style="margin:0">Birlikdə açılan yerlər (${S.event.revealBatch}) “Sıfırla”dan sonra tətbiq olunur.</p>` : ""}
         ${rv.snapshotAt && S.event.revealTop !== top ? `<p class="sub" style="margin:0">Yeni say (${S.event.revealTop}) “Sıfırla”dan sonra tətbiq olunur. İndiki açıqlama: ilk ${top} yer iki addımla.</p>` : ""}
       </div>
       <div class="rvstat">
@@ -639,7 +639,7 @@ function renderRanking() {
   card.innerHTML = rows.length ? `<ol class="lb">${rows.map(x => `
     <li data-flip="${x.team.id}" class="${x.rank ? (x.rank <= 3 ? "r" + x.rank : "") : "none"}">
       <span class="rk">${x.rank ?? "—"}</span>
-      <div class="nm"><b>${esc(x.team.name)} ${x.incomplete && x.n ? `<span class="pill warn" title="${S!.minJurorsForRank}-dən az münsif qiymətləndirib">eksik</span>` : ""}${includeEntry && x.entry == null ? `<span class="pill" title="Quraşdırmada giriş balını yazın">giriş balı yoxdur</span>` : ""}</b>
+      <div class="nm"><b>${esc(x.team.name)} ${x.incomplete && x.n ? `<span class="pill warn" title="${S!.minJurorsForRank}-dən az münsif qiymətləndirib">natamam</span>` : ""}${includeEntry && x.entry == null ? `<span class="pill" title="Quraşdırmada giriş balını yazın">giriş balı yoxdur</span>` : ""}</b>
         ${!includeEntry ? (x.team.project ? `<small>${esc(x.team.project)}</small>` : "")
           : `<small>${x.score == null ? `Giriş <span class="v">${fmt2(x.entry)}</span> · Demo Day —`
           : (p => `Giriş <span class="v">${p.entry}</span> + Demo Day <span class="v">${p.demo}</span>`)(displayParts(x.score, x.entry))}</small>`}
@@ -730,12 +730,12 @@ function renderDanger() {
   if (!S) return;
   const n = S.scores.length;
   $("#dangerCard").innerHTML = `
-    <div class="head"><h2 style="color:var(--danger-t)">${icon("warn")}Təhlükəli zona</h2><span class="dz-pill">Danger zone</span></div>
+    <div class="head"><h2 style="color:var(--danger-t)">${icon("warn")}Təhlükəli zona</h2><span class="dz-pill">Geri qaytarılmır</span></div>
     <p class="sub" style="margin:0">Bu əməliyyat canlı sessiyanın məlumatlarını geri dönməz şəkildə dəyişir. Silməzdən əvvəl yedək alın.</p>
     ${wipeToken
       ? `<div class="confirm"><span>Bütün <b>${wipeToken.count}</b> qiymət birdəfəlik silinəcək. Əminsiniz?</span>
           <button class="btn danger solid sm" id="wipeYes">Bəli, sil</button><button class="btn sm" id="wipeNo">Ləğv et</button></div>`
-      : `<button class="btn danger" id="wipe" ${n ? "" : "disabled"}>${icon("trash")}Bütün qiymətləri sıfırla / sil</button>`}`;
+      : `<button class="btn danger" id="wipe" ${n ? "" : "disabled"}>${icon("trash")}Bütün qiymətləri sil</button>`}`;
 }
 
 // ---------- interactions ----------
@@ -769,8 +769,8 @@ main.addEventListener("click", async e => {
   if (tb) { setTab(tb.dataset.tab as Tab); return; }
   if (t.closest("#heroQr") || t.closest("#addJuror")) { createJuror(); return; }
   if (t.closest("#speakerQr") || t.closest("#speakerQr2")) {
-    showLinkQr({ title: "Təqdimatçı taymeri", heading: "Pitch edən tələbə skan etsin",
-      path: orgPath("/speaker"), note: "Telefonda qalan vaxt böyük rəqəmlərlə görünür: proyektor taymeri ilə eyni saniyə, 30 saniyə qalanda və vaxt bitəndə titrəyir. Giriş tələb etmir, ballar görünmür." });
+    showLinkQr({ title: "Danışan ekranı", heading: "Çıxış edən telefonla skan etsin",
+      path: orgPath("/speaker"), note: "Telefonda qalan vaxt iri rəqəmlərlə görünür, səhnə ekranındakı taymerlə eyni saniyədir. 30 saniyə qalanda və vaxt bitəndə telefon titrəyir. Giriş lazım deyil, ballar görünmür." });
     return;
   }
   const qr = t.closest<HTMLElement>("[data-qr]");
@@ -782,7 +782,7 @@ main.addEventListener("click", async e => {
   if (t.closest("#nudge")) {
     try {
       const r = await api<{ nudged: number }>("/api/admin/nudge", { method: "POST", body: {} });
-      toast(r.nudged ? `Xəbərdar edildi: ${r.nudged} münsif` : "Hamı artıq səs verib");
+      toast(r.nudged ? `${r.nudged} münsifə xatırlatma getdi` : "Hamı artıq bal verib");
     } catch (ex) { toast((ex as ApiError).message, "err"); }
     return;
   }
