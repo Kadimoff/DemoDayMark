@@ -66,7 +66,7 @@ function applyScore(repo: Repo, jurorId: number, teamIdRaw: unknown, raw: unknow
   for (const c of criteria) {
     const v = body.values[c.key];
     if (v == null) return refuse(400, `“${c.name}” meyarına bal verilməyib.`, team.id);
-    if (v > c.maxScore) return refuse(400, `“${c.name}” üçün bal ${MIN_POINTS}–${c.maxScore} arası olmalıdır.`, team.id);
+    if (v > c.maxScore) return refuse(400, `“${c.name}” üçün bal ${MIN_POINTS} ilə ${c.maxScore} arası olmalıdır.`, team.id);
     values[c.key] = v;
   }
   // Only chips from the current list; kept in the list's order.

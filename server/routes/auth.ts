@@ -52,8 +52,8 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
     if (!inv) return { inv: null, user: null, error: "QR kod tanınmadı. Koordinatordan yenisini istəyin." };
     const user = repo.userById(inv.user_id);
     if (!user || user.role !== "juror") return { inv, user: null, error: "Bu münsif hesabı silinib." };
-    if (!orgActive(repo, user.org_id)) return { inv, user: null, error: "Bu tədbirin təşkilatı deaktiv edilib." };
-    if (user.event_id !== activeEventOf(repo, user.org_id)) return { inv, user: null, error: "Bu tədbir artıq bitib (arxivdədir)." };
+    if (!orgActive(repo, user.org_id)) return { inv, user: null, error: "Bu proqramın təşkilatı deaktiv edilib." };
+    if (user.event_id !== activeEventOf(repo, user.org_id)) return { inv, user: null, error: "Bu proqram artıq bitib (arxivdədir)." };
     if (inv.used_at) return { inv, user, error: "Bu QR kod artıq istifadə olunub. Koordinatordan yenisini istəyin." };
     if (inv.revoked_at) return { inv, user, error: "Bu QR kodun yerinə yenisi yaradılıb. Koordinatordan sonuncu QR-ı istəyin." };
     if (inv.expires_at <= Date.now()) return { inv, user, error: "Bu QR kodun vaxtı bitib. Koordinatordan yenisini istəyin." };

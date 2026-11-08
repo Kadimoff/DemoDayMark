@@ -120,7 +120,7 @@ export class TeamService {
     const pages = st.show.pres?.pages ?? null;
     const no = (reason: string) => ({ allowed: false, reason, slide: ev.stageSlide, pages });
     if (ev.currentTeamId !== teamId) return no("Növbəniz çatıb səhnəyə çıxanda slaydları buradan çevirə biləcəksiniz.");
-    if (ev.stageScene !== "team") return no("İndi səhnə ekranında tədbirin öz prezentasiyası göstərilir.");
+    if (ev.stageScene !== "team") return no("İndi səhnə ekranında proqramın öz prezentasiyası göstərilir.");
     if (!ev.teamSlideControl) return no("Slaydları koordinator çevirir.");
     if (!st.show.pres) return no(st.show.presPending ? "Prezentasiyanız hələ hazırlanır (PDF-ə çevrilir)." : "Səhnədə prezentasiyanız yoxdur.");
     if (ev.stageMode !== "auto") return no("İndi səhnə ekranında taymer və ya sayt göstərilir.");

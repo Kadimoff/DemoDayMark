@@ -69,7 +69,7 @@ export function noticeBell(slot: HTMLElement, paths: { list: string; read: strin
     push(x) {
       list = [x, ...list.filter(y => y.id !== x.id)].slice(0, 60);
       render();
-      toast(x.body ? `${x.title} — ${x.body}` : x.title);
+      toast(x.body ? `${x.title}: ${x.body}` : x.title);
       chime();
       browserNotify(x.title, x.body);
       btn.classList.remove("ring"); void btn.offsetWidth; btn.classList.add("ring");

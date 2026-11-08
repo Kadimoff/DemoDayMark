@@ -268,7 +268,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     if (!sc) return reply.code(404).send({ error: "Təşkilat tapılmadı." });
     const ev = sc.repo.getEvent();
     const f = ev.stageScene === "event" && ev.stageEventFile != null ? sc.trepo.eventFile(ev.stageEventFile) : null;
-    if (!f || (f.ext !== "pdf" && !f.pdf_stored)) return reply.code(404).send({ error: "Səhnədə tədbir prezentasiyası yoxdur." });
+    if (!f || (f.ext !== "pdf" && !f.pdf_stored)) return reply.code(404).send({ error: "Səhnədə proqramın prezentasiyası yoxdur." });
     return sendStored(ctx, reply, f, { asPdf: true });
   });
   app.get("/api/stage/logo", stageFile("logo"));

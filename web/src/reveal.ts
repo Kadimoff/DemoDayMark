@@ -184,7 +184,7 @@ function buildBoard(total: number) {
   const rest = Array.from({ length: Math.max(0, total - 3) }, (_, k) => k + 3);
   const cols = wallCols(rest.length), rows = Math.max(1, Math.ceil(rest.length / cols));
   main.innerHTML = `<div class="rv-board${rest.length ? "" : " solo"}${cols > 1 ? " wall" : ""}" style="--cols:${cols};--rows:${rows}">
-    ${rest.length ? `<section class="rv-list" aria-label="${ordinal(4)}–${ordinal(total)} yerlər">${rest.map(i => `
+    ${rest.length ? `<section class="rv-list" aria-label="${ordinal(4)}-${ordinal(total)} yerlər">${rest.map(i => `
       <div class="rv-row" data-slot="${i}"><span class="rk">${i + 1}</span>
         <div class="nm"><b>?</b><small></small><div class="bar"><i></i></div></div><span class="sc mono"></span></div>`).join("")}
     </section>` : ""}

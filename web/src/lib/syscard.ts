@@ -12,7 +12,7 @@ export interface SystemStatus {
 }
 
 const WARN: Record<string, string> = {
-  "db-integrity": "Baza yoxlamasında xəta var — runbook-a baxın",
+  "db-integrity": "Baza yoxlamasında xəta var. Runbook-a baxın.",
   "backup-failed": "Son yedək alınmadı",
   "backup-old": "Yedək köhnədir",
   "event-loop-lag": "Server gecikir",

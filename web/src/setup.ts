@@ -105,9 +105,9 @@ function eventSection(ev: EventState) {
     <div class="row between"><h3 id="h-ev">${icon("medal")}Proqram</h3><span class="saved" id="evSaved"></span></div>
     <form id="evForm" class="stack" novalidate>
       <div class="row" style="align-items:flex-start">
-        <div style="flex:2 1 320px"><label class="f" for="evName">Tədbirin adı (brend / prefiks) və növü</label>
+        <div style="flex:2 1 320px"><label class="f" for="evName">Proqramın adı (brend) və növü</label>
           <div class="row brandrow" style="flex-wrap:nowrap;gap:8px"><input type="text" id="evName" value="${esc(ev.name)}" maxlength="40" placeholder="məs. Ignite" autocomplete="off">
-          <select id="evProduct" aria-label="Tədbir növü" style="width:auto;flex:0 0 auto">${PRODUCTS.map(p => `<option${p === ev.product ? " selected" : ""}>${p}</option>`).join("")}</select>
+          <select id="evProduct" aria-label="Proqram növü" style="width:auto;flex:0 0 auto">${PRODUCTS.map(p => `<option${p === ev.product ? " selected" : ""}>${p}</option>`).join("")}</select>
           <span class="brandprev" aria-live="polite"><span class="flame" style="width:9px;height:9px;border-radius:50%;background:var(--accent)"></span><b id="evPrev">${brandHtml(brandName(ev.name, ev.product))}</b></span></div></div>
         <div style="flex:1 1 140px"><label class="f" for="evDate">Tarix</label><input type="text" id="evDate" value="${esc(ev.date)}" maxlength="40" placeholder="29.10.2026"></div>
       </div>
@@ -164,7 +164,7 @@ function teamsSection(ev: EventState) {
       const badges = [
         t.active ? "" : `<span class="pill">Deaktiv</span>`,
         m?.approval === "pending" ? `<span class="pill warn">Təsdiq gözləyir</span>` : "",
-        p ? `<span class="pill ok" title="${esc(p.name)}">${icon("doc")}${p.pages ? `${p.pages} sl.` : "PDF"}</span>` : `<span class="pill faint-p" title="Prezentasiya yoxdur">${icon("doc")}—</span>`,
+        p ? `<span class="pill ok" title="${esc(p.name)}">${icon("doc")}${p.pages ? `${p.pages} sl.` : "PDF"}</span>` : `<span class="pill faint-p" title="Prezentasiya yoxdur">${icon("doc")}-</span>`,
         m?.link ? `<span class="pill" title="Giriş linki var">${icon("qr")}</span>` : "",
         scoreCount(t.id) ? `<span class="pill" title="Qiymətlər">${scoreCount(t.id)} bal</span>` : "",
       ].join("");
@@ -186,7 +186,7 @@ function teamsSection(ev: EventState) {
             <button type="button" class="btn sm ghost danger" data-del aria-label="Komanda ${i + 1}-i sil">${icon("trash")}Sil</button>
           </div>
           <div class="acc-mat">
-            <div><span class="f">Prezentasiya</span>${m ? presLine(m) : `<span class="faint">—</span>`}
+            <div><span class="f">Prezentasiya</span>${m ? presLine(m) : `<span class="faint">-</span>`}
               ${p?.viewable ? `<button class="btn sm" type="button" data-view="${t.id}" style="margin-top:6px">${icon("expand")}Bax</button>` : ""}</div>
             <div><span class="f">Sayt / video</span>${m?.siteUrl ? `<a href="${esc(m.siteUrl)}" target="_blank" rel="noopener noreferrer">${esc(m.siteUrl)}</a>` : `<span class="faint">Sayt yoxdur</span>`}
               ${m?.videoUrl ? `<br><a href="${esc(m.videoUrl)}" target="_blank" rel="noopener noreferrer">Demo video</a>` : ""}</div>
@@ -203,7 +203,7 @@ function teamsSection(ev: EventState) {
 
 function eventFilesSection() {
   return `<section class="card pad stack" aria-labelledby="h-evfiles">
-    <div class="row between"><h3 id="h-evfiles">${icon("doc")}Tədbirin prezentasiyası</h3><span class="saved" id="efSaved"></span></div>
+    <div class="row between"><h3 id="h-evfiles">${icon("doc")}Proqramın prezentasiyası</h3><span class="saved" id="efSaved"></span></div>
     <p class="sub" style="margin:0">Açılış, fasilə, sponsorlar və qaydalar üçün, komandaların prezentasiyasından ayrıdır. Canlı paneldə (Səhnə) və ya pultda “Ekrana çıxar” ilə göstərilir;
       slaydları ← →, pult və ya kliker çevirir. PDF${EFM.soffice ? " və ya PPTX (avtomatik PDF-ə çevrilir)" : ""}, maks. ${EFM.maxUploadMb} MB.</p>
     ${EF.length ? `<div class="efl">${EF.map((f, i) => `<div class="efl-row" data-ef="${f.id}">
@@ -232,7 +232,7 @@ function render() {
   main.innerHTML = `
     <div class="stack">
       <div><h1>Quraşdırma</h1><p class="sub">Hər sahə xanadan çıxanda yadda saxlanılır və bütün ekranlarda dərhal yenilənir.</p>
-        <nav class="jump">${[["h-ev", "Tədbir"], ["h-teams", "Komandalar"], ["h-dl", "Son tarix"], ["h-st", "Səhnə taymeri"], ["h-evfiles", "Tədbirin prezentasiyası"], ["h-jur", "Münsiflər"], ["h-cr", "Meyarlar"], ["h-sc", "Nəticə"], ["h-tacc", "Komanda girişi"]].map(([id, l]) => `<a href="#${id}">${l}</a>`).join("")}</nav></div>
+        <nav class="jump">${[["h-ev", "Proqram"], ["h-teams", "Komandalar"], ["h-dl", "Son tarix"], ["h-st", "Səhnə taymeri"], ["h-evfiles", "Proqramın prezentasiyası"], ["h-jur", "Münsiflər"], ["h-cr", "Meyarlar"], ["h-sc", "Nəticə"], ["h-tacc", "Komanda girişi"]].map(([id, l]) => `<a href="#${id}">${l}</a>`).join("")}</nav></div>
       ${eventSection(ev)}
       ${teamsSection(ev)}
       ${deadlineSection()}
@@ -379,13 +379,13 @@ main.addEventListener("change", async e => {
   const el = e.target as HTMLInputElement;
   if (el.id === "scTop") {
     const v = Number(el.value);
-    if (!Number.isInteger(v) || v < 0 || v > 10) { toast("İki addımla açılan yerlərin sayı 0–10 arası tam ədəd olmalıdır.", "err"); el.value = String(S!.event.revealTop); return; }
+    if (!Number.isInteger(v) || v < 0 || v > 10) { toast("İki addımla açılan yerlərin sayı 0 ilə 10 arası tam ədəd olmalıdır.", "err"); el.value = String(S!.event.revealTop); return; }
     await patchScoring({ revealTop: v });
     return;
   }
   if (el.id === "scEntryMax") {
     const v = Number(el.value);
-    if (!(v >= 1 && v <= 1000)) { toast("Giriş balının maksimumu 1–1000 arası olmalıdır.", "err"); el.value = String(S!.event.entryMax); return; }
+    if (!(v >= 1 && v <= 1000)) { toast("Giriş balının maksimumu 1 ilə 1000 arası olmalıdır.", "err"); el.value = String(S!.event.entryMax); return; }
     await patchScoring({ entryMax: v });
     return;
   }
@@ -398,7 +398,7 @@ main.addEventListener("change", async e => {
     const cur = S!.criteria.find(c => c.id === r.id)!.maxScore;
     const n = Number(el.value);
     if (el.value.trim() === "" || el.validity.badInput || !Number.isInteger(n) || n < 1 || n > 100) {
-      toast("Maksimum bal 1–100 arası tam ədəd olmalıdır.", "err");
+      toast("Maksimum bal 1 ilə 100 arası tam ədəd olmalıdır.", "err");
       el.value = String(cur);
       return;
     }
@@ -410,7 +410,7 @@ main.addEventListener("change", async e => {
     else {
       const n = Number(String(v).replace(",", "."));
       if (!Number.isFinite(n) || n < 0 || n > S!.event.entryMax) {
-        toast(`Giriş balı 0–${S!.event.entryMax} arası olmalıdır.`, "err");
+        toast(`Giriş balı 0 ilə ${S!.event.entryMax} arası olmalıdır.`, "err");
         el.value = entryValue(S!.teams.find(t => t.id === r.id)?.entryScore ?? null);
         return;
       }
@@ -563,7 +563,7 @@ main.addEventListener("click", async e => {
   const xc = t.closest<HTMLElement>("[data-ext-clear]");
   if (xc) { await saveExtension(Number(xc.dataset.extClear), null); return; }
   const efv = t.closest<HTMLButtonElement>("[data-ef-view]");
-  if (efv && !efv.disabled) { const f = EF.find(x => x.id === Number(efv.dataset.efView)); if (f) openViewer({ url: f.url, title: f.title, subtitle: "Tədbirin prezentasiyası" }); return; }
+  if (efv && !efv.disabled) { const f = EF.find(x => x.id === Number(efv.dataset.efView)); if (f) openViewer({ url: f.url, title: f.title, subtitle: "Proqramın prezentasiyası" }); return; }
   const efm = t.closest<HTMLButtonElement>("[data-ef-move]");
   if (efm && !efm.disabled) {
     const [id, d] = efm.dataset.efMove!.split(":").map(Number);
@@ -622,7 +622,7 @@ function uploadEventFile(file: File) {
     efBusy = false;
     let data: { error?: string; files?: EventFile[] } = {};
     try { data = JSON.parse(xhr.responseText); } catch { /* not json */ }
-    if (xhr.status >= 200 && xhr.status < 300 && data.files) { EF = data.files; toast("Tədbirin prezentasiyası yükləndi"); render(); }
+    if (xhr.status >= 200 && xhr.status < 300 && data.files) { EF = data.files; toast("Proqramın prezentasiyası yükləndi"); render(); }
     else { toast(data.error ?? `Yükləmə alınmadı (${xhr.status})`, "err"); if (box) box.hidden = true; }
   };
   xhr.onerror = () => { efBusy = false; toast("Bağlantı kəsildi. Yenidən cəhd edin.", "err"); if (box) box.hidden = true; };

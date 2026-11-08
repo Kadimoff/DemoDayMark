@@ -37,8 +37,8 @@ const eventBody = z.object({
   timer: z.enum(["pitch", "qa", "toggle", "pause", "resume", "reset", "stop"]).optional(),
   includeEntry: z.boolean().optional(),
   entryMax: z.number().min(1, "Giriş balının maksimumu ən azı 1 olmalıdır.").max(1000).optional(),
-  revealTop: z.number().int().min(0, "İki addımla açılan yerlərin sayı 0–10 arası olmalıdır.").max(10, "İki addımla açılan yerlərin sayı 0–10 arası olmalıdır.").optional(),
-  revealBatch: z.number().int().min(1, "Birlikdə açılan yerlərin sayı 1–10 arası olmalıdır.").max(10, "Birlikdə açılan yerlərin sayı 1–10 arası olmalıdır.").optional(),
+  revealTop: z.number().int().min(0, "İki addımla açılan yerlərin sayı 0 ilə 10 arası olmalıdır.").max(10, "İki addımla açılan yerlərin sayı 0 ilə 10 arası olmalıdır.").optional(),
+  revealBatch: z.number().int().min(1, "Birlikdə açılan yerlərin sayı 1 ilə 10 arası olmalıdır.").max(10, "Birlikdə açılan yerlərin sayı 1 ilə 10 arası olmalıdır.").optional(),
   revealHideScores: z.boolean().optional(),
   product: z.enum(PRODUCTS).optional(),
   timerAdd: z.number().int().min(-3600).max(3600).optional(),
@@ -214,7 +214,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const b = parseBody(teamBody, req.body, reply);
       if (!b) return;
       if (b.entryScore != null && b.entryScore > repo.getEvent().entryMax) {
-        return reply.code(400).send({ error: `Giriş balı 0–${repo.getEvent().entryMax} arası olmalıdır.` });
+        return reply.code(400).send({ error: `Giriş balı 0 ilə ${repo.getEvent().entryMax} arası olmalıdır.` });
       }
       let t = repo.addTeam(b.name, b.project);
       if (b.entryScore != null) t = repo.updateTeam(t.id, { entryScore: b.entryScore })!;
@@ -227,7 +227,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const tid = id(req.params, reply); if (!tid) return;
       const b = parseBody(teamPatch, req.body, reply); if (!b) return;
       if (b.entryScore != null && b.entryScore > repo.getEvent().entryMax) {
-        return reply.code(400).send({ error: `Giriş balı 0–${repo.getEvent().entryMax} arası olmalıdır.` });
+        return reply.code(400).send({ error: `Giriş balı 0 ilə ${repo.getEvent().entryMax} arası olmalıdır.` });
       }
       const t = repo.updateTeam(tid, b);
       if (!t) return reply.code(404).send({ error: "Komanda tapılmadı." });

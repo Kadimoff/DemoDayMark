@@ -65,7 +65,7 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
         return `
         <div class="tl-row ${t.active ? "" : "off"} ${onStage ? "on" : ""} ${t.review === "submitted" ? "fresh" : ""}" data-mat="${t.teamId}">
           <span class="tl-ix mono">${t.orderIndex + 1}</span>
-          <div class="tl-name"><b>${esc(t.name)}</b><small>${esc(t.project || "—")}</small></div>
+          <div class="tl-name"><b>${esc(t.name)}</b><small>${esc(t.project)}</small></div>
           <div class="tl-st">${reviewPill(t)}${p ? `<small>${p.ext.toUpperCase()}${p.pages ? ` · ${p.pages} slayd` : ""}${p.ext === "pptx" && p.conv !== "done" ? (p.conv === "running" || p.conv === "pending" ? " · çevrilir…" : " · PDF lazımdır") : ""}</small>` : ""}</div>
           <div class="tl-act">
             <button class="btn sm ${p?.viewable ? "primary" : ""}" data-mat-view="${t.teamId}" ${p?.viewable ? "" : "disabled"} title="${p ? esc(p.name) : "Prezentasiya yoxdur"}">${icon("expand")}Bax</button>
@@ -173,7 +173,7 @@ export function showCtlHtml(s: StagePayload | null, compact = false) {
   const pages = ev ? sh.eventPres?.pages ?? 0 : sh.pres?.pages ?? 0;
   const slide = ev ? sh.eventSlide : sh.slide;
   const deck = ev ? !!sh.eventPres : !!sh.pres;
-  const status = ev ? `Tədbirin prezentasiyası: ${sh.eventPres?.title ?? "—"}`
+  const status = ev ? `Proqramın prezentasiyası: ${sh.eventPres?.title ?? ""}`
     : !has ? "Səhnədə komanda yoxdur"
     : sh.pres ? `Prezentasiya: PDF${pages ? ` · ${pages} slayd` : ""}`
     : sh.presPending ? (sh.presPending === "running" || sh.presPending === "pending" ? "PPTX PDF-ə çevrilir…" : "PPTX açılmadı, PDF lazımdır")
@@ -189,7 +189,7 @@ export function showCtlHtml(s: StagePayload | null, compact = false) {
       </div>`}
       <div class="stepper slides" role="group" aria-label="Slayd">
         <button type="button" data-slide="-1" ${deck && slide > 1 ? "" : "disabled"} aria-label="Əvvəlki slayd">${icon("back")}</button>
-        <span class="mono">${deck ? `${slide} / ${pages || "?"}` : "—"}</span>
+        <span class="mono">${deck ? `${slide} / ${pages || "?"}` : "-"}</span>
         <button type="button" data-slide="1" ${deck && (!pages || slide < pages) ? "" : "disabled"} aria-label="Növbəti slayd">${icon("next")}</button>
       </div>
       ${ev ? "" : `<button class="btn sm" type="button" data-show-intro ${has ? "" : "disabled"}>${icon("sparkle")}Anons</button>`}
@@ -202,7 +202,7 @@ export function eventCtlHtml(s: StagePayload | null, files: EventFile[], compact
   if (!s) return "";
   const sh = s.show;
   const on = sh.scene === "event" ? sh.eventPres?.fileId ?? null : null;
-  return `<div class="head"><div><h2 id="h-scene">${icon("doc")}Tədbirin prezentasiyası</h2>
+  return `<div class="head"><div><h2 id="h-scene">${icon("doc")}Proqramın prezentasiyası</h2>
       ${compact ? "" : `<p class="sub">Açılış, fasilə, sponsorlar və qaydalar üçün. Səhnə ekranında komandasız göstərilir, slaydları ← →, pult və ya klikerlə çevirirsiniz.</p>`}</div>
       ${compact ? "" : `<a class="btn sm ghost" href="/admin/setup#h-evfiles">${icon("plus")}Yüklə / idarə et</a>`}</div>
     ${files.length ? `<div class="evf">${files.map(f => `<div class="evf-row ${on === f.id ? "on" : ""}">
@@ -210,10 +210,10 @@ export function eventCtlHtml(s: StagePayload | null, files: EventFile[], compact
         ${compact ? "" : `<button class="btn sm ghost" type="button" data-ev-preview="${f.id}" ${f.viewable ? "" : "disabled"}>${icon("expand")}Bax</button>`}
         ${on === f.id ? `<span class="pill live">Ekranda</span>` : `<button class="btn sm ${on ? "" : "primary"}" type="button" data-ev-show="${f.id}" ${f.viewable ? "" : "disabled"}>${icon("play")}Ekrana çıxar</button>`}
       </div>`).join("")}</div>
-      <div class="toggle" style="border-top:0;padding:0"><div><b>Taymer dairəsini göstər</b><small>Tədbirin prezentasiyası üstündə taymer (adətən lazım olmur)</small></div>
+      <div class="toggle" style="border-top:0;padding:0"><div><b>Taymer dairəsini göstər</b><small>Proqramın prezentasiyası üstündə taymer (adətən lazım olmur)</small></div>
         <button type="button" class="sw" role="switch" data-ev-bubble aria-checked="${sh.bubble}" aria-label="Taymer dairəsini göstər"></button></div>
       ${on ? `<div class="row"><button class="btn sm" type="button" data-ev-back>${icon("back")}Komandaya qayıt</button></div>` : ""}`
-    : `<p class="note">Hələ tədbir prezentasiyası yoxdur. <a href="/admin/setup#h-evfiles">Quraşdırma → Tədbirin prezentasiyası</a> bölməsindən PDF / PPTX yükləyin.</p>`}`;
+    : `<p class="note">Hələ proqramın prezentasiyası yoxdur. <a href="/admin/setup#h-evfiles">Quraşdırma → Proqramın prezentasiyası</a> bölməsindən PDF / PPTX yükləyin.</p>`}`;
 }
 
 /** Click handling for showCtlHtml / eventCtlHtml; `get` returns the current stage, `set` applies the server's answer. */
@@ -237,7 +237,7 @@ export function bindShowCtl(root: HTMLElement, get: () => StagePayload | null, s
       const r = await api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body });
       set(r.stage);
       if (intro) toast("Anons səhnə ekranında göstərilir");
-      if (evShow) toast("Tədbirin prezentasiyası səhnə ekranında");
+      if (evShow) toast("Proqramın prezentasiyası səhnə ekranında");
       if (evBack) toast("Səhnə ekranı komandaya qayıtdı");
     } catch (ex) { toast((ex as ApiError).message, "err"); }
   });

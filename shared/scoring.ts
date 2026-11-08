@@ -12,7 +12,7 @@ export const round2 = (n: number) => Math.round(n * 100) / 100;
 export const demoMax = (criteria: Criterion[]) => criteria.reduce((a, c) => a + c.maxScore, 0);
 
 /** Scores are shown with the same 2 decimals the ranking uses. */
-export const fmt2 = (n: number | null | undefined) => (n == null ? "—" : round2(n).toFixed(2));
+export const fmt2 = (n: number | null | undefined) => (n == null ? "-" : round2(n).toFixed(2));
 
 /**
  * Entry + Demo Day as displayed next to a final score: the Demo Day part is derived from the rounded total

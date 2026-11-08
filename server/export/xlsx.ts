@@ -83,7 +83,7 @@ export async function buildXlsx(repo: Repo, cfg: Config): Promise<Buffer> {
     : `Yekun bal = Demo Day balı (giriş balı yekuna daxil edilmir).`]);
   s4.addRow(["", `Bərabərlikdə əvvəlcə Demo Day balı, sonra meyarların orta balı həlledicidir (${results.tieBreakKeys.map(k => criteria.find(c => c.key === k)?.name).join(" → ")}).`]);
   s4.addRow([]);
-  s4.addRow(["Tədbir", `${ev.displayName} · ${ev.date}`]);
+  s4.addRow(["Proqram", `${ev.displayName} · ${ev.date}`]);
   styleSheet(s4, 1, [28, 90, 14]);
   s4.getColumn(2).alignment = { wrapText: true, vertical: "top" };
 

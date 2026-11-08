@@ -14,7 +14,7 @@ import { importArchive, ImportError, importLedger, scanBackups } from "../archiv
 import { onlineBackup } from "../backups.js";
 
 const slug = z.string().trim().toLowerCase()
-  .refine(v => SLUG_RE.test(v), "Qısa ad (slug) yalnız kiçik latın hərfləri, rəqəmlər və tire ola bilər (2–32 simvol).")
+  .refine(v => SLUG_RE.test(v), "Qısa ad (slug) yalnız kiçik latın hərfləri, rəqəmlər və tire ola bilər (2 ilə 32 simvol arası).")
   .refine(v => !RESERVED_SLUGS.has(v), "Bu qısa ad sistem üçün ayrılıb, başqasını seçin.");
 const orgName = z.string().trim().min(2, "Təşkilatın adını yazın.").max(40, "Ad 40 simvoldan uzun ola bilməz.");
 const username = z.string().trim().min(2, "İstifadəçi adı ən azı 2 simvol olmalıdır.").max(64)

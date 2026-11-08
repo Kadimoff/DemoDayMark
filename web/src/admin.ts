@@ -245,7 +245,7 @@ function renderKpis(v?: TimerView) {
     box.dataset.sig = sig;
     box.innerHTML = `
       <div class="kpi">
-        <div class="top-r"><h3>Cari səhnədə</h3><span class="pill hot" id="kpiPhase">—</span></div>
+        <div class="top-r"><h3>Cari səhnədə</h3><span class="pill hot" id="kpiPhase">-</span></div>
         <div class="big">${cur ? `<span class="mono acc-t">#${String(teams.indexOf(cur) + 1).padStart(2, "0")}</span> ${esc(cur.name)}` : `<span class="faint">Səhnə boşdur</span>`}</div>
         <div class="ln" id="kpiTime">${cur ? "" : "Aşağıdan komanda seçin"}</div>
       </div>
@@ -271,7 +271,7 @@ function renderKpis(v?: TimerView) {
   const kp = document.getElementById("kpiPhase");
   const kt = document.getElementById("kpiTime");
   const view = v ?? null;
-  if (kp) kp.textContent = !cur ? "—" : !view || view.kind === "idle" ? "Hazırlıq" : view.ready ? "Hazır" : `Faza: ${PHASE_LABEL[view.kind]}`;
+  if (kp) kp.textContent = !cur ? "-" : !view || view.kind === "idle" ? "Hazırlıq" : view.ready ? "Hazır" : `Faza: ${PHASE_LABEL[view.kind]}`;
   if (kt && cur) kt.innerHTML = !view || view.kind === "idle" ? `<span class="dot"></span>Taymer başlamayıb`
     : `<span class="dot ${view.kind === "done" ? "off" : view.running ? "on" : "busy"}"></span><span style="white-space:nowrap">${PHASE_LABEL[view.kind]} ·</span> <span class="mono">${fmtClock(view.remaining)}</span> qalıb${!view.running && view.kind !== "done" ? " · fasilə" : ""}`;
 }
@@ -289,7 +289,7 @@ function renderStage() {
     <div class="bar1">
       <div class="row">
         ${cur ? `<span class="pill live">Səhnədədir</span>` : `<span class="pill">Səhnə boşdur</span>`}
-        ${cur && S.event.includeEntry ? `<span class="caps">Giriş balı: <span class="mono" style="color:var(--fg)">${cur.entryScore != null ? fmtE(cur.entryScore) : "—"} / ${fmtE(E)}</span></span>` : ""}
+        ${cur && S.event.includeEntry ? `<span class="caps">Giriş balı: <span class="mono" style="color:var(--fg)">${cur.entryScore != null ? fmtE(cur.entryScore) : "-"} / ${fmtE(E)}</span></span>` : ""}
       </div>
       ${cur ? `<button class="btn sm" id="rename">${icon("pencil")}Adı dəyiş</button>` : ""}
     </div>
@@ -302,7 +302,7 @@ function renderStage() {
       : `<div class="tname faint">Səhnədə komanda yoxdur</div><p class="tproj">Siyahıdan komandanı seçin və ya “Növbəti”ni basın.</p>`}
     </div>
     <div class="clockbox" id="clockbox"><div class="lbl">Qalan müddət</div>
-      <b id="clockT" title="Toxunun və vaxtı yazın" tabindex="0" role="button" aria-label="Qalan vaxtı dəyiş">—</b>
+      <b id="clockT" title="Toxunun və vaxtı yazın" tabindex="0" role="button" aria-label="Qalan vaxtı dəyiş">--:--</b>
       <form id="clockForm" hidden><input id="clockIn" inputmode="numeric" autocomplete="off" aria-label="Qalan vaxt (dəq:san)"><button class="btn sm primary" type="submit">Tətbiq et</button><button class="btn sm" type="button" id="clockCancel">Ləğv</button></form>
       <div class="sync"><span id="clockSrv"></span><span class="live-t">· Canlı geri sayım</span></div>
       <div class="adj" id="adj" role="group" aria-label="Vaxtı düzəlt">
@@ -430,7 +430,7 @@ function renderFinal() {
     ${list.length ? `<div class="final">${list.map((x, i) => {
       const d = (x.rank ?? i + 1) - (i + 1);
       return `<div class="fin" data-id="${x.team.id}"><span class="grip" aria-hidden="true">⋮⋮</span><span class="place p${i + 1}">${i + 1}</span>
-        <span class="nm"><b>${esc(x.team.name)}</b><small>Ballara görə ${x.rank ?? "—"}-ci yer</small></span>
+        <span class="nm"><b>${esc(x.team.name)}</b><small>${x.rank ? `Ballara görə ${x.rank}-ci yer` : "Bal yoxdur"}</small></span>
         ${d ? `<span class="pill ${d > 0 ? "ok" : "warn"}">${d > 0 ? "↑" : "↓"} ${Math.abs(d)}</span>` : ""}
         <span class="mono sc">${fmt2(x.score)}</span></div>`;
     }).join("")}</div>${all.length > FINAL_SHOWN ? `<button class="btn sm ghost fin-more" id="finalMore">${finalAll ? `Yalnız ilk ${FINAL_SHOWN}` : `Hamısını göstər (${all.length})`}</button>` : ""}` : `<p class="note">Hələ qiymətləndirilmiş komanda yoxdur.</p>`}`;
@@ -511,7 +511,7 @@ function renderJury() {
           ${teams.map(t => {
             const has = scoreOf(r.j.id, t.id);
             const pr = S!.progress.find(x => x.jurorId === r.j.id && x.teamId === t.id && x.filled > 0);
-            return `<td class="st${t.id === cur?.id ? " cur" : ""} ${has ? "y" : pr ? "w" : "n"}" title="${esc(t.name)}">${has ? "✓" : pr ? "…" : "—"}</td>`;
+            return `<td class="st${t.id === cur?.id ? " cur" : ""} ${has ? "y" : pr ? "w" : "n"}" title="${esc(t.name)}">${has ? "✓" : pr ? "…" : "-"}</td>`;
           }).join("")}
           <td class="num"><b>${r.done}</b>/${teams.length}</td>
           <td class="act"><span class="row" style="gap:4px;flex-wrap:nowrap;justify-content:flex-end"><button class="btn sm ghost" data-qr="${r.j.id}" title="Yeni QR" aria-label="${esc(r.j.displayName)} üçün yeni QR">${icon("qr")}</button>
@@ -565,11 +565,11 @@ function renderReveal() {
     : !rv.enabled ? "Nəticə ekranında “Nəticələr tezliklə açıqlanacaq” yazısı görünür. Açılan yerlər yadda qalıb."
     : done ? "Bütün yerlər açıqlanıb. Qalib ekranda qalır."
     : n!.kind === "suspense" ? `Növbəti basış: ekranda böyük <b>${ordinal(n!.entry.rank)} yer</b> nömrəsi görünür. Ad hələ göndərilmir.`
-    : n!.entries?.length > 1 ? `Növbəti basış: <b>${Math.max(...n!.entries.map(e => e.rank))}–${ordinal(Math.min(...n!.entries.map(e => e.rank)))} yerlər</b> birlikdə açılır (${n!.entries.length} komanda).`
+    : n!.entries?.length > 1 ? `Növbəti basış: <b>${Math.max(...n!.entries.map(e => e.rank))}-${ordinal(Math.min(...n!.entries.map(e => e.rank)))} yerlər</b> birlikdə açılır (${n!.entries.length} komanda).`
     : `Növbəti basış: <b>${ordinal(n!.entry.rank)} yer</b> açıqlanır: <b>${esc(n!.entry.name)}</b> · <span class="mono">${fmt2(n!.entry.score)}</span> <span class="faint">(yalnız siz görürsünüz)</span>`;
   const label = !rv.enabled ? "Açıqlamaya icazə ver" : done ? "Bütün yerlər açıqlandı"
     : n!.kind === "suspense" ? `${ordinal(n!.entry.rank)} yeri göstər`
-    : n!.entries?.length > 1 ? `${Math.max(...n!.entries.map(e => e.rank))}–${ordinal(Math.min(...n!.entries.map(e => e.rank)))} yerləri açıqla`
+    : n!.entries?.length > 1 ? `${Math.max(...n!.entries.map(e => e.rank))}-${ordinal(Math.min(...n!.entries.map(e => e.rank)))} yerləri açıqla`
     : `${ordinal(n!.entry.rank)} yeri açıqla`;
   // One chip per place, last place first, the way the ceremony goes.
   const places = rv.entries.map((e, i) => ({ e, i })).reverse();
@@ -634,13 +634,13 @@ function renderRanking() {
     : `Yekun bal = münsiflərin orta balı (maks. ${D}). Bərabərlikdə ən yüksək maksimumlu meyarların orta balı həlledicidir.`;
   card.innerHTML = rows.length ? `<ol class="lb">${rows.map(x => `
     <li data-flip="${x.team.id}" class="${x.rank ? (x.rank <= 3 ? "r" + x.rank : "") : "none"}">
-      <span class="rk">${x.rank ?? "—"}</span>
+      <span class="rk">${x.rank ?? "-"}</span>
       <div class="nm"><b>${esc(x.team.name)} ${x.incomplete && x.n ? `<span class="pill warn" title="${S!.minJurorsForRank}-dən az münsif qiymətləndirib">natamam</span>` : ""}${includeEntry && x.entry == null ? `<span class="pill" title="Quraşdırmada giriş balını yazın">giriş balı yoxdur</span>` : ""}</b>
         ${!includeEntry ? (x.team.project ? `<small>${esc(x.team.project)}</small>` : "")
-          : `<small>${x.score == null ? `Giriş <span class="v">${fmt2(x.entry)}</span> · Demo Day —`
+          : `<small>${x.score == null ? `Giriş <span class="v">${fmt2(x.entry)}</span> · Demo Day balı yoxdur`
           : (p => `Giriş <span class="v">${p.entry}</span> + Demo Day <span class="v">${p.demo}</span>`)(displayParts(x.score, x.entry))}</small>`}
         <div class="track"><i style="width:${x.score != null && T ? Math.min(100, Math.max(0, (x.score / T) * 100)) : 0}%"></i></div></div>
-      <div class="sc"><b>${fmt2(x.score)}</b><small>${x.n}/${nJ} münsif${x.n > 1 ? ` · ${x.min}–${x.max}` : ""}</small></div>
+      <div class="sc"><b>${fmt2(x.score)}</b><small>${x.n}/${nJ} münsif${x.n > 1 ? ` · ${x.min} ilə ${x.max} arası` : ""}</small></div>
     </li>`).join("")}</ol>` : `<p class="empty">Aktiv komanda yoxdur.</p>`;
   after();
 }
@@ -661,7 +661,7 @@ function renderMatrix() {
           const has = !!scoreOf(j.id, t.id);
           const k = `${j.id}:${t.id}`;
           return has ? `<td class="cell${flashKey === k ? " flash" : ""}"><button data-cell="${k}" aria-label="${esc(j.displayName)}: ${esc(t.name)}">${v != null ? v : "…"}</button></td>`
-            : `<td class="num miss">—</td>`;
+            : `<td class="num miss">-</td>`;
         }).join("")}<td class="num"><b>${fmt2(avg)}</b></td></tr>`;
       }).join("")}</tbody>
     </table></div>
@@ -679,8 +679,8 @@ function openCell(jurorId: number, teamId: number) {
     <div class="dh"><div><h3>${esc(j.displayName)}</h3><h2 id="cellTitle" style="font-size:19px;margin-top:4px">${esc(t.name)}</h2></div>
       <button class="icon-btn" id="dlgClose" aria-label="Bağla">${icon("close")}</button></div>
     <div class="db">
-      <div class="vals">${S.criteria.map(c => `<span>${esc(c.name)}</span><b>${s.values[c.key] ?? "—"} <span class="sub" style="font-size:12px">/ ${c.maxScore}</span></b>`).join("")}
-        <span style="border-top:1px solid var(--line);padding-top:6px"><b style="font-family:var(--f-body);text-align:left">Cəmi (Demo Day)</b></span><b style="border-top:1px solid var(--line);padding-top:6px">${s.total ?? "—"} <span class="sub" style="font-size:12px">/ ${S.results.demoMax}</span></b></div>
+      <div class="vals">${S.criteria.map(c => `<span>${esc(c.name)}</span><b>${s.values[c.key] ?? "-"} <span class="sub" style="font-size:12px">/ ${c.maxScore}</span></b>`).join("")}
+        <span style="border-top:1px solid var(--line);padding-top:6px"><b style="font-family:var(--f-body);text-align:left">Cəmi (Demo Day)</b></span><b style="border-top:1px solid var(--line);padding-top:6px">${s.total ?? "-"} <span class="sub" style="font-size:12px">/ ${S.results.demoMax}</span></b></div>
       ${s.tags?.length ? `<div class="tagrow">${s.tags.map(x => `<span>${esc(x)}</span>`).join("")}</div>` : ""}
       ${s.note ? `<blockquote>${esc(s.note)}</blockquote>` : `<p class="sub">Şərh yazılmayıb.</p>`}
       <p class="sub" style="margin-top:12px">Son dəyişiklik: ${hhmm(s.updatedAt)}</p>
@@ -703,10 +703,10 @@ function renderHeat() {
         <th class="num">${includeEntry ? "Demo Day" : "Orta bal"}<br><span style="font-weight:500">maks. ${D}</span></th>
         ${includeEntry ? `<th class="num">Giriş<br><span style="font-weight:500">maks. ${E}</span></th>` : ""}
         <th class="num">Yekun<br><span style="font-weight:500">maks. ${T}</span></th></tr></thead>
-      <tbody>${S.results.ranking.map(x => `<tr><td class="mono">${x.rank ?? "—"}</td><td>${esc(x.team.name)}</td>${crit.map(c => {
+      <tbody>${S.results.ranking.map(x => `<tr><td class="mono">${x.rank ?? "-"}</td><td>${esc(x.team.name)}</td>${crit.map(c => {
         const v = x.perCriterion[c.key];
         // Colour by share of the criterion's maximum, so 4/5 and 8/10 look alike.
-        return v == null ? `<td class="num miss">—</td>` : `<td class="num heat" style="--h:${Math.round(Math.max(0, (v / c.maxScore) * 10 - 4) * 6)}">${v.toFixed(1)}</td>`;
+        return v == null ? `<td class="num miss">-</td>` : `<td class="num heat" style="--h:${Math.round(Math.max(0, (v / c.maxScore) * 10 - 4) * 6)}">${v.toFixed(1)}</td>`;
       }).join("")}${(p => `<td class="num">${p.demo}</td>${includeEntry ? `<td class="num">${p.entry}</td>` : ""}<td class="num"><b>${p.score}</b></td>`)(
         x.score != null && includeEntry ? displayParts(x.score, x.entry) : { demo: fmt2(x.demo), entry: fmt2(x.entry), score: fmt2(x.score) })}</tr>`).join("")}</tbody>
     </table></div>`;
@@ -932,7 +932,7 @@ document.addEventListener("keydown", e => {
 
 onQrChange(() => load());
 bindShowCtl(main, () => S?.stage ?? null, st => { strip.set(st); if (S) { S.stage = st; const box = document.getElementById("showCtl"); if (box) box.innerHTML = showCtlHtml(st); renderScene(); } }, {
-  preview: id => { const f = EF.find(x => x.id === id); if (f) openViewer({ url: f.url, title: f.title, subtitle: "Tədbirin prezentasiyası" }); },
+  preview: id => { const f = EF.find(x => x.id === id); if (f) openViewer({ url: f.url, title: f.title, subtitle: "Proqramın prezentasiyası" }); },
 });
 
 live({

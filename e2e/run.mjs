@@ -153,6 +153,25 @@ async function main() {
     await api("/api/admin/event", "PATCH", { currentTeamId: teams[0].id, pitchSec: 10, qaSec: 10 });
     await proj.waitForFunction(name => document.querySelector("#nameTeam")?.textContent?.includes(name), {}, teams[0].name);
     ok(`team on stage shows on the projector (${teams[0].name})`);
+    // v4: no control buttons and no key hints on the projector, neither anonymous nor with the coordinator's session;
+    // the page itself is never served from a day-old cache (that is how the removed dock came back on a phone)
+    const controls = p => p.evaluate(() => ({
+      buttons: [...document.querySelectorAll("button, a")].filter(b => b.checkVisibility?.() && b.getBoundingClientRect().width > 0)
+        .map(b => b.dataset.act || b.dataset.nav || b.textContent.trim()).filter(x => !["sound", "full", "-1", "1"].includes(x)),
+      keys: !!document.querySelector("#keys") || /başlat\/fasilə|R sıfırla|N növbəti/.test(document.body.innerText),
+    }));
+    const adminProj = await page("projector-admin", 1280, 720);
+    for (const c of await admin.cookies()) await adminProj.setCookie(c);
+    await adminProj.goto(`${BASE}/stage`, { waitUntil: "networkidle0" });
+    await adminProj.mouse.move(400, 300);
+    for (const [who, p] of [["anonymous", proj], ["coordinator session", adminProj]]) {
+      const c = await controls(p);
+      if (c.buttons.length || c.keys) throw new Error(`${who} projector shows controls: ${JSON.stringify(c)}`);
+    }
+    const cc = (await fetch(`${BASE}/stage`)).headers.get("cache-control");
+    if (cc !== "no-cache") throw new Error(`/stage Cache-Control: ${cc}`);
+    ok("projector: no control buttons or key hints (anonymous and coordinator session); /stage is revalidated (no-cache)");
+    await adminProj.browserContext().close();
     await api("/api/admin/event", "PATCH", { timer: "pitch" });
     await proj.waitForFunction(() => /00:0\d|00:1\d/.test(document.querySelector("#digits")?.textContent ?? ""));
     ok("timer started on the projector");

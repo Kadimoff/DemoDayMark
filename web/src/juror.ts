@@ -222,7 +222,7 @@ function render() {
           <div class="mini" id="tmini"></div>
           ${S.includeEntry ? `<div class="mini">
             <div class="lb"><span>Giriş balı</span>${icon("medal")}</div>
-            <div class="v"><b>${team.entryScore != null ? fmtEntry(team.entryScore) : "—"}</b><span>/ ${fmtEntry(S.entryMax)}</span></div>
+            <div class="v"><b>${team.entryScore != null ? fmtEntry(team.entryScore) : "-"}</b><span>/ ${fmtEntry(S.entryMax)}</span></div>
             <small>${team.entryScore != null ? `${icon("check")}Münsif üçün açıq` : "Yazılmayıb"}</small>
           </div>` : ""}
         </div>
@@ -274,7 +274,7 @@ function bigScale(c: Criterion, v: number | undefined, locked: boolean) {
   return `<div class="bigscale" data-big="${esc(c.key)}" role="group" aria-labelledby="cl-${esc(c.key)}">
     <div class="bs-row">
       <button type="button" class="bs-step" data-step="-1" aria-label="${esc(c.name)}: bir bal az" ${locked ? "disabled" : ""}>−</button>
-      <output class="bs-val mono${has ? "" : " empty"}" aria-live="polite"><b>${has ? v : "—"}</b><span>/ ${c.maxScore}</span></output>
+      <output class="bs-val mono${has ? "" : " empty"}" aria-live="polite"><b>${has ? v : "-"}</b><span>/ ${c.maxScore}</span></output>
       <button type="button" class="bs-step" data-step="1" aria-label="${esc(c.name)}: bir bal çox" ${locked ? "disabled" : ""}>+</button>
     </div>
     <input type="range" class="bs-range" min="${MIN_POINTS}" max="${c.maxScore}" step="1" value="${has ? v : Math.round(c.maxScore / 2)}" aria-label="${esc(c.name)} balı" ${locked ? "disabled" : ""}${has ? "" : ` data-untouched="1"`}>
@@ -384,10 +384,10 @@ function renderDock() {
   let cls: string, title: string, line: string;
   if (inFlight && op!.status === "sending" && op!.tries <= 1) { cls = "warn"; title = `${icon("cloud")}Göndərilir…`; line = "Bal bu cihazda saxlanılıb."; }
   else if (inFlight) {
-    cls = "warn"; title = `${icon("cloud")}${online ? "Növbədə" : "Oflayn — növbədə"}`;
+    cls = "warn"; title = `${icon("cloud")}${online ? "Növbədə" : "Oflayn, növbədədir"}`;
     line = `Bal bu cihazda saxlanılıb, şəbəkə qayıdanda özü göndəriləcək${op!.tries > 1 ? ` (${op!.tries} cəhd)` : ""}.`;
   }
-  else if (S.locked) { cls = "warn"; title = `${icon("lock")}Bağlıdır`; line = d.dirty && last?.status === "rejected" ? "Göndərilmədi — ballarınız bu cihazda saxlanılıb." : "Ballara yalnız baxa bilərsiniz."; }
+  else if (S.locked) { cls = "warn"; title = `${icon("lock")}Bağlıdır`; line = d.dirty && last?.status === "rejected" ? "Göndərilmədi. Ballarınız bu cihazda saxlanılıb." : "Ballara yalnız baxa bilərsiniz."; }
   else if (failure && failure.teamId === selTeam) { cls = "err"; title = `${icon("warn")}Rədd edildi`; line = `${esc(failure.msg)} Ballar bu cihazda saxlanılıb.`; }
   else if (d.dirty) { cls = "warn"; title = `${icon("cloud")}Qaralama saxlanıldı`; line = `${filled}/${all} meyar · hələ göndərilməyib`; }
   else if (saved && isComplete(saved.values, S.criteria)) { cls = "ok"; title = `${icon("check")}Saxlanıldı`; line = `Son sinx: ${hhmm(saved.updatedAt)}`; }

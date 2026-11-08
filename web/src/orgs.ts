@@ -74,17 +74,17 @@ function orgCard(o: OrgView) {
 function render() {
   main.innerHTML = `
     <section class="card hero pad-lg"><div class="head"><div><h1 style="margin:0">${icon("db")} Təşkilatlar</h1>
-      <p class="sub">Hər müştəri şirkətin öz tədbiri, komandaları, münsifləri və balları var; koordinatoru yalnız öz təşkilatını görür. “Panelinə keç” ilə istənilən təşkilatın panelinə platforma sahibi kimi daxil olursunuz.</p></div></div></section>
+      <p class="sub">Hər müştəri şirkətin öz proqramları, komandaları, münsifləri və balları var; koordinatoru yalnız öz təşkilatını görür. “Panelinə keç” ilə istənilən təşkilatın panelinə platforma sahibi kimi daxil olursunuz.</p></div></div></section>
     <section class="card pad-lg stack section-gap" aria-labelledby="h-new">
       <h2 id="h-new">${icon("plus")}Yeni təşkilat</h2>
       <form class="inline-form" id="newOrg" novalidate>
-        <div><label class="f" for="nName">Ad (tədbir brendi)</label><input type="text" id="nName" maxlength="40" placeholder="məs. Demo" required></div>
+        <div><label class="f" for="nName">Ad (proqram brendi)</label><input type="text" id="nName" maxlength="40" placeholder="məs. Demo" required></div>
         <div><label class="f" for="nSlug">Qısa ad (linklər üçün)</label><input type="text" id="nSlug" maxlength="32" placeholder="demo" autocapitalize="none" spellcheck="false" required></div>
         <div><label class="f" for="nUser">Koordinator istifadəçi adı</label><input type="text" id="nUser" maxlength="64" autocapitalize="none" spellcheck="false" autocomplete="off"></div>
         <div><label class="f" for="nPass">Koordinator şifrəsi (min. 8)</label><input type="password" id="nPass" autocomplete="new-password"></div>
         <button class="btn primary" type="submit" id="nGo">${icon("plus")}Yarat</button>
       </form>
-      <p class="sub" style="margin:0">Yeni təşkilat boş tədbirlə başlayır: standart meyarlar, təqdimat 3:00 + sual-cavab 2:00, komanda və münsif yoxdur. Ekran linkləri <span class="mono">/o/&lt;qısa ad&gt;/stage</span>, <span class="mono">/o/&lt;qısa ad&gt;/reveal</span>.</p>
+      <p class="sub" style="margin:0">Yeni təşkilat boş proqramla başlayır: standart meyarlar, təqdimat 3:00 + sual-cavab 2:00, komanda və münsif yoxdur. Ekran linkləri <span class="mono">/o/&lt;qısa ad&gt;/stage</span>, <span class="mono">/o/&lt;qısa ad&gt;/reveal</span>.</p>
       <p class="err-t" id="nErr" role="alert"></p>
     </section>
     <div class="orgs-grid section-gap">${orgs.map(orgCard).join("")}</div>`;

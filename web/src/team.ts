@@ -203,7 +203,7 @@ function render() {
   const typing = focused && main.contains(focused) && /^(INPUT|TEXTAREA)$/.test(focused.tagName) && focused.type !== "file" ? { id: focused.id, v: focused.value } : null;
   if (typing && document.getElementById("profile")) { renderStageOnly(); return; }
   main.innerHTML = `${stageHtml()}${statusHtml()}${formHtml()}
-    <p class="tfoot">Bal və reytinq komandalara göstərilmir. Nəticələr tədbirin sonunda səhnədə açıqlanır.</p>`;
+    <p class="tfoot">Bal və reytinq komandalara göstərilmir. Nəticələr proqramın sonunda səhnədə açıqlanır.</p>`;
   void thumb();
   void stageThumb();
 }

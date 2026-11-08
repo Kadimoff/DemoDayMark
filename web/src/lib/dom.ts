@@ -4,7 +4,7 @@ export const $$ = <T extends Element = HTMLElement>(sel: string, root: ParentNod
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-export const fmt1 = (n: number | null | undefined) => (n == null || Number.isNaN(n) ? "—" : n.toFixed(1));
+export const fmt1 = (n: number | null | undefined) => (n == null || Number.isNaN(n) ? "-" : n.toFixed(1));
 export const hhmm = (ms: number) => {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;

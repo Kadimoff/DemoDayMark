@@ -20,7 +20,7 @@ function when(ms: number) {
   const time = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
   return d.toDateString() === t.toDateString() ? time : `${p2(d.getDate())}.${p2(d.getMonth() + 1)} ${time}`;
 }
-const num = (v: number | null) => (v == null ? "—" : String(Math.round(v * 100) / 100));
+const num = (v: number | null) => (v == null ? "-" : String(Math.round(v * 100) / 100));
 
 function query(before?: number) {
   const q = new URLSearchParams({ limit: String(PAGE) });

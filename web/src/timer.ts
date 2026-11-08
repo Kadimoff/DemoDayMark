@@ -610,7 +610,7 @@ if (DEMO) {
   el.demo.addEventListener("click", e => { const b = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-d]"); if (b) { ensureAudio(); demoCmd(b.dataset.d!); } });
   onStage({
     eventName: "munsif.im Demo Day", eventDate: "",
-    team: { id: 1, name: "Komanda Nümunə", project: "munsif.im — səhnə taymeri demosu", index: 1, total: 3 },
+    team: { id: 1, name: "Komanda Nümunə", project: "munsif.im səhnə taymeri demosu", index: 1, total: 3 },
     timer: { visible: true, running: false, offsetSec: 0, anchorAt: null, pitchSec: DEMO_SEC, qaSec: Math.max(6, Math.round(DEMO_SEC * 2 / 3)) },
     serverNow: Date.now(),
     show: {

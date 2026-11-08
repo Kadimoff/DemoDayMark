@@ -56,7 +56,7 @@ async function load() {
 function liveLine(o: OrgLive) {
   const st = o.stage;
   const v = timerView(st.timer, now());
-  const scene = st.show.scene === "event" && st.show.eventPres ? `${icon("doc")}<b>${esc(st.show.eventPres.title)}</b><small>tədbirin prezentasiyası</small>`
+  const scene = st.show.scene === "event" && st.show.eventPres ? `${icon("doc")}<b>${esc(st.show.eventPres.title)}</b><small>proqramın prezentasiyası</small>`
     : st.team ? `<span class="mono acc-t">#${st.team.index}</span><b>${esc(st.team.name)}</b><small>${st.team.index}/${st.team.total}</small>` : `<span class="faint">Səhnə boşdur</span>`;
   const timer = v.kind === "idle" ? `<span class="pill">Taymer gizli</span>`
     : `<span class="pill ${v.kind === "done" ? "danger" : v.running ? "live" : "warn"}">${v.kind === "pitch" ? "Təqdimat" : v.kind === "qa" ? "Sual-cavab" : "Vaxt bitdi"}${v.kind !== "done" ? ` · <span class="mono">${fmtClock(v.remaining)}</span>` : ""}${!v.running && v.kind !== "done" ? " · fasilə" : ""}</span>`;
@@ -76,7 +76,7 @@ function card(o: OrgLive) {
     </div>`).join("") || `<p class="sub" style="margin:0">Koordinator hesabı yoxdur.</p>`;
   const pct = o.progress.need ? Math.round((o.progress.done / o.progress.need) * 100) : 0;
   return `<section class="card pad-lg rcard${o.active ? "" : " off"}" data-org="${o.id}">
-    <div class="oh"><div style="min-width:0"><h3>${esc(o.name)}</h3><div class="slug">/${esc(o.slug)} · ${esc(o.eventName)}${o.events > 1 ? ` · ${o.events} tədbir` : ""}</div></div>
+    <div class="oh"><div style="min-width:0"><h3>${esc(o.name)}</h3><div class="slug">/${esc(o.slug)} · ${esc(o.eventName)}${o.events > 1 ? ` · ${o.events} proqram` : ""}</div></div>
       <div class="row" style="gap:6px">${o.root ? `<span class="pill hot">Sizin</span>` : ""}${o.active ? "" : `<span class="pill warn">Deaktiv</span>`}</div></div>
     <div class="rlive" data-live="${o.id}">${liveLine(o)}</div>
     <div class="nums"><div><b>${o.teams}</b><span>komanda</span></div><div><b>${o.jurorsOnline}/${o.jurors}</b><span>münsif onlayn</span></div><div><b>${pct}%</b><span>səs (${o.progress.done}/${o.progress.need})</span></div></div>
@@ -107,18 +107,18 @@ function render() {
   const liveN = orgs.filter(o => o.active && (o.stage.team || o.stage.show.scene === "event") && o.stage.timer.visible).length;
   main.innerHTML = `
     <section class="rhead"><div><h1>${icon("db")} Platforma</h1>
-      <p class="sub">${orgs.length} təşkilat · ${liveN} canlı səhnə. Hər təşkilatın koordinatoru yalnız öz tədbirini görür; buradan hamısına baxa və müdaxilə edə bilərsiniz.</p></div>
+      <p class="sub">${orgs.length} təşkilat · ${liveN} canlı səhnə. Hər təşkilatın koordinatoru yalnız öz proqramlarını görür; buradan hamısına baxa və müdaxilə edə bilərsiniz.</p></div>
       <button class="btn primary" id="newToggle">${icon("plus")}Yeni təşkilat</button></section>
     ${newOpen ? `<section class="card pad-lg stack section-gap" aria-labelledby="h-new">
       <h2 id="h-new">${icon("plus")}Yeni təşkilat</h2>
       <form class="inline-form" id="newOrg" novalidate>
-        <div><label class="f" for="nName">Ad (tədbir brendi)</label><input type="text" id="nName" maxlength="40" placeholder="məs. Demo" required></div>
+        <div><label class="f" for="nName">Ad (proqram brendi)</label><input type="text" id="nName" maxlength="40" placeholder="məs. Demo" required></div>
         <div><label class="f" for="nSlug">Qısa ad (linklər üçün)</label><input type="text" id="nSlug" maxlength="32" placeholder="demo" autocapitalize="none" spellcheck="false" required></div>
         <div><label class="f" for="nUser">Koordinator istifadəçi adı</label><input type="text" id="nUser" maxlength="64" autocapitalize="none" spellcheck="false" autocomplete="off"></div>
         <div><label class="f" for="nPass">Koordinator şifrəsi (min. 8)</label><input type="password" id="nPass" autocomplete="new-password"></div>
         <button class="btn primary" type="submit" id="nGo">${icon("plus")}Yarat</button>
       </form>
-      <p class="sub" style="margin:0">Yeni təşkilat boş tədbirlə başlayır: standart meyarlar, təqdimat 3:00 + sual-cavab 2:00. Səhnə ekranının linki <span class="mono">/o/&lt;qısa ad&gt;/stage</span>.</p>
+      <p class="sub" style="margin:0">Yeni təşkilat boş proqramla başlayır: standart meyarlar, təqdimat 3:00 + sual-cavab 2:00. Səhnə ekranının linki <span class="mono">/o/&lt;qısa ad&gt;/stage</span>.</p>
       <p class="err-t" id="nErr" role="alert"></p>
     </section>` : ""}
     <div class="rgrid section-gap">${orgs.map(card).join("")}</div>

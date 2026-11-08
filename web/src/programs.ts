@@ -167,9 +167,9 @@ async function renderDetail(id: number) {
         <a class="btn sm ghost" href="/api/admin/events/${id}/history.xlsx" download>${icon("list")}Tarixçə (Excel)</a></div>
     </section>
     <section class="section-gap" aria-labelledby="h-rk"><div class="head"><div><h2 id="h-rk">${icon("medal")}Yekun reytinq</h2></div></div>
-      <div class="card" style="overflow:hidden"><ol class="lb">${ranked.map(x => `<li class="${x.rank && x.rank <= 3 ? `r${x.rank}` : ""}"><span class="rk">${x.rank ?? "–"}</span>
+      <div class="card" style="overflow:hidden"><ol class="lb">${ranked.map(x => `<li class="${x.rank && x.rank <= 3 ? `r${x.rank}` : ""}"><span class="rk">${x.rank ?? "-"}</span>
         <div class="nm"><b>${esc(x.team.name)}</b><small>${esc(x.team.project)}${x.incomplete && x.score != null ? " · natamam" : ""}</small></div>
-        <div class="sc"><b>${x.score == null ? "–" : f2(x.score)}</b><small>${x.n} münsif</small></div></li>`).join("") || `<li><span></span><div class="nm"><b>Qiymət yoxdur</b></div></li>`}</ol></div></section>
+        <div class="sc"><b>${x.score == null ? "-" : f2(x.score)}</b><small>${x.n} münsif</small></div></li>`).join("") || `<li><span></span><div class="nm"><b>Qiymət yoxdur</b></div></li>`}</ol></div></section>
     <section class="card pad-lg stack section-gap" aria-labelledby="h-tm"><h2 id="h-tm">${icon("list")}Komandalar və materiallar</h2>
       <div class="pg-teams">${D.teams.map(t => `<div class="pg-team${t.active ? "" : " off"}">
         <div class="pg-nm"><b>${esc(t.name)}</b><small>${esc(t.project)}${t.members.length ? ` · ${t.members.map(esc).join(", ")}` : ""}</small></div>
@@ -182,7 +182,7 @@ async function renderDetail(id: number) {
     <section class="card pad-lg stack section-gap" aria-labelledby="h-jr"><h2 id="h-jr">${icon("users")}Münsiflər və balları</h2>
       <p class="sub" style="margin:0">Hər xanada münsifin komandaya verdiyi yekun bal (maks. ${r.demoMax}). Xanaya toxunun: meyarlar üzrə ballar və şərh.</p>
       <div class="tbl"><table class="pg-mtx"><thead><tr><th>Komanda</th>${D.jurors.map(j => `<th>${esc(j.displayName)}</th>`).join("")}<th>Orta</th></tr></thead>
-        <tbody>${ranked.map(x => `<tr><th>${esc(x.team.name)}</th>${D.jurors.map(j => { const s = scoreOf(j.id, x.team.id); return `<td>${s ? `<button class="cellb" data-cell="${j.id}:${x.team.id}">${f2(s.total)}</button>` : `<span class="faint">–</span>`}</td>`; }).join("")}<td><b>${x.demo == null ? "–" : f2(x.demo)}</b></td></tr>`).join("")}</tbody></table></div>
+        <tbody>${ranked.map(x => `<tr><th>${esc(x.team.name)}</th>${D.jurors.map(j => { const s = scoreOf(j.id, x.team.id); return `<td>${s ? `<button class="cellb" data-cell="${j.id}:${x.team.id}">${f2(s.total)}</button>` : `<span class="faint">-</span>`}</td>`; }).join("")}<td><b>${x.demo == null ? "-" : f2(x.demo)}</b></td></tr>`).join("")}</tbody></table></div>
       <div id="cellBox"></div>
     </section>
     <section class="card pad-lg stack section-gap" id="histCard" aria-labelledby="h-hist"></section>`;
@@ -197,7 +197,7 @@ async function renderDetail(id: number) {
     const jn = D.jurors.find(x => x.id === j)?.displayName ?? "";
     if (!s) return;
     $("#cellBox").innerHTML = `<div class="pg-cell"><b>${esc(jn)} → ${esc(byId.get(t)?.name ?? "")}</b>
-      <ul>${D.criteria.map(c => `<li><span>${esc(c.name)}</span><b class="mono">${s.values[c.key] ?? "–"}<small>/${c.maxScore}</small></b></li>`).join("")}</ul>
+      <ul>${D.criteria.map(c => `<li><span>${esc(c.name)}</span><b class="mono">${s.values[c.key] ?? "-"}<small>/${c.maxScore}</small></b></li>`).join("")}</ul>
       ${s.tags.length ? `<p>${s.tags.map(x => `<span class="tag">${esc(x)}</span>`).join(" ")}</p>` : ""}${s.note ? `<q>${esc(s.note)}</q>` : ""}</div>`;
   }));
 }

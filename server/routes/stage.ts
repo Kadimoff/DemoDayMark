@@ -174,7 +174,7 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       }
       let scene = b.scene ?? (b.eventFile != null ? "event" : ev.stageScene);
       if (scene === "event" && eventFile == null) eventFile = trepo.eventFiles()[0]?.id ?? null;
-      if (scene === "event" && eventFile == null) return reply.code(409).send({ error: "Əvvəlcə tədbirin prezentasiyasını yükləyin (Quraşdırma → Tədbirin prezentasiyası)." });
+      if (scene === "event" && eventFile == null) return reply.code(409).send({ error: "Əvvəlcə proqramın prezentasiyasını yükləyin (Quraşdırma → Proqramın prezentasiyası)." });
       repo.updateEvent({
         stageMode: (b.mode as typeof ev.stageMode | undefined) ?? ev.stageMode,
         stageIntroAt: b.intro === true ? Date.now() : b.intro === false ? null : ev.stageIntroAt,

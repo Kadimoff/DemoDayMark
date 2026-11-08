@@ -29,7 +29,7 @@ let teams: AdminTeam[] = [];
 function build() {
   main.innerHTML = `
     <section class="pl-clock card" id="plClock">
-      <div class="pl-team" id="plTeam">—</div>
+      <div class="pl-team" id="plTeam">-</div>
       <div class="pl-phase" id="plPhase"></div>
       <div class="pl-time mono" id="plTime" role="timer" aria-live="off">0:00</div>
       <div class="pl-bar"><i id="plBar"></i></div>
@@ -43,7 +43,7 @@ function build() {
       </div>
       <div class="pl-slides">
         <button class="pl-slide" data-slide="-1" aria-label="Əvvəlki slayd">${icon("back")}</button>
-        <div class="pl-sn"><small>Slayd</small><b class="mono" id="plSlide">—</b></div>
+        <div class="pl-sn"><small>Slayd</small><b class="mono" id="plSlide">-</b></div>
         <button class="pl-slide" data-slide="1" aria-label="Növbəti slayd">${icon("next")}</button>
       </div>
       <div id="plShow"></div>
@@ -64,7 +64,7 @@ function renderStatic() {
   const ev = sh.scene === "event";
   const deck = ev ? sh.eventPres : sh.pres;
   const slide = ev ? sh.eventSlide : sh.slide;
-  $("#plSlide").textContent = deck ? `${slide} / ${deck.pages ?? "?"}` : "—";
+  $("#plSlide").textContent = deck ? `${slide} / ${deck.pages ?? "?"}` : "-";
   $("#plShow").innerHTML = showCtlHtml(stage, true);
   $("#plEvent").innerHTML = eventCtlHtml(stage, files, true);
   main.querySelectorAll<HTMLButtonElement>("[data-slide]").forEach(b => {
@@ -116,7 +116,7 @@ function renderReveal() {
   const n = rv.next;
   const label = !rv.enabled ? "Açıqlamaya icazə verilməyib" : !n ? "Bütün yerlər açıqlandı"
     : n.kind === "suspense" ? `${ordinal(n.entry.rank)} yerin nömrəsini göstər`
-    : n.entries?.length > 1 ? `${Math.max(...n.entries.map(e => e.rank))}–${ordinal(Math.min(...n.entries.map(e => e.rank)))} yerlər`
+    : n.entries?.length > 1 ? `${Math.max(...n.entries.map(e => e.rank))}-${ordinal(Math.min(...n.entries.map(e => e.rank)))} yerlər`
     : `${ordinal(n.entry.rank)} yeri açıqla`;
   box.innerHTML = `<div class="row between"><h3>${icon("medal")}Nəticə açıqlaması</h3><span class="pill ${rv.enabled ? "ok" : ""}">${rv.enabled ? `${rv.step}/${rv.stepsTotal}` : "Gözləmədə"}</span></div>
     ${rv.enabled ? `<div class="pl-row2"><button class="pl-btn" data-rv="back" ${rv.step > 0 ? "" : "disabled"}>${icon("back")}Geri</button>

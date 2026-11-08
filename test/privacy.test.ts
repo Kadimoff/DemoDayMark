@@ -176,7 +176,7 @@ describe("juror isolation", () => {
     const five = criteriaKeys.find(k => criteriaMax[k] === 5)!;
     const tooHigh = await put({ values: { ...fullScore(5).values, [five]: 6 } });
     expect(tooHigh.status).toBe(400);
-    expect(tooHigh.body.error).toMatch(/1–5/);
+    expect(tooHigh.body.error).toMatch(/1 ilə 5 arası/);
     expect((await put({ values: { ...fullScore(5).values, [criteriaKeys[0]]: 2.5 } })).status).toBe(400);
     expect((await request(base).put("/api/juror/scores/99999").set("Origin", origin()).set("Cookie", jurorCookie.ali).send(fullScore(5))).status).toBe(404);
   });
