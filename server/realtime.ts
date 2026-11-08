@@ -1,32 +1,35 @@
-// Socket.IO rooms:
-//   public          stage + timer only (anonymous projector screens join this too)
-//   jurors          lock state broadcast to every juror
-//   juror:<id>      that juror's own saved scores
-//   admin           everything
-//   team:<id>       munsif: that team's own notifications and panel refreshes (never scores)
+// Socket.IO rooms (orgs: every event room is per organisation, prefixed "o<orgId>:"):
+//   o<org>:public    stage + timer only (anonymous projector screens join this too; ?org=<slug> picks the organisation)
+//   o<org>:jurors    lock state broadcast to every juror of the organisation
+//   juror:<id>       that juror's own saved scores
+//   o<org>:admin     everything of that organisation (its coordinator, or the platform owner looking at it)
+//   team:<id>        munsif: that team's own notifications and panel refreshes (never scores)
 //   user:<id>, session:<sid>  used only to force-disconnect
+// Juror, team and user ids are global, so the rooms keyed by them need no prefix.
 import type { FastifyInstance } from "fastify";
 import { Server, type Socket } from "socket.io";
 import type { PresenceEntry, ProgressEntry, ScoreRow } from "../shared/types.js";
 import { originAllowed, resolveUser, type AuthUser } from "./auth.js";
 import type { Config } from "./config.js";
+import type { Orgs } from "./orgs.js";
 import type { Repo } from "./repo.js";
 import { submitScore } from "./scores.js";
 import { adminResults, revealPublicView } from "./views.js";
-import type { TeamRepo } from "./teamrepo.js";
 import { resolveTeam, type TeamAuth } from "./teams.js";
+
+const SCOPED = new Set(["public", "admin", "jurors"]);
 
 export class Realtime {
   readonly io: Server;
   private online = new Map<number, Set<string>>();
   private lastSeen = new Map<number, number>();
   /** "<jurorId>:<teamId>" → draft progress (count of filled criteria only). In memory: it is live telemetry. */
-  private drafts = new Map<string, ProgressEntry>();
+  readonly drafts = new Map<string, ProgressEntry & { orgId: number }>();
+  private views = new Map<number, OrgRealtime>();
+  /** Set right after construction (Orgs needs this object, this needs Orgs). */
+  orgs!: Orgs;
 
-  /** munsif: runs after every stage change (queue reminders to teams). */
-  afterStage: (() => void) | null = null;
-
-  constructor(app: FastifyInstance, private repo: Repo, private cfg: Config, trepo: TeamRepo) {
+  constructor(app: FastifyInstance, private cfg: Config) {
     this.io = new Server(app.server, {
       path: "/socket.io",
       serveClient: false,
@@ -36,63 +39,82 @@ export class Realtime {
       },
     });
 
-    // The client says which role it connects as (admin page, juror page, projector);
-    // without that it only joins the public room.
+    // The client says which role it connects as (admin page, juror page, projector) and, on public screens,
+    // which organisation (?org=<slug>); without a role it only joins that organisation's public room.
     this.io.use((socket, next) => {
-      const role = (socket.handshake.auth as { role?: string } | undefined)?.role;
+      const auth = (socket.handshake.auth ?? {}) as { role?: string; org?: string };
       const cookies = app.parseCookie(socket.request.headers.cookie ?? "");
-      socket.data.user = role === "admin" || role === "juror"
-        ? resolveUser(repo, cfg, cookies, v => app.unsignCookie(v), role)
+      const repo = this.orgs.root.repo;
+      socket.data.user = auth.role === "admin" || auth.role === "juror"
+        ? resolveUser(repo, cfg, cookies, v => app.unsignCookie(v), auth.role)
         : null;
-      socket.data.team = role === "team" ? resolveTeam(trepo, cfg, cookies, v => app.unsignCookie(v)) : null;
+      socket.data.team = auth.role === "team" ? resolveTeam(this.orgs.root.trepo, cfg, cookies, v => app.unsignCookie(v)) : null;
+      const o = typeof auth.org === "string" && auth.org ? this.orgs.bySlug(auth.org) : null;
+      socket.data.pageOrg = o && o.active ? o.id : null;
       next();
     });
 
     this.io.on("connection", socket => this.onConnect(socket));
   }
 
+  /** The rooms and broadcasts of one organisation. */
+  org(orgId: number): OrgRealtime {
+    let v = this.views.get(orgId);
+    if (!v) { v = new OrgRealtime(this, orgId, this.cfg); this.views.set(orgId, v); }
+    return v;
+  }
+  isOnline(jurorId: number) { return (this.online.get(jurorId)?.size ?? 0) > 0; }
+  lastSeenOf(jurorId: number) { return this.lastSeen.get(jurorId) ?? null; }
+
   private onConnect(socket: Socket) {
     const user = socket.data.user as AuthUser | null;
-    socket.join("public");
     const team = socket.data.team as TeamAuth | null;
+    const pageOrg = socket.data.pageOrg as number | null;
+    const home = user?.orgId ?? team?.orgId ?? 1;
+    socket.join(`o${pageOrg ?? home}:public`);
     if (team) socket.join([`team:${team.teamId}`, `tsession:${team.sessionId}`]);
     if (!user) return;
     socket.join([`user:${user.id}`, `session:${user.sessionId}`]);
+    const ort = this.org(user.orgId);
     if (user.role === "admin") {
-      socket.join("admin");
-      socket.emit("presence:changed", this.presence());
+      // A projector page of another organisation never gets this organisation's admin feed.
+      if (pageOrg != null && pageOrg !== user.orgId) return;
+      socket.join(`o${user.orgId}:admin`);
+      socket.emit("presence:changed", ort.presence());
       return;
     }
-    socket.join(["jurors", `juror:${user.id}`]);
+    socket.join([`o${user.orgId}:jurors`, `juror:${user.id}`]);
     const set = this.online.get(user.id) ?? new Set();
     set.add(socket.id);
     this.online.set(user.id, set);
     this.lastSeen.set(user.id, Date.now());
-    this.emitPresence();
+    ort.emitPresence();
+    const repo = () => this.orgs.scope(user.orgId).repo;
     // Live draft progress: only "how many criteria are filled" ever reaches the admin, never the points.
     socket.on("draft:progress", (p: unknown) => {
       const { teamId, filled } = (p ?? {}) as { teamId?: unknown; filled?: unknown };
       if (!Number.isInteger(teamId) || !Number.isInteger(filled)) return;
-      const max = this.repo.criteria().length;
+      const max = repo().criteria().length;
       const f = Math.max(0, Math.min(max, filled as number));
       const k = `${user.id}:${teamId}`;
       const prev = this.drafts.get(k);
       if (prev && prev.filled === f) return;
-      if (!this.repo.team(teamId as number)) return;
-      this.drafts.set(k, { jurorId: user.id, teamId: teamId as number, filled: f, at: Date.now() });
-      this.emitProgress();
+      if (!repo().team(teamId as number)) return;
+      this.drafts.set(k, { jurorId: user.id, teamId: teamId as number, filled: f, at: Date.now(), orgId: user.orgId });
+      ort.emitProgress();
     });
     // Score submit over the already-open socket, acknowledged. A long-idle HTTP connection can be dropped
     // silently by NAT/Wi-Fi gear on the way; the socket is kept alive by pings and reconnects by itself.
     socket.on("score:submit", (p: unknown, ack?: (r: unknown) => void) => {
       if (typeof ack !== "function") return;
       // The session may have been ended (juror deactivated / logged out) since the socket connected.
-      const s = this.repo.session(user.sessionId);
-      const u = s ? this.repo.userById(user.id) : null;
+      const r0 = repo();
+      const s = r0.session(user.sessionId);
+      const u = s ? r0.member(user.id) : null;
       if (!s || !u || !u.active || u.role !== "juror") { ack({ ok: false, status: 401, error: "Sessiya bitib. Koordinatordan yeni QR istəyin." }); return; }
       const { teamId, ...body } = (p ?? {}) as { teamId?: unknown };
       try {
-        const r = submitScore(this.repo, this, user.id, teamId, body);
+        const r = submitScore(r0, ort, user.id, teamId, body);
         ack(r.ok ? { ok: true, score: r.body } : { ok: false, status: r.status, error: r.error });
       } catch {
         ack({ ok: false, status: 500, error: "Serverdə xəta baş verdi." });
@@ -101,31 +123,44 @@ export class Realtime {
     socket.on("disconnect", () => {
       set.delete(socket.id);
       this.lastSeen.set(user.id, Date.now());
-      try { this.repo.touchSession(user.sessionId); } catch { /* session may be gone */ }
-      this.emitPresence();
+      try { repo().touchSession(user.sessionId); } catch { /* session may be gone */ }
+      ort.emitPresence();
     });
   }
 
+  close() { return new Promise<void>(r => this.io.close(() => r())); }
+}
+
+/** One organisation's view of the realtime layer: same method names as before multi-tenancy. */
+export class OrgRealtime {
+  /** munsif: runs after every stage change (queue reminders to teams). */
+  afterStage: (() => void) | null = null;
+
+  constructor(private rt: Realtime, readonly orgId: number, private cfg: Config) {}
+
+  get io() { return this.rt.io; }
+  private get repo(): Repo { return this.rt.orgs.scope(this.orgId).repo; }
+  /** "public" / "admin" / "jurors" → this organisation's room; anything else (team:<id>, juror:<id>…) as is. */
+  room(name: string) { return SCOPED.has(name) ? `o${this.orgId}:${name}` : name; }
+  to(...names: string[]) { return this.io.to(names.map(n => this.room(n))); }
+
   presence(): PresenceEntry[] {
-    return this.repo.jurors().map(j => ({
-      jurorId: j.id,
-      online: (this.online.get(j.id)?.size ?? 0) > 0,
-      lastSeen: this.lastSeen.get(j.id) ?? null,
-    }));
+    return this.repo.jurors().map(j => ({ jurorId: j.id, online: this.rt.isOnline(j.id), lastSeen: this.rt.lastSeenOf(j.id) }));
   }
+  emitPresence() { this.to("admin").emit("presence:changed", this.presence()); }
 
-  emitPresence() { this.io.to("admin").emit("presence:changed", this.presence()); }
-
-  progress(): ProgressEntry[] { return [...this.drafts.values()]; }
-  emitProgress() { this.io.to("admin").emit("progress:changed", this.progress()); }
+  progress(): ProgressEntry[] {
+    return [...this.rt.drafts.values()].filter(d => d.orgId === this.orgId).map(({ orgId: _o, ...d }) => d);
+  }
+  emitProgress() { this.to("admin").emit("progress:changed", this.progress()); }
   clearProgress(jurorId: number, teamId?: number) {
-    for (const [k, v] of this.drafts) if (v.jurorId === jurorId && (teamId == null || v.teamId === teamId)) this.drafts.delete(k);
+    for (const [k, v] of this.rt.drafts) if (v.orgId === this.orgId && v.jurorId === jurorId && (teamId == null || v.teamId === teamId)) this.rt.drafts.delete(k);
     this.emitProgress();
   }
 
   /** A juror scanned their QR and typed their name: the admin's open QR dialog closes with that name. */
   emitJurorJoined(jurorId: number, displayName: string) {
-    this.io.to("admin").emit("juror:joined", { jurorId, displayName });
+    this.to("admin").emit("juror:joined", { jurorId, displayName });
     this.emitPresence();
   }
 
@@ -135,24 +170,24 @@ export class Realtime {
   }
 
   emitStage() {
-    this.io.to("public").emit("stage:changed", this.repo.stage());
+    this.to("public").emit("stage:changed", this.repo.stage());
     try { this.afterStage?.(); } catch { /* reminders are best effort */ }
   }
 
   emitTimer() {
     const s = this.repo.stage();
-    this.io.to("public").emit("timer:changed", { timer: s.timer, serverNow: s.serverNow });
+    this.to("public").emit("timer:changed", { timer: s.timer, serverNow: s.serverNow });
   }
 
   emitLocked(locked: boolean) {
-    this.io.to(["jurors", "admin"]).emit("event:locked", { locked });
+    this.to("jurors", "admin").emit("event:locked", { locked });
   }
 
   /** Teams/criteria/event settings changed: every client refetches its own view. */
-  emitConfig() { this.io.to("public").emit("config:changed"); }
+  emitConfig() { this.to("public").emit("config:changed"); }
 
   emitScore(score: ScoreRow, total: number | null, showJurorTotal: boolean) {
-    this.io.to("admin").emit("score:upserted", { ...score, total });
+    this.to("admin").emit("score:upserted", { ...score, total });
     this.clearProgress(score.jurorId, score.teamId);
     this.io.to(`juror:${score.jurorId}`).emit("my-score:saved", {
       teamId: score.teamId, values: score.values, note: score.note, tags: score.tags, updatedAt: score.updatedAt,
@@ -161,12 +196,10 @@ export class Realtime {
   }
 
   /** Public: only revealed places (see shared/reveal.ts). Admin screens refetch their full view. */
-  emitReveal() { this.io.to("public").emit("reveal:changed", revealPublicView(this.repo)); }
+  emitReveal() { this.to("public").emit("reveal:changed", revealPublicView(this.repo)); }
 
-  emitResults() { this.io.to("admin").emit("results:changed", adminResults(this.repo, this.cfg)); }
+  emitResults() { this.to("admin").emit("results:changed", adminResults(this.repo, this.cfg)); }
 
   kickUser(userId: number) { this.io.in(`user:${userId}`).disconnectSockets(true); }
   kickSession(sessionId: string) { this.io.in(`session:${sessionId}`).disconnectSockets(true); }
-
-  close() { return new Promise<void>(r => this.io.close(() => r())); }
 }

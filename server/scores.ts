@@ -2,7 +2,7 @@
 // so both paths validate, audit and broadcast exactly the same way.
 import { z } from "zod";
 import { jurorTotal, MIN_POINTS } from "../shared/scoring.js";
-import type { Realtime } from "./realtime.js";
+import type { OrgRealtime } from "./realtime.js";
 import type { Repo } from "./repo.js";
 
 export const scoreBody = z.object({
@@ -15,7 +15,7 @@ export type SubmitResult =
   | { ok: true; status: 200; body: { teamId: number; values: Record<string, number>; note: string; tags: string[]; updatedAt: number; total?: number | null } }
   | { ok: false; status: number; error: string };
 
-export function submitScore(repo: Repo, rt: Realtime, jurorId: number, teamIdRaw: unknown, raw: unknown): SubmitResult {
+export function submitScore(repo: Repo, rt: OrgRealtime, jurorId: number, teamIdRaw: unknown, raw: unknown): SubmitResult {
   const ev = repo.getEvent();
   if (ev.locked) return { ok: false, status: 423, error: "Qiymətləndirmə koordinator tərəfindən bağlanıb." };
   const teamId = Number(teamIdRaw);

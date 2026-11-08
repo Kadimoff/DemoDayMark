@@ -82,14 +82,23 @@ export interface UserRow {
   password_hash: string;
   active: number;
   created_at: number;
+  /** orgs: the organisation the account belongs to (jurors, coordinators; root's home is org 1). */
+  org_id: number;
+  /** orgs: platform owner (the env admin). */
+  is_root: number;
 }
 
+/**
+ * Data access for ONE organisation (orgs). Every query is filtered by (or inserts) this.orgId; ids handed in from
+ * requests are only ever resolved inside the organisation, so another organisation's rows read as "not found".
+ * Session lookups and userById/userByUsername are global on purpose: they are keyed by secrets / used by sign-in.
+ */
 export class Repo {
-  constructor(readonly db: DB) {}
+  constructor(readonly db: DB, readonly orgId = 1, readonly orgSlug = "root") {}
 
   // ---------- event ----------
   getEvent(): EventState {
-    const r = this.db.prepare("SELECT * FROM event WHERE id = 1").get() as EventRow;
+    const r = this.db.prepare("SELECT * FROM event WHERE org_id = ?").get(this.orgId) as EventRow;
     const product = asProduct(r.product);
     return {
       name: r.name,
@@ -130,25 +139,25 @@ export class Repo {
     this.db.prepare(`UPDATE event SET name=?, date=?, current_team_id=?, timer_visible=?, timer_running=?,
       timer_offset_sec=?, timer_anchor_at=?, pitch_sec=?, qa_sec=?, locked=?, show_juror_total=?, include_entry=?, entry_max=?,
       feedback_tags_json=?, reveal_top=?, product=?, final_order_json=?, reveal_hide_scores=?, reveal_batch=?,
-      team_registration=?, team_can_rename=?, upload_deadline=?, jurors_see_materials=?, stage_mode=?, stage_slide=?, stage_intro_at=? WHERE id = 1`)
+      team_registration=?, team_can_rename=?, upload_deadline=?, jurors_see_materials=?, stage_mode=?, stage_slide=?, stage_intro_at=? WHERE org_id = ?`)
       .run(n.name, n.date, n.currentTeamId, +n.timer.visible, +n.timer.running, n.timer.offsetSec,
         n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal, +n.includeEntry, n.entryMax,
         JSON.stringify(n.feedbackTags), n.revealTop, n.product, n.finalOrder ? JSON.stringify(n.finalOrder) : null,
         +n.revealHideScores, n.revealBatch,
-        +n.teamRegistration, +n.teamCanRename, n.uploadDeadline, +n.jurorsSeeMaterials, n.stageMode, n.stageSlide, n.stageIntroAt);
+        +n.teamRegistration, +n.teamCanRename, n.uploadDeadline, +n.jurorsSeeMaterials, n.stageMode, n.stageSlide, n.stageIntroAt, this.orgId);
     return this.getEvent();
   }
 
   getReveal(): { enabled: boolean; step: number; snapshot: RevealSnapshot | null } {
-    const r = this.db.prepare("SELECT reveal_enabled, reveal_step, reveal_snapshot FROM event WHERE id = 1").get() as
+    const r = this.db.prepare("SELECT reveal_enabled, reveal_step, reveal_snapshot FROM event WHERE org_id = ?").get(this.orgId) as
       { reveal_enabled: number; reveal_step: number; reveal_snapshot: string | null };
     return { enabled: !!r.reveal_enabled, step: r.reveal_step, snapshot: r.reveal_snapshot ? normalizeSnapshot(JSON.parse(r.reveal_snapshot)) : null };
   }
   setReveal(p: { enabled?: boolean; step?: number; snapshot?: RevealSnapshot | null }) {
     const cur = this.getReveal();
     const n = { ...cur, ...p };
-    this.db.prepare("UPDATE event SET reveal_enabled=?, reveal_step=?, reveal_snapshot=? WHERE id = 1")
-      .run(+n.enabled, n.step, n.snapshot ? JSON.stringify(n.snapshot) : null);
+    this.db.prepare("UPDATE event SET reveal_enabled=?, reveal_step=?, reveal_snapshot=? WHERE org_id = ?")
+      .run(+n.enabled, n.step, n.snapshot ? JSON.stringify(n.snapshot) : null, this.orgId);
     return this.getReveal();
   }
 
@@ -163,84 +172,87 @@ export class Repo {
       team: t ? { id: t.id, name: t.name, project: t.project, index: i + 1, total: teams.length } : null,
       timer: ev.timer,
       serverNow: now,
-      show: stageShow(this.db, ev, t ? t.id : null, (i >= 0 ? teams[i + 1] : teams[0]) ?? null),
+      show: stageShow(this.db, ev, t ? t.id : null, (i >= 0 ? teams[i + 1] : teams[0]) ?? null, this.orgSlug),
     };
   }
 
   // ---------- teams ----------
   /** Includes entry scores (shown to the admin and to jurors). */
   teams(): AdminTeam[] {
-    return (this.db.prepare("SELECT * FROM teams ORDER BY order_index, id").all() as any[]).map(r => ({
+    return (this.db.prepare("SELECT * FROM teams WHERE org_id = ? ORDER BY order_index, id").all(this.orgId) as any[]).map(r => ({
       id: r.id, name: r.name, project: r.project, orderIndex: r.order_index, active: !!r.active,
       entryScore: r.entry_score ?? null, approval: r.approval === "pending" ? "pending" : "approved",
     }));
   }
   team(id: number) { return this.teams().find(t => t.id === id) ?? null; }
   addTeam(name: string, project: string) {
-    const max = (this.db.prepare("SELECT COALESCE(MAX(order_index), -1) m FROM teams").get() as any).m;
-    const r = this.db.prepare("INSERT INTO teams (order_index, name, project) VALUES (?, ?, ?)").run(max + 1, name, project);
+    const max = (this.db.prepare("SELECT COALESCE(MAX(order_index), -1) m FROM teams WHERE org_id = ?").get(this.orgId) as any).m;
+    const r = this.db.prepare("INSERT INTO teams (order_index, name, project, org_id) VALUES (?, ?, ?, ?)").run(max + 1, name, project, this.orgId);
     return this.team(Number(r.lastInsertRowid))!;
   }
   updateTeam(id: number, p: Partial<Pick<AdminTeam, "name" | "project" | "active" | "entryScore">>) {
     const t = this.team(id);
     if (!t) return null;
     const n = { ...t, ...p };
-    this.db.prepare("UPDATE teams SET name=?, project=?, active=?, entry_score=? WHERE id=?").run(n.name, n.project, +n.active, n.entryScore, id);
+    this.db.prepare("UPDATE teams SET name=?, project=?, active=?, entry_score=? WHERE id=? AND org_id=?").run(n.name, n.project, +n.active, n.entryScore, id, this.orgId);
     // Switching a self-registered team on is the coordinator's approval.
-    if (p.active === true) this.db.prepare("UPDATE teams SET approval='approved' WHERE id=?").run(id);
+    if (p.active === true) this.db.prepare("UPDATE teams SET approval='approved' WHERE id=? AND org_id=?").run(id, this.orgId);
     return this.team(id);
   }
-  deleteTeam(id: number) { return this.db.prepare("DELETE FROM teams WHERE id=?").run(id).changes > 0; }
+  deleteTeam(id: number) { return this.db.prepare("DELETE FROM teams WHERE id=? AND org_id=?").run(id, this.orgId).changes > 0; }
   reorder(table: "teams" | "criteria", ids: number[]) {
-    const st = this.db.prepare(`UPDATE ${table} SET order_index=? WHERE id=?`);
-    this.db.transaction(() => ids.forEach((id, i) => st.run(i, id)))();
+    const st = this.db.prepare(`UPDATE ${table} SET order_index=? WHERE id=? AND org_id=?`);
+    this.db.transaction(() => ids.forEach((id, i) => st.run(i, id, this.orgId)))();
   }
 
   // ---------- criteria ----------
   criteria(): Criterion[] {
-    return (this.db.prepare("SELECT * FROM criteria ORDER BY order_index, id").all() as any[]).map(r => ({
+    return (this.db.prepare("SELECT * FROM criteria WHERE org_id = ? ORDER BY order_index, id").all(this.orgId) as any[]).map(r => ({
       id: r.id, key: r.key, name: r.name, description: r.description, maxScore: r.max_score, orderIndex: r.order_index,
     }));
   }
   criterion(id: number) { return this.criteria().find(c => c.id === id) ?? null; }
   // The legacy `weight` column (pre-v3 weighted model) is kept equal to max_score.
   addCriterion(c: { key: string; name: string; description: string; maxScore: number }) {
-    const max = (this.db.prepare("SELECT COALESCE(MAX(order_index), -1) m FROM criteria").get() as any).m;
-    const r = this.db.prepare("INSERT INTO criteria (order_index, key, name, description, weight, max_score) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(max + 1, c.key, c.name, c.description, c.maxScore, c.maxScore);
+    const max = (this.db.prepare("SELECT COALESCE(MAX(order_index), -1) m FROM criteria WHERE org_id = ?").get(this.orgId) as any).m;
+    const r = this.db.prepare("INSERT INTO criteria (order_index, key, name, description, weight, max_score, org_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(max + 1, c.key, c.name, c.description, c.maxScore, c.maxScore, this.orgId);
     return this.criterion(Number(r.lastInsertRowid))!;
   }
   updateCriterion(id: number, p: Partial<Pick<Criterion, "name" | "description" | "maxScore">>) {
     const c = this.criterion(id);
     if (!c) return null;
     const n = { ...c, ...p };
-    this.db.prepare("UPDATE criteria SET name=?, description=?, weight=?, max_score=? WHERE id=?").run(n.name, n.description, n.maxScore, n.maxScore, id);
+    this.db.prepare("UPDATE criteria SET name=?, description=?, weight=?, max_score=? WHERE id=? AND org_id=?").run(n.name, n.description, n.maxScore, n.maxScore, id, this.orgId);
     return this.criterion(id);
   }
-  deleteCriterion(id: number) { return this.db.prepare("DELETE FROM criteria WHERE id=?").run(id).changes > 0; }
+  deleteCriterion(id: number) { return this.db.prepare("DELETE FROM criteria WHERE id=? AND org_id=?").run(id, this.orgId).changes > 0; }
 
   // ---------- users ----------
+  /** Global (sign-in, sessions). Routes acting on a user given by id use member(). */
   userById(id: number) { return (this.db.prepare("SELECT * FROM users WHERE id=?").get(id) as UserRow | undefined) ?? null; }
+  /** The user, only if it belongs to this organisation. */
+  member(id: number) { return (this.db.prepare("SELECT * FROM users WHERE id=? AND org_id=?").get(id, this.orgId) as UserRow | undefined) ?? null; }
   userByUsername(u: string) { return (this.db.prepare("SELECT * FROM users WHERE username=?").get(u) as UserRow | undefined) ?? null; }
   jurors(): Juror[] {
-    return (this.db.prepare("SELECT * FROM users WHERE role='juror' ORDER BY id").all() as UserRow[]).map(r => ({
+    return (this.db.prepare("SELECT * FROM users WHERE role='juror' AND org_id=? ORDER BY id").all(this.orgId) as UserRow[]).map(r => ({
       id: r.id, username: r.username, displayName: r.display_name, active: !!r.active,
     }));
   }
-  createUser(role: "admin" | "juror", username: string, displayName: string, hash: string) {
-    const r = this.db.prepare("INSERT INTO users (role, username, display_name, password_hash, active, created_at) VALUES (?, ?, ?, ?, 1, ?)")
-      .run(role, username, displayName, hash, Date.now());
+  createUser(role: "admin" | "juror", username: string, displayName: string, hash: string, opts: { isRoot?: boolean } = {}) {
+    const r = this.db.prepare("INSERT INTO users (role, username, display_name, password_hash, active, created_at, org_id, is_root) VALUES (?, ?, ?, ?, 1, ?, ?, ?)")
+      .run(role, username, displayName, hash, Date.now(), this.orgId, opts.isRoot ? 1 : 0);
     return this.userById(Number(r.lastInsertRowid))!;
   }
   updateUser(id: number, p: { username?: string; displayName?: string; active?: boolean; passwordHash?: string }) {
-    const u = this.userById(id);
+    const u = this.member(id);
     if (!u) return null;
-    this.db.prepare("UPDATE users SET username=?, display_name=?, active=?, password_hash=? WHERE id=?").run(
+    this.db.prepare("UPDATE users SET username=?, display_name=?, active=?, password_hash=? WHERE id=? AND org_id=?").run(
       p.username ?? u.username, p.displayName ?? u.display_name,
-      p.active == null ? u.active : +p.active, p.passwordHash ?? u.password_hash, id);
-    return this.userById(id);
+      p.active == null ? u.active : +p.active, p.passwordHash ?? u.password_hash, id, this.orgId);
+    return this.member(id);
   }
-  deleteUser(id: number) { return this.db.prepare("DELETE FROM users WHERE id=? AND role='juror'").run(id).changes > 0; }
+  deleteUser(id: number) { return this.db.prepare("DELETE FROM users WHERE id=? AND role='juror' AND org_id=?").run(id, this.orgId).changes > 0; }
 
   // ---------- juror QR invites ----------
   /** Issues a new invite for the juror and revokes every earlier unused one. */
@@ -248,8 +260,8 @@ export class Repo {
     const now = Date.now();
     this.db.transaction(() => {
       this.db.prepare("UPDATE juror_invites SET revoked_at=? WHERE user_id=? AND used_at IS NULL AND revoked_at IS NULL").run(now, userId);
-      this.db.prepare("INSERT INTO juror_invites (user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)")
-        .run(userId, tokenHash, now, now + ttlMs);
+      this.db.prepare("INSERT INTO juror_invites (user_id, token_hash, created_at, expires_at, org_id) VALUES (?, ?, ?, ?, ?)")
+        .run(userId, tokenHash, now, now + ttlMs, this.orgId);
     })();
     return { expiresAt: now + ttlMs };
   }
@@ -264,7 +276,7 @@ export class Repo {
   }
   /** Juror ids that have scanned at least one QR (i.e. a person has claimed the account). */
   claimedJurors(): Set<number> {
-    return new Set((this.db.prepare("SELECT DISTINCT user_id FROM juror_invites WHERE used_at IS NOT NULL").all() as any[]).map(r => r.user_id));
+    return new Set((this.db.prepare("SELECT DISTINCT user_id FROM juror_invites WHERE used_at IS NOT NULL AND org_id=?").all(this.orgId) as any[]).map(r => r.user_id));
   }
 
   // ---------- sessions ----------
@@ -279,12 +291,12 @@ export class Repo {
   }
   touchSession(id: string) { this.db.prepare("UPDATE sessions SET last_seen_at=? WHERE id=?").run(Date.now(), id); }
   deleteSession(id: string) { this.db.prepare("DELETE FROM sessions WHERE id=?").run(id); }
-  deleteUserSessions(userId: number) { return this.db.prepare("DELETE FROM sessions WHERE user_id=?").run(userId).changes; }
+  deleteUserSessions(userId: number) { return this.db.prepare("DELETE FROM sessions WHERE user_id=? AND user_id IN (SELECT id FROM users WHERE org_id=?)").run(userId, this.orgId).changes; }
   purgeSessions(olderThan: number) { this.db.prepare("DELETE FROM sessions WHERE last_seen_at < ?").run(olderThan); }
   sessions() {
     return this.db.prepare(`SELECT s.id, s.user_id userId, u.display_name displayName, u.role, s.created_at createdAt,
       s.last_seen_at lastSeenAt, s.user_agent userAgent, s.ip FROM sessions s JOIN users u ON u.id = s.user_id
-      ORDER BY s.last_seen_at DESC`).all() as Array<{ id: string; userId: number; displayName: string; role: string;
+      WHERE u.org_id = ? ORDER BY s.last_seen_at DESC`).all(this.orgId) as Array<{ id: string; userId: number; displayName: string; role: string;
         createdAt: number; lastSeenAt: number; userAgent: string; ip: string }>;
   }
 
@@ -294,24 +306,24 @@ export class Repo {
     tags: parseTags(r.tags_json) ?? [],
     createdAt: r.created_at, updatedAt: r.updated_at,
   });
-  scores(): ScoreRow[] { return (this.db.prepare("SELECT * FROM scores ORDER BY id").all() as any[]).map(this.mapScore); }
+  scores(): ScoreRow[] { return (this.db.prepare("SELECT * FROM scores WHERE org_id=? ORDER BY id").all(this.orgId) as any[]).map(this.mapScore); }
   scoresOf(jurorId: number): ScoreRow[] {
-    return (this.db.prepare("SELECT * FROM scores WHERE juror_id=? ORDER BY id").all(jurorId) as any[]).map(this.mapScore);
+    return (this.db.prepare("SELECT * FROM scores WHERE juror_id=? AND org_id=? ORDER BY id").all(jurorId, this.orgId) as any[]).map(this.mapScore);
   }
-  scoreCountForTeam(teamId: number) { return (this.db.prepare("SELECT COUNT(*) n FROM scores WHERE team_id=?").get(teamId) as any).n as number; }
-  scoreCount() { return (this.db.prepare("SELECT COUNT(*) n FROM scores").get() as any).n as number; }
+  scoreCountForTeam(teamId: number) { return (this.db.prepare("SELECT COUNT(*) n FROM scores WHERE team_id=? AND org_id=?").get(teamId, this.orgId) as any).n as number; }
+  scoreCount() { return (this.db.prepare("SELECT COUNT(*) n FROM scores WHERE org_id=?").get(this.orgId) as any).n as number; }
   upsertScore(jurorId: number, teamId: number, values: Record<string, number>, total: number | null, note: string, tags: string[] = []) {
     const now = Date.now();
     const prev = this.db.prepare("SELECT id FROM scores WHERE juror_id=? AND team_id=?").get(jurorId, teamId);
-    this.db.prepare(`INSERT INTO scores (juror_id, team_id, values_json, total, note, tags_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    this.db.prepare(`INSERT INTO scores (juror_id, team_id, values_json, total, note, tags_json, created_at, updated_at, org_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (juror_id, team_id) DO UPDATE SET values_json=excluded.values_json, total=excluded.total,
         note=excluded.note, tags_json=excluded.tags_json, updated_at=excluded.updated_at`)
-      .run(jurorId, teamId, JSON.stringify(values), total, note, JSON.stringify(tags), now, now);
+      .run(jurorId, teamId, JSON.stringify(values), total, note, JSON.stringify(tags), now, now, this.orgId);
     const row = this.db.prepare("SELECT * FROM scores WHERE juror_id=? AND team_id=?").get(jurorId, teamId);
     return { score: this.mapScore(row), created: !prev };
   }
-  wipeScores() { return this.db.prepare("DELETE FROM scores").run().changes; }
+  wipeScores() { return this.db.prepare("DELETE FROM scores WHERE org_id=?").run(this.orgId).changes; }
 
   // ---------- scoring history (never wiped) ----------
   /** Snapshot of one saved score; called right after upsertScore. */
@@ -319,48 +331,48 @@ export class Repo {
     const juror = this.userById(jurorId)?.display_name ?? `Münsif #${jurorId}`;
     const team = this.team(teamId)?.name ?? `Komanda #${teamId}`;
     const snap = this.criteria().filter(c => values[c.key] != null).map(c => ({ key: c.key, name: c.name, max: c.maxScore, v: values[c.key] }));
-    this.db.prepare(`INSERT INTO score_history (kind, juror_id, juror_name, team_id, team_name, values_json, total, note, tags_json, actor_name, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(kind, jurorId, juror, teamId, team, JSON.stringify(snap), total, note, JSON.stringify(tags), juror, Date.now());
+    this.db.prepare(`INSERT INTO score_history (kind, juror_id, juror_name, team_id, team_name, values_json, total, note, tags_json, actor_name, created_at, org_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(kind, jurorId, juror, teamId, team, JSON.stringify(snap), total, note, JSON.stringify(tags), juror, Date.now(), this.orgId);
   }
   /** Marker for scores removed in bulk (wipe) or with a team / juror. */
   recordRemoval(kind: "wipe" | "team.delete" | "juror.delete", actorId: number | null, count: number, who?: { jurorId?: number; jurorName?: string; teamId?: number; teamName?: string }) {
     const actor = actorId != null ? this.userById(actorId)?.display_name ?? "" : "";
-    this.db.prepare(`INSERT INTO score_history (kind, juror_id, juror_name, team_id, team_name, actor_name, count, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(kind, who?.jurorId ?? null, who?.jurorName ?? "", who?.teamId ?? null, who?.teamName ?? "", actor, count, Date.now());
+    this.db.prepare(`INSERT INTO score_history (kind, juror_id, juror_name, team_id, team_name, actor_name, count, created_at, org_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(kind, who?.jurorId ?? null, who?.jurorName ?? "", who?.teamId ?? null, who?.teamName ?? "", actor, count, Date.now(), this.orgId);
   }
   /** Newest first. Filters by juror / team; markers (wipes) show only when no filter is set. */
   history(q: { jurorId?: number; teamId?: number; before?: number; limit?: number } = {}): HistoryPage {
     const limit = Math.min(Math.max(q.limit ?? 50, 1), 500);
-    const where: string[] = [], args: unknown[] = [];
+    const where: string[] = ["org_id = ?"], args: unknown[] = [this.orgId];
     if (q.jurorId) { where.push("juror_id = ?"); args.push(q.jurorId); }
     if (q.teamId) { where.push("team_id = ?"); args.push(q.teamId); }
-    const filt = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    const page = q.before ? `${filt ? `${filt} AND` : "WHERE"} id < ?` : filt;
+    const filt = `WHERE ${where.join(" AND ")}`;
+    const page = q.before ? `${filt} AND id < ?` : filt;
     // prev_* come from the same juror's previous save for the same team (wipe markers sit outside that chain).
     const rows = this.db.prepare(`WITH h AS (
         SELECT *, CASE WHEN kind IN ('submit','update') THEN LAG(values_json) OVER w END prev_values,
           CASE WHEN kind IN ('submit','update') THEN LAG(total) OVER w END prev_total,
           CASE WHEN kind IN ('submit','update') THEN LAG(note) OVER w END prev_note
-        FROM score_history WINDOW w AS (PARTITION BY kind IN ('submit','update'), juror_id, team_id ORDER BY id))
-      SELECT * FROM h ${page} ORDER BY id DESC LIMIT ?`).all(...args, ...(q.before ? [q.before] : []), limit + 1) as any[];
+        FROM score_history WHERE org_id = ? WINDOW w AS (PARTITION BY kind IN ('submit','update'), juror_id, team_id ORDER BY id))
+      SELECT * FROM h ${page} ORDER BY id DESC LIMIT ?`).all(this.orgId, ...args, ...(q.before ? [q.before] : []), limit + 1) as any[];
     const more = rows.length > limit;
     const total = (this.db.prepare(`SELECT COUNT(*) n FROM score_history ${filt}`).get(...args) as any).n as number;
-    const jurors = this.db.prepare(`SELECT juror_id id, juror_name name FROM score_history WHERE juror_id IS NOT NULL AND kind IN ('submit','update')
-      AND id IN (SELECT MAX(id) FROM score_history WHERE juror_id IS NOT NULL AND kind IN ('submit','update') GROUP BY juror_id) ORDER BY name COLLATE NOCASE`).all() as HistoryPage["jurors"];
-    const teams = this.db.prepare(`SELECT team_id id, team_name name FROM score_history WHERE team_id IS NOT NULL AND kind IN ('submit','update')
-      AND id IN (SELECT MAX(id) FROM score_history WHERE team_id IS NOT NULL AND kind IN ('submit','update') GROUP BY team_id) ORDER BY name COLLATE NOCASE`).all() as HistoryPage["teams"];
+    const jurors = this.db.prepare(`SELECT juror_id id, juror_name name FROM score_history WHERE org_id = ? AND juror_id IS NOT NULL AND kind IN ('submit','update')
+      AND id IN (SELECT MAX(id) FROM score_history WHERE org_id = ? AND juror_id IS NOT NULL AND kind IN ('submit','update') GROUP BY juror_id) ORDER BY name COLLATE NOCASE`).all(this.orgId, this.orgId) as HistoryPage["jurors"];
+    const teams = this.db.prepare(`SELECT team_id id, team_name name FROM score_history WHERE org_id = ? AND team_id IS NOT NULL AND kind IN ('submit','update')
+      AND id IN (SELECT MAX(id) FROM score_history WHERE org_id = ? AND team_id IS NOT NULL AND kind IN ('submit','update') GROUP BY team_id) ORDER BY name COLLATE NOCASE`).all(this.orgId, this.orgId) as HistoryPage["teams"];
     return { rows: rows.slice(0, limit).map(mapHistory), more, total, jurors, teams };
   }
 
   // ---------- audit ----------
   audit(actorId: number | null, action: string, payload: unknown = {}) {
-    this.db.prepare("INSERT INTO audit_log (actor_id, action, payload_json, created_at) VALUES (?, ?, ?, ?)")
-      .run(actorId, action, JSON.stringify(payload), Date.now());
+    this.db.prepare("INSERT INTO audit_log (actor_id, action, payload_json, created_at, org_id) VALUES (?, ?, ?, ?, ?)")
+      .run(actorId, action, JSON.stringify(payload), Date.now(), this.orgId);
   }
   auditLog(limit = 500) {
     return (this.db.prepare(`SELECT a.id, a.actor_id actorId, u.display_name actorName, a.action, a.payload_json payload,
-      a.created_at createdAt FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id ORDER BY a.id DESC LIMIT ?`)
-      .all(limit) as any[]).map(r => ({ ...r, payload: JSON.parse(r.payload) }));
+      a.created_at createdAt FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id WHERE a.org_id = ? ORDER BY a.id DESC LIMIT ?`)
+      .all(this.orgId, limit) as any[]).map(r => ({ ...r, payload: JSON.parse(r.payload) }));
   }
 }
 

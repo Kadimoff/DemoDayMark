@@ -8,8 +8,8 @@ import { DEFAULT_FEEDBACK_TAGS } from "../shared/brand.js";
 describe("migrations v3 (points rubric + entry scores) and v4 (QR invites, tags, brand prefix)", () => {
   it("keeps data, gives old criteria a 10-point maximum and drops an old-model reveal snapshot", () => {
     const file = `/tmp/ij-mig-${process.pid}-${Date.now()}.db`;
-    // Start from a current DB, then put the three tables v3 touches back into their v2 shape.
-    openDb(file).close();
+    // Start from a v2 DB, then put the three tables v3 touches back into their exact v2 shape.
+    openDb(file, { upTo: 2 }).close();
     const raw = new Database(file);
     raw.exec("DROP TABLE IF EXISTS notifications; DROP TABLE IF EXISTS team_files; DROP TABLE IF EXISTS team_sessions; DROP TABLE IF EXISTS team_links; DROP TABLE IF EXISTS score_history; DROP TABLE IF EXISTS juror_invites; DROP TABLE IF EXISTS scores; DROP TABLE IF EXISTS criteria; DROP TABLE IF EXISTS teams; DROP TABLE IF EXISTS event;");
     raw.exec(`

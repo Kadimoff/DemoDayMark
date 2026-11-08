@@ -10,5 +10,5 @@ const db = openDb(cfg.dbFile);
 await ensureBaseline(new Repo(db), cfg, m => console.log("·", m));
 const count = (t: string) => (db.prepare(`SELECT COUNT(*) n FROM ${t}`).get() as { n: number }).n;
 console.log(`Baza: ${cfg.dbFile}`);
-console.log(`Komandalar: ${count("teams")} · Kriteriyalar: ${count("criteria")} · Münsiflər: ${count("users") - 1}`);
+console.log(`Komandalar: ${count("teams")} · Kriteriyalar: ${count("criteria")} · Münsiflər: ${(db.prepare("SELECT COUNT(*) n FROM users WHERE role = 'juror'").get() as { n: number }).n} (bütün təşkilatlar)`);
 db.close();

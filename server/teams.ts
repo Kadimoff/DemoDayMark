@@ -1,18 +1,18 @@
 // munsif: team sign-in (cookie ij_team, separate from admin/juror sessions), notifications, queue reminders.
 import dns from "node:dns/promises";
 import net from "node:net";
-import path from "node:path";
 import type { Config } from "./config.js";
-import { Converter } from "./files.js";
-import type { Realtime } from "./realtime.js";
+import type { Converter } from "./files.js";
+import type { OrgRealtime } from "./realtime.js";
 import type { Repo } from "./repo.js";
-import { materials, TeamRepo, prettyCode } from "./teamrepo.js";
+import { materials, TeamRepo, prettyCode, teamRow } from "./teamrepo.js";
+import { orgActive } from "./auth.js";
 import { tokenId } from "./auth.js";
 import type { AdminTeamMaterials, Notice, TeamQueue, TeamStatePayload } from "../shared/types.js";
 
 export const TEAM_COOKIE = "ij_team";
 
-export interface TeamAuth { teamId: number; sessionId: string }
+export interface TeamAuth { teamId: number; sessionId: string; /** orgs */ orgId: number }
 
 declare module "fastify" {
   interface FastifyRequest { team: TeamAuth | null }
@@ -29,9 +29,11 @@ export function resolveTeam(trepo: TeamRepo, cfg: Config, cookies: Record<string
   const s = trepo.session(sid);
   if (!s) return null;
   if (Date.now() - s.last_seen_at > cfg.teamSessionTtlMs) { trepo.deleteSession(sid); return null; }
-  const t = trepo.row(s.team_id);
+  const t = teamRow(trepo.db, s.team_id);
   if (!t) return null;
-  return { teamId: t.id, sessionId: sid };
+  // orgs: a deactivated organisation signs its teams out as well
+  if (!orgActive(trepo, t.org_id)) return null;
+  return { teamId: t.id, sessionId: sid, orgId: t.org_id };
 }
 
 /** Private / loopback / link-local addresses: the embed check never fetches those (SSRF). */
@@ -64,18 +66,14 @@ export async function checkEmbeddable(url: string): Promise<boolean> {
   } catch { return false; }
 }
 
+/** One organisation's team features (orgs: one instance per Scope; the PPTX converter is shared). */
 export class TeamService {
-  readonly converter: Converter;
   /** stage reminders already sent: "<kind>:<teamId>:<stage team id>" */
   private sentStage = new Set<string>();
-  private deadlineTimer: NodeJS.Timeout | null = null;
 
-  constructor(readonly trepo: TeamRepo, private repo: Repo, private cfg: Config, private rt: Realtime) {
-    this.converter = new Converter(cfg.soffice, cfg.uploadsDir, path.join(cfg.dataDir, "lo-profile"), cfg.sofficeTimeoutMs);
-    this.deadlineTimer = setInterval(() => { try { this.deadlineReminders(); } catch { /* db closed */ } }, 60_000);
-    this.deadlineTimer.unref();
+  constructor(readonly trepo: TeamRepo, private repo: Repo, private cfg: Config, private rt: OrgRealtime, readonly converter: Converter) {
+    rt.afterStage = () => this.stageReminders();
   }
-  close() { if (this.deadlineTimer) clearInterval(this.deadlineTimer); }
 
   uploadsOpen(teamId: number) {
     const dl = this.repo.getEvent().uploadDeadline;
@@ -124,7 +122,7 @@ export class TeamService {
   // ---------- notifications ----------
   notifyAdmin(kind: string, title: string, body = "", teamId: number | null = null): Notice {
     const n = this.trepo.addNotice("admin", teamId, kind, title, body);
-    this.rt.io.to("admin").emit("notice", n);
+    this.rt.to("admin").emit("notice", n);
     return n;
   }
   notifyTeam(teamId: number, kind: string, title: string, body = ""): Notice {
@@ -135,7 +133,7 @@ export class TeamService {
   /** Team data changed: the team's own panel and the admin lists refetch. */
   changed(teamId: number) {
     this.rt.io.to(`team:${teamId}`).emit("team:changed");
-    this.rt.io.to("admin").emit("materials:changed", { teamId });
+    this.rt.to("admin").emit("materials:changed", { teamId });
   }
 
   /** Called after the team on stage changed: "Səhnəyə dəvət olunursunuz" / "Növbəti sizsiniz" / "Sıranız yaxınlaşır". */

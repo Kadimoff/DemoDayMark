@@ -311,7 +311,7 @@ describe("QR sign-in", () => {
   it("rejects unknown, expired and deactivated-juror QRs", async () => {
     expect((await post("/api/auth/invite/not-a-real-token-but-long-enough").send({ displayName: "X Y" })).status).toBe(410);
     const path = await newQr(jurorId.aysel);
-    A.ctx.repo.db.prepare("UPDATE juror_invites SET expires_at = 1 WHERE used_at IS NULL AND revoked_at IS NULL").run();
+    A.ctx.orgs.root.repo.db.prepare("UPDATE juror_invites SET expires_at = 1 WHERE used_at IS NULL AND revoked_at IS NULL").run();
     const expired = await post(`/api/auth/invite/${path.slice(3)}`).send({ displayName: "Aysel Quliyeva" });
     expect([expired.status, expired.body.error]).toEqual([410, expect.stringMatching(/vaxtı bitib/)]);
 
@@ -325,9 +325,9 @@ describe("QR sign-in", () => {
   });
 
   it("refuses password sign-in for jurors", async () => {
-    const u = A.ctx.repo.userById(jurorId.ali)!;
+    const u = A.ctx.orgs.root.repo.userById(jurorId.ali)!;
     const { hashPassword } = await import("../server/baseline.js");
-    A.ctx.repo.updateUser(u.id, { passwordHash: await hashPassword("legacy-pass-1") }); // a juror from before QR sign-in
+    A.ctx.orgs.root.repo.updateUser(u.id, { passwordHash: await hashPassword("legacy-pass-1") }); // a juror from before QR sign-in
     const r = await post("/api/auth/login").send({ username: u.username, password: "legacy-pass-1" });
     expect(r.status).toBe(403);
     expect(r.body.error).toMatch(/QR/);
@@ -541,7 +541,7 @@ describe("score submit over the juror socket", () => {
   it("refuses a socket whose session was ended", async () => {
     const extra = await claim(await newQr(jurorId.aysel), "Aysel Quliyeva");
     const s = await socket(extra);
-    A.ctx.repo.db.prepare("DELETE FROM sessions WHERE user_id = ?").run(jurorId.aysel); // logged out elsewhere
+    A.ctx.orgs.root.repo.db.prepare("DELETE FROM sessions WHERE user_id = ?").run(jurorId.aysel); // logged out elsewhere
     const r: any = await s.timeout(3000).emitWithAck("score:submit", { teamId: teamIds[5], ...fullScore(5) });
     expect([r.ok, r.status]).toEqual([false, 401]);
     jurorCookie.aysel = await claim(await newQr(jurorId.aysel), "Aysel Quliyeva");

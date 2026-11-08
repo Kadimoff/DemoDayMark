@@ -4,7 +4,9 @@ import { z } from "zod";
 import { applyTimerAction } from "../../shared/timer.js";
 import { newToken, requireRole, tokenId } from "../auth.js";
 import { hashPassword } from "../baseline.js";
-import { idParam, parseBody, type Ctx } from "../context.js";
+import { idParam, parseBody, scopeOf, type Ctx } from "../context.js";
+import type { Repo } from "../repo.js";
+import type { OrgRealtime } from "../realtime.js";
 import { buildPdf } from "../export/pdf.js";
 import { buildXlsx, exportFileName } from "../export/xlsx.js";
 import { adminResults, revealAdminView, revealSnapshot } from "../views.js";
@@ -51,31 +53,39 @@ const wipeBody = z.object({ token: z.string().min(1) });
 const revealBody = z.object({ action: z.enum(["enable", "disable", "next", "back", "reset"]) });
 
 export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
-  const { repo, cfg, rt } = ctx;
-  let wipe: { token: string; until: number } | null = null;
+  const { cfg } = ctx;
+  /** Pending "wipe all scores" confirmation, per organisation. */
+  const wipes = new Map<number, { token: string; until: number }>();
 
   const id = (params: unknown, reply: FastifyReply) => {
     const r = idParam.safeParse(params);
     if (!r.success) { reply.code(400).send({ error: "Yanlış identifikator." }); return null; }
     return r.data.id;
   };
-  const configChanged = () => { rt.emitConfig(); rt.emitStage(); rt.emitResults(); };
+  const changed = (rt: OrgRealtime) => { rt.emitConfig(); rt.emitStage(); rt.emitResults(); };
 
   app.register(async r => {
     r.addHook("preHandler", requireRole("admin"));
 
-    r.get("/api/admin/state", async () => ({
-      event: repo.getEvent(),
-      stage: repo.stage(),
-      presence: rt.presence(),
-      progress: rt.progress(),
-      sessions: repo.sessions().map(s => ({ ...s, id: s.id.slice(0, 16) })),
-      ...adminResults(repo, cfg),
-    }));
-    r.get("/api/admin/results", async () => adminResults(repo, cfg));
+    r.get("/api/admin/state", async req => {
+      const { repo, rt, orgId } = scopeOf(ctx, req);
+      const o = ctx.orgs.byId(orgId)!;
+      return {
+        event: repo.getEvent(),
+        stage: repo.stage(),
+        presence: rt.presence(),
+        progress: rt.progress(),
+        sessions: repo.sessions().map(s => ({ ...s, id: s.id.slice(0, 16) })),
+        // orgs: whose panel this is (header, projector links)
+        org: { id: o.id, slug: o.slug, name: o.name, root: o.id === 1 },
+        ...adminResults(repo, cfg),
+      };
+    });
+    r.get("/api/admin/results", async req => adminResults(scopeOf(ctx, req).repo, cfg));
 
     // ---------- event / stage / timer ----------
     r.patch("/api/admin/event", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const b = parseBody(eventBody, req.body, reply);
       if (!b) return;
       const actor = req.user!.id;
@@ -148,6 +158,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     });
 
     r.post("/api/admin/event/next", async req => {
+      const { repo, rt } = scopeOf(ctx, req);
       const teams = repo.teams().filter(t => t.active);
       const cur = repo.getEvent();
       const i = teams.findIndex(t => t.id === cur.currentTeamId);
@@ -163,8 +174,9 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     });
 
     // ---------- teams ----------
-    r.get("/api/admin/teams", async () => repo.teams().map(t => ({ ...t, scoreCount: repo.scoreCountForTeam(t.id) })));
+    r.get("/api/admin/teams", async req => { const { repo } = scopeOf(ctx, req); return repo.teams().map(t => ({ ...t, scoreCount: repo.scoreCountForTeam(t.id) })); });
     r.post("/api/admin/teams", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const b = parseBody(teamBody, req.body, reply);
       if (!b) return;
       if (b.entryScore != null && b.entryScore > repo.getEvent().entryMax) {
@@ -173,10 +185,11 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       let t = repo.addTeam(b.name, b.project);
       if (b.entryScore != null) t = repo.updateTeam(t.id, { entryScore: b.entryScore })!;
       repo.audit(req.user!.id, "team.create", t);
-      configChanged();
+      changed(rt);
       return t;
     });
     r.patch("/api/admin/teams/:id", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const tid = id(req.params, reply); if (!tid) return;
       const b = parseBody(teamPatch, req.body, reply); if (!b) return;
       if (b.entryScore != null && b.entryScore > repo.getEvent().entryMax) {
@@ -188,10 +201,11 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
         repo.updateEvent({ currentTeamId: null, timer: applyTimerAction(repo.getEvent().timer, "stop", Date.now()) });
       }
       repo.audit(req.user!.id, "team.update", { id: tid, ...b });
-      configChanged();
+      changed(rt);
       return t;
     });
     r.delete<{ Querystring: { force?: string } }>("/api/admin/teams/:id", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const tid = id(req.params, reply); if (!tid) return;
       const n = repo.scoreCountForTeam(tid);
       if (n && req.query.force !== "1") {
@@ -201,34 +215,36 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       if (!repo.deleteTeam(tid)) return reply.code(404).send({ error: "Komanda tapılmadı." });
       if (n) repo.recordRemoval("team.delete", req.user!.id, n, { teamId: tid, teamName: tname });
       repo.audit(req.user!.id, "team.delete", { id: tid, scoresDeleted: n });
-      configChanged();
+      changed(rt);
       return { ok: true };
     });
     r.post("/api/admin/teams/reorder", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const b = parseBody(reorderBody, req.body, reply); if (!b) return;
       repo.reorder("teams", b.ids);
-      configChanged();
+      changed(rt);
       return repo.teams();
     });
 
     // ---------- jurors (QR sign-in) ----------
-    const jurorView = (id: number) => {
-      const u = repo.userById(id)!;
+    const jurorView = (repo: Repo, id: number) => {
+      const u = repo.member(id)!;
       const claimed = repo.claimedJurors();
       const sessions = repo.sessions();
       return { id: u.id, username: u.username, displayName: u.display_name, active: !!u.active,
         claimed: claimed.has(u.id) || !isPlaceholderName(u.display_name), sessionCount: sessions.filter(s => s.userId === u.id).length };
     };
     /** New single-use QR token for the juror; every earlier unused one stops working. */
-    const issueInvite = (jurorId: number, actor: number) => {
+    const issueInvite = (repo: Repo, jurorId: number, actor: number) => {
       const token = newToken();
       const { expiresAt } = repo.createInvite(jurorId, tokenId(token), INVITE_TTL_MS);
       repo.audit(actor, "juror.invite", { id: jurorId });
       return { path: `/j/${token}`, expiresAt };
     };
 
-    r.get("/api/admin/jurors", async () => repo.jurors().map(j => jurorView(j.id)));
+    r.get("/api/admin/jurors", async req => { const { repo } = scopeOf(ctx, req); return repo.jurors().map(j => jurorView(repo, j.id)); });
     r.post("/api/admin/jurors", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const b = parseBody(jurorBody, req.body, reply); if (!b) return;
       const used = new Set(repo.jurors().map(j => j.displayName));
       let n = repo.jurors().length + 1;
@@ -236,33 +252,36 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       // Nobody signs in with these: the username is internal and the password hash is of a discarded random token.
       const u = repo.createUser("juror", `juror-${randomBytes(5).toString("hex")}`, b.displayName ?? placeholderName(n), await hashPassword(newToken()));
       repo.audit(req.user!.id, "juror.create", { id: u.id });
-      const invite = issueInvite(u.id, req.user!.id);
-      configChanged();
+      const invite = issueInvite(repo, u.id, req.user!.id);
+      changed(rt);
       rt.emitPresence();
-      return { juror: jurorView(u.id), invite };
+      return { juror: jurorView(repo, u.id), invite };
     });
     r.post("/api/admin/jurors/:id/invite", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const jid = id(req.params, reply); if (!jid) return;
-      const u = repo.userById(jid);
+      const u = repo.member(jid);
       if (!u || u.role !== "juror") return reply.code(404).send({ error: "Münsif tapılmadı." });
       if (!u.active) return reply.code(409).send({ error: "Münsif deaktivdir. Əvvəlcə aktiv edin." });
-      return { juror: jurorView(jid), invite: issueInvite(jid, req.user!.id) };
+      return { juror: jurorView(repo, jid), invite: issueInvite(repo, jid, req.user!.id) };
     });
     r.patch("/api/admin/jurors/:id", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const jid = id(req.params, reply); if (!jid) return;
       const b = parseBody(jurorPatch, req.body, reply); if (!b) return;
-      const u = repo.userById(jid);
+      const u = repo.member(jid);
       if (!u || u.role !== "juror") return reply.code(404).send({ error: "Münsif tapılmadı." });
       repo.updateUser(jid, { displayName: b.displayName, active: b.active });
       // Deactivation ends every open session of that juror.
       if (b.active === false) { repo.deleteUserSessions(jid); rt.kickUser(jid); rt.clearProgress(jid); }
       repo.audit(req.user!.id, "juror.update", { id: jid, displayName: b.displayName, active: b.active });
-      configChanged();
+      changed(rt);
       rt.emitPresence();
-      return jurorView(jid);
+      return jurorView(repo, jid);
     });
     // Reminds jurors who have not scored the team on stage yet.
     r.post("/api/admin/nudge", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const ev = repo.getEvent();
       const team = ev.currentTeamId ? repo.team(ev.currentTeamId) : null;
       if (!team) return reply.code(409).send({ error: "Səhnədə komanda yoxdur." });
@@ -275,21 +294,23 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       return { nudged: ids.length };
     });
     r.delete<{ Querystring: { force?: string } }>("/api/admin/jurors/:id", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const jid = id(req.params, reply); if (!jid) return;
       const n = repo.scoresOf(jid).length;
       if (n && req.query.force !== "1") {
         return reply.code(409).send({ error: `Bu münsifin ${n} qiyməti var. Silinsə, qiymətlər də silinəcək. Bunun əvəzinə deaktiv edə bilərsiniz.`, scoreCount: n });
       }
       rt.kickUser(jid);
-      const jname = repo.userById(jid)?.display_name ?? "";
+      const jname = repo.member(jid)?.display_name ?? "";
       if (!repo.deleteUser(jid)) return reply.code(404).send({ error: "Münsif tapılmadı." });
       if (n) repo.recordRemoval("juror.delete", req.user!.id, n, { jurorId: jid, jurorName: jname });
       repo.audit(req.user!.id, "juror.delete", { id: jid, scoresDeleted: n });
-      configChanged();
+      changed(rt);
       rt.emitPresence();
       return { ok: true };
     });
     r.post("/api/admin/jurors/:id/logout", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const jid = id(req.params, reply); if (!jid) return;
       const n = repo.deleteUserSessions(jid);
       rt.kickUser(jid);
@@ -298,18 +319,20 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     });
 
     // ---------- sessions ----------
-    r.get("/api/admin/sessions", async () => repo.sessions().map(s => ({ ...s, id: s.id.slice(0, 16) })));
+    r.get("/api/admin/sessions", async req => scopeOf(ctx, req).repo.sessions().map(s => ({ ...s, id: s.id.slice(0, 16) })));
 
     // ---------- criteria ----------
-    r.get("/api/admin/criteria", async () => repo.criteria());
+    r.get("/api/admin/criteria", async req => scopeOf(ctx, req).repo.criteria());
     r.post("/api/admin/criteria", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const b = parseBody(critBody, req.body, reply); if (!b) return;
       const c = repo.addCriterion({ ...b, key: "c" + randomBytes(4).toString("hex") });
       repo.audit(req.user!.id, "criterion.create", c);
-      configChanged();
+      changed(rt);
       return c;
     });
     r.patch<{ Querystring: { force?: string } }>("/api/admin/criteria/:id", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const cid = id(req.params, reply); if (!cid) return;
       const b = parseBody(critPatch, req.body, reply); if (!b) return;
       const before = repo.criterion(cid);
@@ -322,10 +345,11 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const c = repo.updateCriterion(cid, b);
       if (!c) return reply.code(404).send({ error: "Kriteriya tapılmadı." });
       repo.audit(req.user!.id, "criterion.update", { id: cid, ...b });
-      configChanged();
+      changed(rt);
       return c;
     });
     r.delete<{ Querystring: { force?: string } }>("/api/admin/criteria/:id", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const cid = id(req.params, reply); if (!cid) return;
       const n = repo.scoreCount();
       if (n && req.query.force !== "1") {
@@ -334,27 +358,32 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       if (repo.criteria().length <= 1) return reply.code(400).send({ error: "Ən azı bir kriteriya qalmalıdır." });
       if (!repo.deleteCriterion(cid)) return reply.code(404).send({ error: "Kriteriya tapılmadı." });
       repo.audit(req.user!.id, "criterion.delete", { id: cid });
-      configChanged();
+      changed(rt);
       return { ok: true };
     });
     r.post("/api/admin/criteria/reorder", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const b = parseBody(reorderBody, req.body, reply); if (!b) return;
       repo.reorder("criteria", b.ids);
-      configChanged();
+      changed(rt);
       return repo.criteria();
     });
 
     // ---------- scores ----------
-    r.post("/api/admin/scores/wipe-token", async () => {
-      wipe = { token: randomBytes(6).toString("hex"), until: Date.now() + 60_000 };
+    r.post("/api/admin/scores/wipe-token", async req => {
+      const { repo, rt } = scopeOf(ctx, req);
+      const wipe = { token: randomBytes(6).toString("hex"), until: Date.now() + 60_000 };
+      wipes.set(repo.orgId, wipe);
       return { token: wipe.token, count: repo.scoreCount(), expiresInSec: 60 };
     });
     r.delete("/api/admin/scores", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const b = parseBody(wipeBody, req.body, reply); if (!b) return;
+      const wipe = wipes.get(repo.orgId);
       if (!wipe || wipe.token !== b.token || wipe.until < Date.now()) {
         return reply.code(400).send({ error: "Təsdiq kodu etibarsızdır və ya vaxtı keçib. Yenidən cəhd edin." });
       }
-      wipe = null;
+      wipes.delete(repo.orgId);
       const n = repo.wipeScores();
       if (n) repo.recordRemoval("wipe", req.user!.id, n);
       repo.setReveal({ enabled: false, step: 0, snapshot: null });
@@ -367,6 +396,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
 
     // ---------- jurors' final decision (order used by the reveal) ----------
     r.put("/api/admin/final-order", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const b = parseBody(finalOrderBody, req.body, reply); if (!b) return;
       if (b.ids) {
         const known = new Set(repo.teams().map(t => t.id));
@@ -379,8 +409,9 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     });
 
     // ---------- results reveal ----------
-    r.get("/api/admin/reveal", async () => revealAdminView(repo, cfg));
+    r.get("/api/admin/reveal", async req => revealAdminView(scopeOf(ctx, req).repo, cfg));
     r.post("/api/admin/reveal", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const b = parseBody(revealBody, req.body, reply); if (!b) return;
       const actor = req.user!.id;
       const cur = repo.getReveal();
@@ -427,23 +458,26 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     });
 
     // ---------- exports / audit ----------
-    r.get("/api/admin/export.xlsx", async (_req, reply) => {
+    r.get("/api/admin/export.xlsx", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const buf = await buildXlsx(repo, cfg);
       const file = exportFileName(repo.getEvent().displayName, repo.getEvent().date, "netice.xlsx");
       reply.header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       reply.header("Content-Disposition", `attachment; filename="${file}"; filename*=UTF-8''${encodeURIComponent(file)}`);
       return reply.send(buf);
     });
-    r.get("/api/admin/export.pdf", async (_req, reply) => {
+    r.get("/api/admin/export.pdf", async (req, reply) => {
+      const { repo, rt } = scopeOf(ctx, req);
       const buf = await buildPdf(repo, cfg);
       const file = exportFileName(repo.getEvent().displayName, repo.getEvent().date, "protokol.pdf");
       reply.header("Content-Type", "application/pdf");
       reply.header("Content-Disposition", `attachment; filename="${file}"; filename*=UTF-8''${encodeURIComponent(file)}`);
       return reply.send(buf);
     });
-    r.get("/api/admin/audit", async () => repo.auditLog());
+    r.get("/api/admin/audit", async req => scopeOf(ctx, req).repo.auditLog());
     // Scoring history: every submit and change, kept even after a wipe. ?juror=&team=&before=<id>&limit=
     r.get<{ Querystring: Record<string, string | undefined> }>("/api/admin/history", async req => {
+      const { repo, rt } = scopeOf(ctx, req);
       const n = (v?: string) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
       return repo.history({ jurorId: n(req.query.juror), teamId: n(req.query.team), before: n(req.query.before), limit: n(req.query.limit) });
     });

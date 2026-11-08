@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
+import type { DB } from "./db.js";
 import type { Repo, UserRow } from "./repo.js";
 
 export type Role = "admin" | "juror";
@@ -17,7 +18,16 @@ export interface AuthUser {
   username: string;
   displayName: string;
   sessionId: string;
+  /** orgs: the organisation this session acts in (root: the one picked on "Təşkilatlar", else its home org). */
+  orgId: number;
+  /** orgs: the organisation the account belongs to. */
+  homeOrgId: number;
+  /** orgs: platform owner. */
+  isRoot: boolean;
 }
+
+/** orgs: signed cookie with the organisation the platform owner is looking at ("impersonation"); ignored for anyone else. */
+export const ORG_COOKIE = "ij_org";
 
 declare module "fastify" {
   interface FastifyRequest { user: AuthUser | null }
@@ -35,8 +45,13 @@ export function userFromToken(repo: Repo, cfg: Config, token: string | null | un
   if (Date.now() - s.last_seen_at > cfg.sessionTtlMs) { repo.deleteSession(sid); return null; }
   const u = repo.userById(s.user_id);
   if (!u || !u.active) return null;
+  // A deactivated organisation signs its coordinators and jurors out (the platform owner is never affected).
+  if (!u.is_root && !orgActive(repo, u.org_id)) return null;
   return toAuthUser(u, sid);
 }
+
+export const orgActive = (r: { db: DB }, orgId: number) =>
+  !!(r.db.prepare("SELECT active FROM orgs WHERE id = ?").get(orgId) as { active: number } | undefined)?.active;
 
 type Unsign = (v: string) => { valid: boolean; value: string | null };
 
@@ -51,18 +66,25 @@ export function resolveUser(repo: Repo, cfg: Config, cookies: Record<string, str
     const u = unsign(raw);
     return u.valid ? userFromToken(repo, cfg, u.value) : null;
   };
+  const acting = (u: AuthUser) => {
+    if (!u.isRoot) return u;
+    const raw = cookies[ORG_COOKIE];
+    const v = raw ? unsign(raw) : null;
+    const id = v?.valid && v.value && /^\d+$/.test(v.value) ? Number(v.value) : null;
+    return id && repo.db.prepare("SELECT 1 FROM orgs WHERE id = ?").get(id) ? { ...u, orgId: id } : u;
+  };
   for (const role of want ? [want] : (["admin", "juror"] as const)) {
     const u = read(COOKIES[role]);
-    if (u && u.role === role) return u;
+    if (u && u.role === role) return acting(u);
   }
   const legacy = read(LEGACY_COOKIE);
-  return legacy && (!want || legacy.role === want) ? legacy : null;
+  return legacy && (!want || legacy.role === want) ? acting(legacy) : null;
 }
 
 /** Which role's session a URL runs under; null = no preference. */
 export function roleForUrl(url: string): Role | null {
   const [path, query = ""] = url.split("?");
-  if (path === "/admin" || path.startsWith("/admin/") || path.startsWith("/api/admin/")) return "admin";
+  if (path === "/admin" || path.startsWith("/admin/") || path.startsWith("/api/admin/") || path.startsWith("/api/root/")) return "admin";
   if (path === "/juror" || path.startsWith("/api/juror/")) return "juror";
   if (path.startsWith("/api/auth/")) {
     const r = new URLSearchParams(query).get("role");
@@ -73,6 +95,7 @@ export function roleForUrl(url: string): Role | null {
 
 export const toAuthUser = (u: UserRow, sessionId: string): AuthUser => ({
   id: u.id, role: u.role, username: u.username, displayName: u.display_name, sessionId,
+  orgId: u.org_id, homeOrgId: u.org_id, isRoot: u.role === "admin" && !!u.is_root,
 });
 
 /** In-memory login throttle keyed by IP + username: N failures → locked for a while. */
@@ -100,6 +123,12 @@ export function requireRole(role: Role) {
     if (!req.user) return reply.code(401).send({ error: "Sessiya bitib. Yenidən daxil olun." });
     if (req.user.role !== role) return reply.code(403).send({ error: "Bu bölməyə giriş icazəniz yoxdur." });
   };
+}
+
+/** orgs: platform-owner-only APIs (/api/root/*). Coordinators get 403. */
+export async function requireRoot(req: FastifyRequest, reply: FastifyReply) {
+  if (!req.user) return reply.code(401).send({ error: "Sessiya bitib. Yenidən daxil olun." });
+  if (req.user.role !== "admin" || !req.user.isRoot) return reply.code(403).send({ error: "Bu bölməyə giriş icazəniz yoxdur." });
 }
 
 /** Origin allow-list check shared by REST (state-changing requests) and the socket handshake. */

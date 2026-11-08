@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { brandName } from "../shared/brand.js";
 
 export type DB = Database.Database;
 
@@ -233,7 +234,72 @@ const MIGRATIONS: Array<string | ((db: DB) => void)> = [
   ALTER TABLE event ADD COLUMN stage_slide INTEGER NOT NULL DEFAULT 1;
   ALTER TABLE event ADD COLUMN stage_intro_at INTEGER;
   `,
+  // v9 (orgs): organisations (multi-tenant). Every existing row belongs to the default organisation (id 1, slug
+  // 'root'): new org_id columns default to 1. Additive except for two tables whose constraints assumed one event —
+  // `event` (CHECK id = 1 → one row per org) and `criteria` (key unique per org) — which are rebuilt here by copying
+  // every row inside this transaction; the copy is compared with the original before the old table is dropped.
+  db => migrateOrgs(db),
 ];
+
+/** Rebuilds `table` with the same columns (+ extra column defs / table constraints), copying and verifying every row. */
+function rebuildTable(db: DB, table: string, extra: { columns: string[]; constraints: string[] }) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string; type: string; notnull: number; dflt_value: string | null; pk: number }>;
+  const fks = db.prepare(`PRAGMA foreign_key_list(${table})`).all() as Array<{ from: string; table: string; to: string; on_delete: string }>;
+  const defs = cols.map(c => {
+    if (c.pk) return `${c.name} INTEGER PRIMARY KEY`;
+    const fk = fks.find(f => f.from === c.name);
+    return [c.name, c.type, c.notnull ? "NOT NULL" : "", c.dflt_value != null ? `DEFAULT ${c.dflt_value}` : "",
+      fk ? `REFERENCES ${fk.table}(${fk.to})${fk.on_delete && fk.on_delete !== "NO ACTION" ? ` ON DELETE ${fk.on_delete}` : ""}` : ""].filter(Boolean).join(" ");
+  });
+  const names = cols.map(c => c.name).join(", ");
+  const tmp = `${table}__v9`;
+  const dump = (t: string) => JSON.stringify(db.prepare(`SELECT ${names} FROM ${t} ORDER BY rowid`).raw().all());
+  const before = dump(table);
+  db.exec(`CREATE TABLE ${tmp} (\n  ${[...defs, ...extra.columns, ...extra.constraints].join(",\n  ")}\n)`);
+  db.exec(`INSERT INTO ${tmp} (${names}) SELECT ${names} FROM ${table} ORDER BY rowid`);
+  if (dump(tmp) !== before) throw new Error(`v9: copy of ${table} differs from the original — migration aborted`);
+  db.exec(`DROP TABLE ${table}`);
+  db.exec(`ALTER TABLE ${tmp} RENAME TO ${table}`);
+}
+
+function migrateOrgs(db: DB) {
+  db.exec(`
+  CREATE TABLE orgs (
+    id         INTEGER PRIMARY KEY,
+    slug       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    active     INTEGER NOT NULL DEFAULT 1
+  );`);
+  const ev = db.prepare("SELECT name, product FROM event WHERE id = 1").get() as { name: string; product: string } | undefined;
+  db.prepare("INSERT INTO orgs (id, slug, name, created_at, active) VALUES (1, 'root', ?, ?, 1)")
+    .run(ev ? brandName(ev.name, ev.product) : "munsif.im", Date.now());
+  rebuildTable(db, "event", { columns: ["org_id INTEGER NOT NULL DEFAULT 1 REFERENCES orgs(id)"], constraints: ["UNIQUE (org_id)"] });
+  rebuildTable(db, "criteria", { columns: ["org_id INTEGER NOT NULL DEFAULT 1 REFERENCES orgs(id)"], constraints: ["UNIQUE (org_id, key)"] });
+  db.exec(`
+  ALTER TABLE users ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE users ADD COLUMN is_root INTEGER NOT NULL DEFAULT 0;      -- platform owner (the env admin); role stays 'admin'
+  UPDATE users SET is_root = 1 WHERE role = 'admin';
+  ALTER TABLE teams ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE scores ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE score_history ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE audit_log ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE juror_invites ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE team_links ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE team_sessions ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE team_files ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE notifications ADD COLUMN org_id INTEGER NOT NULL DEFAULT 1;
+  CREATE INDEX users_org ON users(org_id, role);
+  CREATE INDEX teams_org ON teams(org_id, order_index);
+  CREATE INDEX scores_org ON scores(org_id);
+  CREATE INDEX score_history_org ON score_history(org_id, id);
+  CREATE INDEX audit_org ON audit_log(org_id, id);
+  CREATE INDEX team_files_org ON team_files(org_id);
+  CREATE INDEX notifications_org ON notifications(org_id, target, team_id, id);
+  `);
+  const broken = db.prepare("PRAGMA foreign_key_check").all();
+  if (broken.length) throw new Error(`v9: foreign key check failed (${broken.length} rows) — migration aborted`);
+}
 
 /** Schema version this build migrates a database to. */
 export const SCHEMA_VERSION = MIGRATIONS.length;

@@ -6,17 +6,20 @@ import fs from "node:fs";
 import zlib from "node:zlib";
 import path from "node:path";
 import { LoginLimiter, originAllowed, resolveUser, roleForUrl } from "./auth.js";
+import { bootstrapOrg } from "./bootstrap.js";
+import { publicScope } from "./context.js";
+import { Converter } from "./files.js";
+import { Orgs, ROOT_ORG_ID } from "./orgs.js";
+import { rootRoutes } from "./routes/root.js";
 import { ensureBaseline } from "./baseline.js";
 import type { Config } from "./config.js";
 import type { Ctx } from "./context.js";
 import { backupBeforeMigrate, openDb } from "./db.js";
 import { createRequire } from "node:module";
-import { TeamRepo } from "./teamrepo.js";
-import { resolveTeam, TeamService } from "./teams.js";
+import { resolveTeam } from "./teams.js";
 import { stageRoutes } from "./routes/stage.js";
 import { teamRoutes } from "./routes/team.js";
 import { Realtime } from "./realtime.js";
-import { Repo } from "./repo.js";
 import { revealPublicView } from "./views.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
@@ -31,6 +34,8 @@ const PAGES: Record<string, { file: string; role?: "admin" | "juror" }> = {
   "/admin": { file: "admin.html", role: "admin" },
   "/admin/setup": { file: "setup.html", role: "admin" },
   "/admin/pult": { file: "pult.html", role: "admin" },
+  // orgs: platform owner only (coordinators are sent back to /admin)
+  "/admin/orgs": { file: "orgs.html", role: "admin" },
   "/timer": { file: "timer.html" },
   // munsif: the presentation stage is the projector timer page (same server timer); /stage/demo needs no login.
   "/stage": { file: "timer.html" },
@@ -54,11 +59,22 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   // Keep a copy of an existing database before any schema upgrade touches it.
   await backupBeforeMigrate(cfg.dbFile, cfg.backupDir, m => (opts.logger ? console.log(m) : undefined));
   const db = openDb(cfg.dbFile);
-  const repo = new Repo(db);
-  const trepo = new TeamRepo(db, cfg.sessionSecret);
+  const rt = new Realtime(app, cfg);
+  const converter = new Converter(cfg.soffice, cfg.uploadsDir, path.join(cfg.dataDir, "lo-profile"), cfg.sofficeTimeoutMs);
+  const orgs = new Orgs(db, cfg, { rt, converter });
+  rt.orgs = orgs;
+  // Session lookups and sign-in are global; org 1's repo serves them (see Repo).
+  const { repo, trepo } = orgs.root;
   await ensureBaseline(repo, cfg, m => app.log.info(m));
+  // orgs: one-time, idempotent coordinator account from BOOTSTRAP_* env (never overwrites an existing user)
+  bootstrapOrg(orgs, cfg, m => (opts.logger ? console.warn(m) : undefined));
   repo.purgeSessions(Date.now() - cfg.sessionTtlMs);
   trepo.purgeSessions(Date.now() - cfg.teamSessionTtlMs);
+  // Upload deadline reminders, every organisation.
+  const deadlineTimer = setInterval(() => {
+    try { for (const o of orgs.list()) if (o.active) orgs.scope(o.id).teams.deadlineReminders(); } catch { /* db closed */ }
+  }, 60_000);
+  deadlineTimer.unref();
 
   await app.register(fastifyCookie, { secret: cfg.sessionSecret });
   // Phones on the venue Wi-Fi / mobile data: every KB counts (CSS 80 KB → ~14 KB, JS ~3×).
@@ -67,10 +83,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     global: true, threshold: 1024, encodings: ["br", "gzip"],
     brotliOptions: { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } },
   });
-  const rt = new Realtime(app, repo, cfg, trepo);
-  const teams = new TeamService(trepo, repo, cfg, rt);
-  rt.afterStage = () => teams.stageReminders();
-  const ctx: Ctx = { repo, cfg, rt, limiter: new LoginLimiter(cfg.loginMaxFails, cfg.loginLockMs), trepo, teams };
+  const ctx: Ctx = { cfg, rt, limiter: new LoginLimiter(cfg.loginMaxFails, cfg.loginLockMs), orgs, converter };
 
   app.decorateRequest("user", null);
   app.decorateRequest("team", null);
@@ -101,10 +114,16 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
 
   // Touches the database so the container healthcheck fails if SQLite is unreadable.
   app.get("/api/health", async () => ({ ok: !!repo.db.prepare("SELECT 1 AS ok").get(), time: Date.now() }));
-  // Public: only what the projector timer shows.
-  app.get("/api/stage", async () => repo.stage());
+  // Public: only what the projector timer shows (orgs: ?org=<slug>, default organisation without it).
+  app.get("/api/stage", async (req, reply) => {
+    const sc = publicScope(ctx, req);
+    return sc ? sc.repo.stage() : reply.code(404).send({ error: "Təşkilat tapılmadı." });
+  });
   // Public: only places the admin has already revealed.
-  app.get("/api/reveal", async () => revealPublicView(repo));
+  app.get("/api/reveal", async (req, reply) => {
+    const sc = publicScope(ctx, req);
+    return sc ? revealPublicView(sc.repo) : reply.code(404).send({ error: "Təşkilat tapılmadı." });
+  });
 
   // Which sessions this browser has (never 401: the landing page and the login form ask anonymously).
   app.get("/api/auth/session", async req => {
@@ -112,7 +131,9 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     const admin = resolveUser(repo, cfg, req.cookies, unsign, "admin");
     const juror = resolveUser(repo, cfg, req.cookies, unsign, "juror");
     const panel = admin ? "/admin" : juror ? "/juror" : req.team ? "/team" : null;
-    return { admin: !!admin, juror: !!juror, team: !!req.team, panel };
+    // orgs: which organisation the admin session acts in — projector pages show their controls only for their own one.
+    const adminOrg = admin ? orgs.byId(admin.orgId)?.slug ?? null : null;
+    return { admin: !!admin, juror: !!juror, team: !!req.team, panel, adminOrg, root: !!admin?.isRoot };
   });
 
   authRoutes(app, ctx);
@@ -120,6 +141,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   adminRoutes(app, ctx);
   teamRoutes(app, ctx);
   stageRoutes(app, ctx);
+  rootRoutes(app, ctx);
 
   // pdf.js data files (fonts, character maps, decoders) for the stage, the speaker screen and the team preview.
   app.get<{ Params: { dir: string; file: string } }>("/vendor/pdfjs/:dir/:file", async (req, reply) => {
@@ -160,16 +182,33 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   app.get("/en", async (_req, reply) => reply.redirect("/en/"));
   app.get("/en/", landing("en/index.html"));
   app.get("/stage/control", async (_req, reply) => reply.redirect("/admin/pult"));
+  // orgs: projector / speaker / team-registration pages of one organisation: /o/<slug>/timer etc.
+  const ORG_PAGES = new Set(["/timer", "/stage", "/reveal", "/speaker", "/team"]);
   for (const [url, page] of Object.entries(PAGES)) {
     app.get(url, async (req, reply) => {
       if (page.role && req.user?.role !== page.role) {
         return reply.redirect(req.user ? (req.user.role === "admin" ? "/admin" : "/juror") : "/login");
+      }
+      if (url === "/admin/orgs" && !req.user?.isRoot) return reply.redirect("/admin");
+      // A coordinator opening a bare projector link gets their own organisation's screen.
+      const q = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+      if (ORG_PAGES.has(url) && url !== "/team" && req.user?.role === "admin" && req.user.orgId !== ROOT_ORG_ID && !/[?&]org=/.test(q)) {
+        const o = orgs.byId(req.user.orgId);
+        if (o) return reply.redirect(`/o/${o.slug}${url}${q}`);
       }
       if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
       reply.header("Cache-Control", "no-cache");
       return reply.sendFile(page.file);
     });
   }
+  app.get<{ Params: { slug: string; page: string } }>("/o/:slug/:page", async (req, reply) => {
+    const url = `/${req.params.page}`;
+    const o = orgs.bySlug(req.params.slug);
+    if (!ORG_PAGES.has(url) || !o || !o.active) return reply.code(404).type("text/plain; charset=utf-8").send("404 · Səhifə tapılmadı");
+    if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
+    reply.header("Cache-Control", "no-cache");
+    return reply.sendFile(PAGES[url].file);
+  });
   // Team sign-in link: public page; the code itself is checked by /api/auth/team/:code.
   app.get("/t/:code", async (_req, reply) => {
     if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
@@ -190,6 +229,6 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   return {
     app,
     ctx,
-    close: async () => { teams.close(); await rt.close(); await app.close(); db.close(); },
+    close: async () => { clearInterval(deadlineTimer); await rt.close(); await app.close(); db.close(); },
   };
 }

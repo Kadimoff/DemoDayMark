@@ -9,10 +9,12 @@ export interface TeamRow {
   id: number; order_index: number; name: string; project: string; active: number; entry_score: number | null;
   approval: string; members_json: string; site_url: string; video_url: string; site_embeddable: number | null;
   extend_until: number | null; review: string; review_note: string; reviewed_at: number | null; submitted_at: number | null;
+  org_id: number;
 }
 export interface FileRow {
   id: number; team_id: number; kind: "presentation" | "logo"; stored: string; pdf_stored: string | null; orig_name: string;
   ext: string; size: number; pages: number | null; conv: string | null; active: number; uploaded_by: string; created_at: number;
+  org_id: number;
 }
 
 // Team codes are typed by hand sometimes: no 0/O, 1/I/L. 12 characters ≈ 59 bits; guessing is also rate limited.
@@ -76,7 +78,9 @@ export function materials(db: DB, t: TeamRow): TeamMaterials {
 }
 
 /** Public stage extras: only ever about the team on stage. File URLs point at /api/stage/* which serve only that team. */
-export function stageShow(db: DB, ev: EventState, teamId: number | null, next: AdminTeam | null): StageShow {
+export function stageShow(db: DB, ev: EventState, teamId: number | null, next: AdminTeam | null, orgSlug = "root"): StageShow {
+  // orgs: the public file URLs name the organisation (old clients without ?org= get the default one).
+  const o = `&org=${encodeURIComponent(orgSlug)}`;
   const t = teamId != null ? teamRow(db, teamId) : null;
   const pres = t ? activeFile(db, t.id, "presentation") : null;
   const logo = t ? activeFile(db, t.id, "logo") : null;
@@ -85,43 +89,45 @@ export function stageShow(db: DB, ev: EventState, teamId: number | null, next: A
     mode: ev.stageMode,
     slide: ev.stageSlide,
     introAt: ev.stageIntroAt,
-    pres: pres && pdfReady ? { fileId: pres.id, url: `/api/stage/presentation?v=${pres.id}`, pages: pres.pages } : null,
+    pres: pres && pdfReady ? { fileId: pres.id, url: `/api/stage/presentation?v=${pres.id}${o}`, pages: pres.pages } : null,
     presPending: pres && !pdfReady ? pres.conv ?? "pending" : null,
     site: t?.site_url ? { url: t.site_url, embeddable: t.site_embeddable == null ? null : !!t.site_embeddable } : null,
-    logo: logo ? `/api/stage/logo?v=${logo.id}` : null,
+    logo: logo ? `/api/stage/logo?v=${logo.id}${o}` : null,
     members: t ? parseList(t.members_json) : [],
     next: next && next.id !== teamId ? { name: next.name, project: next.project } : null,
   };
 }
 
+/** orgs: team links, sessions, files and notifications of ONE organisation (see Repo). */
 export class TeamRepo {
-  constructor(readonly db: DB, private secret: string) {}
+  constructor(readonly db: DB, private secret: string, readonly orgId = 1) {}
 
-  row(id: number) { return teamRow(this.db, id); }
+  /** The team, only if it belongs to this organisation. */
+  row(id: number) { const t = teamRow(this.db, id); return t && t.org_id === this.orgId ? t : null; }
   materials(id: number) { const t = this.row(id); return t ? materials(this.db, t) : null; }
 
   updateProfile(id: number, p: { name?: string; project?: string; members?: string[]; siteUrl?: string; videoUrl?: string; siteEmbeddable?: boolean | null }) {
     const t = this.row(id);
     if (!t) return null;
     const embeddable = p.siteUrl !== undefined && p.siteUrl !== t.site_url ? (p.siteEmbeddable ?? null) : p.siteEmbeddable !== undefined ? p.siteEmbeddable : t.site_embeddable;
-    this.db.prepare("UPDATE teams SET name=?, project=?, members_json=?, site_url=?, video_url=?, site_embeddable=? WHERE id=?").run(
+    this.db.prepare("UPDATE teams SET name=?, project=?, members_json=?, site_url=?, video_url=?, site_embeddable=? WHERE id=? AND org_id=?").run(
       p.name ?? t.name, p.project ?? t.project, p.members ? JSON.stringify(p.members) : t.members_json,
-      p.siteUrl ?? t.site_url, p.videoUrl ?? t.video_url, embeddable == null ? null : +embeddable, id);
+      p.siteUrl ?? t.site_url, p.videoUrl ?? t.video_url, embeddable == null ? null : +embeddable, id, this.orgId);
     return this.row(id);
   }
   setReview(id: number, review: TeamReview, note = "") {
     const now = Date.now();
-    if (review === "submitted") this.db.prepare("UPDATE teams SET review='submitted', review_note='', submitted_at=? WHERE id=?").run(now, id);
-    else this.db.prepare("UPDATE teams SET review=?, review_note=?, reviewed_at=? WHERE id=?").run(review, note, now, id);
+    if (review === "submitted") this.db.prepare("UPDATE teams SET review='submitted', review_note='', submitted_at=? WHERE id=? AND org_id=?").run(now, id, this.orgId);
+    else this.db.prepare("UPDATE teams SET review=?, review_note=?, reviewed_at=? WHERE id=? AND org_id=?").run(review, note, now, id, this.orgId);
   }
   setApproval(id: number, approval: TeamApproval) {
-    this.db.prepare("UPDATE teams SET approval=?, active=? WHERE id=?").run(approval, approval === "approved" ? 1 : 0, id);
+    this.db.prepare("UPDATE teams SET approval=?, active=? WHERE id=? AND org_id=?").run(approval, approval === "approved" ? 1 : 0, id, this.orgId);
   }
-  setExtend(id: number, until: number | null) { this.db.prepare("UPDATE teams SET extend_until=? WHERE id=?").run(until, id); }
+  setExtend(id: number, until: number | null) { this.db.prepare("UPDATE teams SET extend_until=? WHERE id=? AND org_id=?").run(until, id, this.orgId); }
   /** Self-registration: the team waits (inactive) until the coordinator approves it. */
   register(name: string, project: string) {
-    const max = (this.db.prepare("SELECT COALESCE(MAX(order_index), -1) m FROM teams").get() as { m: number }).m;
-    const r = this.db.prepare("INSERT INTO teams (order_index, name, project, active, approval) VALUES (?, ?, ?, 0, 'pending')").run(max + 1, name, project);
+    const max = (this.db.prepare("SELECT COALESCE(MAX(order_index), -1) m FROM teams WHERE org_id=?").get(this.orgId) as { m: number }).m;
+    const r = this.db.prepare("INSERT INTO teams (order_index, name, project, active, approval, org_id) VALUES (?, ?, ?, 0, 'pending', ?)").run(max + 1, name, project, this.orgId);
     return Number(r.lastInsertRowid);
   }
 
@@ -132,76 +138,80 @@ export class TeamRepo {
     const now = Date.now();
     this.db.transaction(() => {
       this.db.prepare("UPDATE team_links SET revoked_at=? WHERE team_id=? AND revoked_at IS NULL").run(now, teamId);
-      this.db.prepare("INSERT INTO team_links (team_id, token_hash, token_enc, created_at) VALUES (?, ?, ?, ?)").run(teamId, codeHash(code), sealCode(code, this.secret), now);
+      this.db.prepare("INSERT INTO team_links (team_id, token_hash, token_enc, created_at, org_id) VALUES (?, ?, ?, ?, ?)").run(teamId, codeHash(code), sealCode(code, this.secret), now, this.orgId);
     })();
     return { code, createdAt: now };
   }
   /** The current link of the team (code decrypted for the admin), or null. */
   link(teamId: number) {
-    const r = this.db.prepare("SELECT token_enc, created_at FROM team_links WHERE team_id=? AND revoked_at IS NULL ORDER BY id DESC LIMIT 1").get(teamId) as
+    const r = this.db.prepare("SELECT token_enc, created_at FROM team_links WHERE team_id=? AND org_id=? AND revoked_at IS NULL ORDER BY id DESC LIMIT 1").get(teamId, this.orgId) as
       { token_enc: string; created_at: number } | undefined;
     return r ? { code: openCode(r.token_enc, this.secret), createdAt: r.created_at } : null;
   }
-  revokeLinks(teamId: number) { return this.db.prepare("UPDATE team_links SET revoked_at=? WHERE team_id=? AND revoked_at IS NULL").run(Date.now(), teamId).changes; }
+  revokeLinks(teamId: number) { return this.db.prepare("UPDATE team_links SET revoked_at=? WHERE team_id=? AND org_id=? AND revoked_at IS NULL").run(Date.now(), teamId, this.orgId).changes; }
+  /** Global on purpose: the code alone says which team (and so which organisation) signs in. */
   teamByCode(code: string) {
     const r = this.db.prepare("SELECT team_id FROM team_links WHERE token_hash=? AND revoked_at IS NULL").get(codeHash(code)) as { team_id: number } | undefined;
-    return r ? this.row(r.team_id) : null;
+    return r ? teamRow(this.db, r.team_id) : null;
   }
 
   // ---------- sessions ----------
   createSession(id: string, teamId: number, ua: string, ip: string) {
     const now = Date.now();
-    this.db.prepare("INSERT INTO team_sessions (id, team_id, created_at, last_seen_at, user_agent, ip) VALUES (?, ?, ?, ?, ?, ?)").run(id, teamId, now, now, ua.slice(0, 300), ip);
+    const org = teamRow(this.db, teamId)?.org_id ?? this.orgId;
+    this.db.prepare("INSERT INTO team_sessions (id, team_id, created_at, last_seen_at, user_agent, ip, org_id) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, teamId, now, now, ua.slice(0, 300), ip, org);
   }
   session(id: string) {
     return (this.db.prepare("SELECT * FROM team_sessions WHERE id=?").get(id) as { id: string; team_id: number; last_seen_at: number } | undefined) ?? null;
   }
   touchSession(id: string) { this.db.prepare("UPDATE team_sessions SET last_seen_at=? WHERE id=?").run(Date.now(), id); }
   deleteSession(id: string) { this.db.prepare("DELETE FROM team_sessions WHERE id=?").run(id); }
-  deleteTeamSessions(teamId: number) { return this.db.prepare("DELETE FROM team_sessions WHERE team_id=?").run(teamId).changes; }
-  sessionCount(teamId: number) { return (this.db.prepare("SELECT COUNT(*) n FROM team_sessions WHERE team_id=?").get(teamId) as { n: number }).n; }
+  deleteTeamSessions(teamId: number) { return this.db.prepare("DELETE FROM team_sessions WHERE team_id=? AND org_id=?").run(teamId, this.orgId).changes; }
+  sessionCount(teamId: number) { return (this.db.prepare("SELECT COUNT(*) n FROM team_sessions WHERE team_id=? AND org_id=?").get(teamId, this.orgId) as { n: number }).n; }
   purgeSessions(olderThan: number) { this.db.prepare("DELETE FROM team_sessions WHERE last_seen_at < ?").run(olderThan); }
 
   // ---------- files ----------
   addFile(f: { teamId: number; kind: "presentation" | "logo"; stored: string; origName: string; ext: string; size: number; pages: number | null; conv: string | null; by: "team" | "admin" }) {
     return this.db.transaction(() => {
-      this.db.prepare("UPDATE team_files SET active=0 WHERE team_id=? AND kind=?").run(f.teamId, f.kind);
-      const r = this.db.prepare(`INSERT INTO team_files (team_id, kind, stored, orig_name, ext, size, pages, conv, active, uploaded_by, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(f.teamId, f.kind, f.stored, f.origName, f.ext, f.size, f.pages, f.conv, f.by, Date.now());
+      if (!this.row(f.teamId)) throw new Error("team outside the organisation");
+      this.db.prepare("UPDATE team_files SET active=0 WHERE team_id=? AND kind=? AND org_id=?").run(f.teamId, f.kind, this.orgId);
+      const r = this.db.prepare(`INSERT INTO team_files (team_id, kind, stored, orig_name, ext, size, pages, conv, active, uploaded_by, created_at, org_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`).run(f.teamId, f.kind, f.stored, f.origName, f.ext, f.size, f.pages, f.conv, f.by, Date.now(), this.orgId);
       return fileRow(this.db, Number(r.lastInsertRowid))!;
     })();
   }
   setConversion(fileId: number, p: { conv: string; pdfStored?: string | null; pages?: number | null }) {
-    this.db.prepare("UPDATE team_files SET conv=?, pdf_stored=COALESCE(?, pdf_stored), pages=COALESCE(?, pages) WHERE id=?").run(p.conv, p.pdfStored ?? null, p.pages ?? null, fileId);
+    this.db.prepare("UPDATE team_files SET conv=?, pdf_stored=COALESCE(?, pdf_stored), pages=COALESCE(?, pages) WHERE id=? AND org_id=?").run(p.conv, p.pdfStored ?? null, p.pages ?? null, fileId, this.orgId);
   }
   history(teamId: number) {
-    return (this.db.prepare("SELECT * FROM team_files WHERE team_id=? ORDER BY id DESC LIMIT 30").all(teamId) as FileRow[]).map(f => fileOut(f)!);
+    return (this.db.prepare("SELECT * FROM team_files WHERE team_id=? AND org_id=? ORDER BY id DESC LIMIT 30").all(teamId, this.orgId) as FileRow[]).map(f => fileOut(f)!);
   }
-  file(id: number) { return fileRow(this.db, id); }
-  activeFile(teamId: number, kind: "presentation" | "logo") { return activeFile(this.db, teamId, kind); }
+  /** The file, only if it belongs to this organisation. */
+  file(id: number) { const f = fileRow(this.db, id); return f && f.org_id === this.orgId ? f : null; }
+  activeFile(teamId: number, kind: "presentation" | "logo") { return this.row(teamId) ? activeFile(this.db, teamId, kind) : null; }
 
   // ---------- notifications ----------
   addNotice(target: "admin" | "team", teamId: number | null, kind: string, title: string, body = ""): Notice {
-    const r = this.db.prepare("INSERT INTO notifications (target, team_id, kind, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(target, teamId, kind, title, body, Date.now());
+    const r = this.db.prepare("INSERT INTO notifications (target, team_id, kind, title, body, created_at, org_id) VALUES (?, ?, ?, ?, ?, ?, ?)").run(target, teamId, kind, title, body, Date.now(), this.orgId);
     return this.notice(Number(r.lastInsertRowid))!;
   }
   notice(id: number) {
-    const r = this.db.prepare("SELECT * FROM notifications WHERE id=?").get(id) as any;
+    const r = this.db.prepare("SELECT * FROM notifications WHERE id=? AND org_id=?").get(id, this.orgId) as any;
     return r ? mapNotice(r) : null;
   }
   notices(target: "admin" | "team", teamId: number | null, limit = 50): Notice[] {
     const rows = target === "admin"
-      ? this.db.prepare("SELECT * FROM notifications WHERE target='admin' ORDER BY id DESC LIMIT ?").all(limit)
-      : this.db.prepare("SELECT * FROM notifications WHERE target='team' AND team_id=? ORDER BY id DESC LIMIT ?").all(teamId, limit);
+      ? this.db.prepare("SELECT * FROM notifications WHERE target='admin' AND org_id=? ORDER BY id DESC LIMIT ?").all(this.orgId, limit)
+      : this.db.prepare("SELECT * FROM notifications WHERE target='team' AND team_id=? AND org_id=? ORDER BY id DESC LIMIT ?").all(teamId, this.orgId, limit);
     return (rows as any[]).map(mapNotice);
   }
   markRead(target: "admin" | "team", teamId: number | null) {
-    if (target === "admin") this.db.prepare("UPDATE notifications SET read_at=? WHERE target='admin' AND read_at IS NULL").run(Date.now());
-    else this.db.prepare("UPDATE notifications SET read_at=? WHERE target='team' AND team_id=? AND read_at IS NULL").run(Date.now(), teamId);
+    if (target === "admin") this.db.prepare("UPDATE notifications SET read_at=? WHERE target='admin' AND org_id=? AND read_at IS NULL").run(Date.now(), this.orgId);
+    else this.db.prepare("UPDATE notifications SET read_at=? WHERE target='team' AND team_id=? AND org_id=? AND read_at IS NULL").run(Date.now(), teamId, this.orgId);
   }
   /** Was a notice of this kind sent to the team after `since`? (de-duplicates reminders) */
   sentSince(teamId: number, kind: string, since: number) {
-    return !!this.db.prepare("SELECT 1 FROM notifications WHERE target='team' AND team_id=? AND kind=? AND created_at >= ?").get(teamId, kind, since);
+    return !!this.db.prepare("SELECT 1 FROM notifications WHERE target='team' AND team_id=? AND org_id=? AND kind=? AND created_at >= ?").get(teamId, this.orgId, kind, since);
   }
 }
 

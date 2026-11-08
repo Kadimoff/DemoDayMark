@@ -85,7 +85,7 @@ describe("landing and sessions", () => {
     expect((await get("/", admin)).status).toBe(200);
   });
   it("/api/auth/session never answers 401 and names the right panel", async () => {
-    expect((await get("/api/auth/session")).body).toEqual({ admin: false, juror: false, team: false, panel: null });
+    expect((await get("/api/auth/session")).body).toEqual({ admin: false, juror: false, team: false, panel: null, adminOrg: null, root: false });
     expect((await get("/api/auth/session", admin)).body.panel).toBe("/admin");
     expect((await get("/api/auth/session", juror)).body.panel).toBe("/juror");
     expect((await get("/api/auth/session", teamA.cookie)).body.panel).toBe("/team");

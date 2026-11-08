@@ -2,7 +2,8 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { requireRole } from "../auth.js";
-import { idParam, parseBody, type Ctx } from "../context.js";
+import { idParam, parseBody, scopeOf, type Ctx } from "../context.js";
+import type { Repo } from "../repo.js";
 import { prettyCode } from "../teamrepo.js";
 import { checkEmbeddable } from "../teams.js";
 import { handleUpload, rawUploadParser } from "./team.js";
@@ -33,8 +34,7 @@ const stageBody = z.object({
 });
 
 export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
-  const { repo, trepo, teams, rt } = ctx;
-  const id = (params: unknown, reply: FastifyReply) => {
+  const id = (repo: Repo, params: unknown, reply: FastifyReply) => {
     const r = idParam.safeParse(params);
     if (!r.success) { reply.code(400).send({ error: "Yanlış identifikator." }); return null; }
     if (!repo.team(r.data.id)) { reply.code(404).send({ error: "Komanda tapılmadı." }); return null; }
@@ -45,7 +45,8 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
     r.addHook("preHandler", requireRole("admin"));
     rawUploadParser(r);
 
-    r.get("/api/admin/materials", async () => {
+    r.get("/api/admin/materials", async req => {
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
       const ev = repo.getEvent();
       return {
         teams: teams.adminList(),
@@ -56,41 +57,46 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
     });
 
     r.patch("/api/admin/settings/teams", async (req, reply) => {
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
       const b = parseBody(settingsBody, req.body, reply); if (!b) return;
       const ev = repo.updateEvent(Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined)));
       repo.audit(req.user!.id, "teams.settings", b);
       rt.emitConfig();
-      rt.io.to("admin").emit("materials:changed", {});
+      rt.to("admin").emit("materials:changed", {});
       return { teamRegistration: ev.teamRegistration, teamCanRename: ev.teamCanRename, jurorsSeeMaterials: ev.jurorsSeeMaterials, uploadDeadline: ev.uploadDeadline };
     });
 
     // ---------- team sign-in links ----------
     r.post("/api/admin/teams/:id/link", async (req, reply) => {
-      const tid = id(req.params, reply); if (!tid) return;
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
+      const tid = id(repo, req.params, reply); if (!tid) return;
       const { code, createdAt } = trepo.issueLink(tid);
       repo.audit(req.user!.id, "team.link", { teamId: tid });
-      rt.io.to("admin").emit("materials:changed", { teamId: tid });
+      rt.to("admin").emit("materials:changed", { teamId: tid });
       return { code: prettyCode(code), path: `/t/${code}`, createdAt };
     });
     r.get("/api/admin/teams/:id/link", async (req, reply) => {
-      const tid = id(req.params, reply); if (!tid) return;
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
+      const tid = id(repo, req.params, reply); if (!tid) return;
       const l = trepo.link(tid);
       if (!l?.code) return { code: null, path: null, createdAt: null }; // none yet (200: no console noise)
       return { code: prettyCode(l.code), path: `/t/${l.code}`, createdAt: l.createdAt };
     });
     r.delete("/api/admin/teams/:id/link", async (req, reply) => {
-      const tid = id(req.params, reply); if (!tid) return;
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
+      const tid = id(repo, req.params, reply); if (!tid) return;
       const links = trepo.revokeLinks(tid);
       const sessions = trepo.deleteTeamSessions(tid);
       rt.io.in(`team:${tid}`).disconnectSockets(true);
       repo.audit(req.user!.id, "team.link.revoke", { teamId: tid, links, sessions });
-      rt.io.to("admin").emit("materials:changed", { teamId: tid });
+      rt.to("admin").emit("materials:changed", { teamId: tid });
       return { links, sessions };
     });
 
     // ---------- review / approval / materials ----------
     r.post("/api/admin/teams/:id/review", async (req, reply) => {
-      const tid = id(req.params, reply); if (!tid) return;
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
+      const tid = id(repo, req.params, reply); if (!tid) return;
       const b = parseBody(reviewBody, req.body, reply); if (!b) return;
       if (!trepo.activeFile(tid, "presentation")) return reply.code(409).send({ error: "Komanda hələ prezentasiya yükləməyib." });
       if (b.action === "return" && !b.note) return reply.code(400).send({ error: "Geri qaytarmağın səbəbini yazın." });
@@ -102,7 +108,8 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       return teams.adminList().find(t => t.teamId === tid);
     });
     r.post("/api/admin/teams/:id/approve", async (req, reply) => {
-      const tid = id(req.params, reply); if (!tid) return;
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
+      const tid = id(repo, req.params, reply); if (!tid) return;
       trepo.setApproval(tid, "approved");
       teams.notifyTeam(tid, "approved", "Komandanız təsdiqləndi", "Siz çıxış sırasına əlavə olundunuz.");
       repo.audit(req.user!.id, "team.approve", { teamId: tid });
@@ -111,7 +118,8 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       return { ok: true };
     });
     r.patch("/api/admin/teams/:id/materials", async (req, reply) => {
-      const tid = id(req.params, reply); if (!tid) return;
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
+      const tid = id(repo, req.params, reply); if (!tid) return;
       const b = parseBody(materialsBody, req.body, reply); if (!b) return;
       const before = trepo.row(tid)!;
       trepo.updateProfile(tid, { members: b.members, siteUrl: b.siteUrl, videoUrl: b.videoUrl });
@@ -125,16 +133,18 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       return teams.adminList().find(t => t.teamId === tid);
     });
     r.post("/api/admin/teams/:id/files", async (req, reply) => {
-      const tid = id(req.params, reply); if (!tid) return;
-      return handleUpload(ctx, req, reply, tid, "admin");
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
+      const tid = id(repo, req.params, reply); if (!tid) return;
+      return handleUpload(ctx, scopeOf(ctx, req), req, reply, tid, "admin");
     });
 
     // ---------- notifications ----------
-    r.get("/api/admin/notices", async () => trepo.notices("admin", null, 60));
-    r.post("/api/admin/notices/read", async () => { trepo.markRead("admin", null); return { ok: true }; });
+    r.get("/api/admin/notices", async req => scopeOf(ctx, req).trepo.notices("admin", null, 60));
+    r.post("/api/admin/notices/read", async req => { scopeOf(ctx, req).trepo.markRead("admin", null); return { ok: true }; });
 
     // ---------- presentation stage: slide, view mode, intro ----------
     r.patch("/api/admin/stage", async (req, reply) => {
+      const { repo, trepo, teams, rt } = scopeOf(ctx, req);
       const b = parseBody(stageBody, req.body, reply); if (!b) return;
       const ev = repo.getEvent();
       const show = repo.stage().show;

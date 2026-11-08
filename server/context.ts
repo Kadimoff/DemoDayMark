@@ -1,20 +1,37 @@
-import type { FastifyReply } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { LoginLimiter } from "./auth.js";
 import type { Config } from "./config.js";
+import type { Converter } from "./files.js";
+import { ROOT_ORG_ID, type Orgs, type Scope } from "./orgs.js";
 import type { Realtime } from "./realtime.js";
-import type { Repo } from "./repo.js";
-import type { TeamRepo } from "./teamrepo.js";
-import type { TeamService } from "./teams.js";
 
 export interface Ctx {
-  repo: Repo;
   cfg: Config;
+  /** Socket.IO server; per-organisation broadcasts go through scope.rt. */
   rt: Realtime;
   limiter: LoginLimiter;
-  /** munsif: team links, sessions, files, notifications */
-  trepo: TeamRepo;
-  teams: TeamService;
+  /** orgs: organisations and their data scopes. */
+  orgs: Orgs;
+  converter: Converter;
+}
+
+/** orgs: the organisation of the signed-in admin / juror (or the team session). Route guards ran before this. */
+export function scopeOf(ctx: Ctx, req: FastifyRequest): Scope {
+  const id = req.user?.orgId ?? req.team?.orgId;
+  if (id == null) throw new Error("scopeOf: no session");
+  return ctx.orgs.scope(id);
+}
+
+/**
+ * orgs: public screens (/timer, /stage, /reveal, team registration): ?org=<slug>, else the default organisation
+ * (so the old projector links keep showing what they always showed). Unknown or deactivated slug → null (404).
+ */
+export function publicScope(ctx: Ctx, req: FastifyRequest): Scope | null {
+  const slug = (req.query as Record<string, unknown> | undefined)?.org;
+  if (typeof slug !== "string" || !slug) return ctx.orgs.scope(ROOT_ORG_ID);
+  const o = ctx.orgs.bySlug(slug);
+  return o && o.active ? ctx.orgs.scope(o.id) : null;
 }
 
 const FIELD_AZ: Record<string, string> = {
