@@ -1846,3 +1846,55 @@ body.st-eventscene .st-hud { display: none; }
 .rv-overlay.place .rv-ov-place { color: var(--rv-dim); animation: rvNameIn .9s var(--ease) .2s both; }
 .rv-overlay.revealed .rv-ov-num { font-size: clamp(56px, 11vh, 130px); animation: none; opacity: .9; }
 .rv-overlay.place .rv-ov-name, .rv-overlay.place .rv-ov-proj, .rv-overlay.place .rv-ov-score, .rv-overlay.place .rv-ov-break { display: none; }
+/* anchors (#h-teams …) land below the sticky header */
+h1[id], h2[id], h3[id], details[id] { scroll-margin-top: 90px; }
+.dlrow { gap: 6px; flex-wrap: wrap; min-width: 0; }
+.dlrow input { width: auto; flex: 1 1 200px; min-width: 0; max-width: 260px; }
+@media (max-width: 560px) {
+  section[aria-labelledby="h-dl"] .toggle { flex-wrap: wrap; }
+  section[aria-labelledby="h-dl"] .dlrow { width: 100%; }
+  .dlrow input { max-width: none; }
+}
+.rcard .oh h3 { line-height: 1.25; }
+.rcard .slug { margin-top: 3px; }
+.peek-top .icon-btn { background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .2); color: #fff; }
+/* v3: phones — portrait keeps the decorative orbits inside the screen; landscape puts the dial and the name side by side */
+@media (max-width: 520px) and (orientation: portrait) {
+  body.tp { overflow: hidden; }
+  .tp-dial { --dial: min(80vw, 52vh); }
+  .tp-ring.r4 { inset: -6%; } .tp-ring.r2 { inset: -5%; }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  body.tp { overflow: hidden; }
+  .tp-stage { flex-direction: row; justify-content: center; gap: 5vw; padding: 58px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px)); }
+  .tp-dial { --dial: min(calc(100dvh - 82px), 44vw); }
+  .tp-ring.r4 { inset: -6%; } .tp-ring.r2 { inset: -5%; }
+  .tp-name { text-align: left; max-width: 42vw; }
+  .tp-name b { font-size: clamp(1.4rem, 5.4vw, 2.6rem); }
+  .tp-name small { font-size: clamp(.85rem, 2.2vw, 1.2rem); }
+  .tp-badge { letter-spacing: .12em; padding: 2px 8px; }
+  .tp-head { top: 8px; }
+  .tp-dock { bottom: 8px; }
+  /* the bubble over slides stays a thumb's size */
+  .st-bubble { --size: clamp(84px, 24vh, 120px); }
+}
+@media (max-width: 520px) { .st-bubble { --size: clamp(84px, 24vw, 112px); left: calc(100vw - var(--size) - 14px); top: calc(100dvh - var(--size) - 14px); } }
+/* v3 reveal overlay: calm, opaque, one idea per step (number → name) */
+.rv-overlay { background: color-mix(in srgb, var(--rv-bg, #07080d) 94%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.rv-ov-place { font-family: var(--f-display); font-weight: 700; font-size: clamp(18px, 2.4vw, 40px) !important; letter-spacing: .24em !important; text-transform: uppercase; color: var(--medal, var(--rv-dim)) !important; text-shadow: none !important; }
+.rv-overlay.revealed .rv-ov-num { display: none; }
+.rv-overlay.revealed .rv-ov-place { animation: rvNameIn .8s var(--ease) both; }
+.rv-overlay.revealed .rv-ov-score { color: var(--rv-ink); opacity: .9; }
+/* v3: phone header in ONE row — logo · event (ellipsis) · sync dot · bell · theme · key · logout */
+@media (max-width: 700px) {
+  .top .wrap { display: flex !important; flex-wrap: nowrap; align-items: center; gap: 6px; }
+  .top .brand { flex: none; }
+  .top .evpill { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .top .evpill .orgname, .top .evpill .role { display: none !important; }
+  .top .evpill b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; min-width: 0; }
+  .top .who-me { display: none !important; }
+  .top .icon-btn, .top .th1 > button, .top #bellSlot .icon-btn { width: 36px; height: 36px; min-height: 36px; flex: none; }
+  .top #bellSlot, .top .th1 { flex: none; }
+  .top .conn { flex: none; }
+}
+.pv .icon-btn, .pv-x { background: rgba(255, 255, 255, .08) !important; border: 1px solid rgba(255, 255, 255, .2) !important; color: #fff !important; }

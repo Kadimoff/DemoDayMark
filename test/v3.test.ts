@@ -317,7 +317,7 @@ describe("realtime reliability", () => {
     const s = await socket(undefined, { org: "beta" }, { reconnection: true, reconnectionDelay: 50, reconnectionDelayMax: 100 });
     s.io.engine.close(); // simulate a network drop
     await patch("/api/admin/event", beta).send({ currentTeamId: betaTeams[2] });
-    await patch("/api/admin/event", beta).send({ timerAction: { type: "start" } }).catch(() => null);
+    await patch("/api/admin/event", beta).send({ timer: "pitch" });
     await new Promise<void>(res => s.once("connect", () => res()));
     const st = (await get("/api/stage?org=beta")).body;
     expect(st.team.name).toBe("Beta Üç");
@@ -354,7 +354,7 @@ describe("realtime reliability", () => {
     const s = await socket(undefined, { org: "beta" });
     let n = 0;
     s.on("timer:changed", () => n++);
-    await patch("/api/admin/event", beta).send({ timerAction: { type: "start" } }).catch(() => null);
+    await patch("/api/admin/event", beta).send({ timer: "pitch" });
     await sleep(2200);
     expect(n).toBeLessThanOrEqual(2);
     s.close();

@@ -14,14 +14,14 @@ Real vaxtda münsif qiymətləndirməsi və səhnə taymeri. 8 komanda, 4–5 m�
 |---|---|---|
 | **Landing** | `/` (AZ), `/en/` (EN) | ziyarətçi; daxil olmuş istifadəçi header-də "Panel" düyməsini görür |
 | Giriş | `/login` | koordinator (admin) və platforma sahibi (root) — eyni forma |
-| **Təşkilatlar** | `/admin/orgs` | yalnız root: təşkilat yarat / deaktiv et, koordinator hesabları, "Panelinə keç" |
+| **Platforma paneli** | `/root` (`/admin/orgs` → buraya) | yalnız root: bütün təşkilatlar canlı vəziyyəti ilə (səhnədəki komanda, taymer, komanda/münsif sayı, səs irəliləyişi), təşkilat yarat / deaktiv et, koordinatorlar, **“Proyektoruna bax”** (yalnız oxu), **“Müdaxilə et”**, qiymət tarixçəsi (Excel) |
 | Münsif QR girişi | `/j/<kod>` | münsif (QR skan edəndə açılır) |
 | Münsif paneli | `/juror` | münsiflər (telefon) |
 | **Komanda girişi** | `/t/<kod>`, `/team` | komandalar (link/QR və ya kod) |
-| Canlı panel | `/admin` | koordinator (noutbuk) |
+| Canlı panel | `/admin` | koordinator: 4 bölmə — **Səhnə · Komandalar · Münsiflər · Nəticələr** (telefonda aşağıda tab bar) |
 | Quraşdırma | `/admin/setup` | koordinator |
-| **Pult** | `/admin/pult` (`/stage/control` → buraya) | koordinatorun telefonu: start/fasilə, ±30 s, slayd, intro, sayt rejimi |
-| **Səhnə** | `/stage` (= `/timer`) | proyektor: prezentasiya + üzən taymer; prezentasiya yoxdursa böyük taymer. Təşkilat üçün: `/o/<slug>/stage`, `/o/<slug>/timer` |
+| **Pult** | `/admin/pult` (`/stage/control` → buraya) | koordinatorun telefonu: start/fasilə, ±30 s, slayd, intro, sayt rejimi, tədbirin prezentasiyası, nəticə açıqlaması |
+| **Səhnə** | `/stage` (= `/timer`) | proyektor: komandanın və ya **tədbirin öz** prezentasiyası + üzən taymer; prezentasiya yoxdursa böyük taymer. İdarə düyməsi yoxdur. Təşkilat üçün: `/o/<slug>/stage`, `/o/<slug>/timer` |
 | **Səhnə demosu** | `/stage/demo` | girişsiz demo (nümunə PDF, 15 s; `?t=30`, `?slow=8`) |
 | Danışan ekranı | `/speaker` (`/o/<slug>/speaker`) | çıxış edən: taymer + cari və növbəti slayd |
 | **Nəticə açıqlaması** | `/reveal` (`/o/<slug>/reveal`) | proyektor; yalnız admin icazə verdikdən sonra, addım-addım |
@@ -32,8 +32,8 @@ Prefikssiz `/stage`, `/timer`, `/reveal`, `/speaker`, `/team` əsas (root) təş
 
 | Rol | Kim | Nə edir |
 |---|---|---|
-| **root** (platforma sahibi) | `ADMIN_USERNAME` hesabı (`users.is_root = 1`, `role = 'admin'`) | Öz tədbiri (təşkilat #1, slug `root`) + `/admin/orgs`: təşkilat yaratmaq, ad dəyişmək, deaktiv/aktiv etmək, koordinator yaratmaq, koordinator parolunu sıfırlamaq, koordinatoru deaktiv etmək, istənilən təşkilatın panelinə keçmək (“Panelinə keç” — yuxarıda sarı banner, “Öz panelimə qayıt”) |
-| **admin** (təşkilat koordinatoru) | `role = 'admin'`, `is_root = 0`, `org_id` = təşkilatı | Yalnız öz təşkilatının tədbiri: komandalar, münsiflər (QR), meyarlar, ballar, ixrac, səhnə/taymer/pult, nəticə açıqlaması. `/admin/orgs` görünmür, `/api/root/*` → 403 |
+| **root** (platforma sahibi) | `ADMIN_USERNAME` hesabı (`users.is_root = 1`, `role = 'admin'`) | Girişdən sonra **`/root` platforma paneli** (tədbir ekranlarından tam ayrı): bütün təşkilatlar (öz tədbiri — təşkilat #1, slug `root` — da siyahıdadır), təşkilat yaratmaq, deaktiv/aktiv etmək, koordinator yaratmaq / parolunu sıfırlamaq / deaktiv etmək, **“Proyektoruna bax”** (həmin təşkilatın proyektoru canlı, yalnız oxu, iframe `?preview=1`), **“Müdaxilə et”** (həmin təşkilatın koordinator panelinə — yuxarıda sarı banner, “Platformaya qayıt”), istənilən təşkilatın qiymət tarixçəsi (Excel) |
+| **admin** (təşkilat koordinatoru) | `role = 'admin'`, `is_root = 0`, `org_id` = təşkilatı | Yalnız öz təşkilatının tədbiri: komandalar, münsiflər (QR), meyarlar, ballar, ixrac, səhnə/taymer/pult, nəticə açıqlaması. `/root` → `/admin`-ə yönləndirilir, `/api/root/*` → 403, root socket izləməsi (`watch: "root"`) koordinatora heç nə göndərmir |
 | juror / komanda | təşkilatın münsifi / komandası | QR və komanda linki yalnız öz təşkilatına aparır |
 
 - **Giriş:** koordinator da eyni `/login` formasından (istifadəçi adı + şifrə) daxil olur və öz `/admin` panelinə düşür. Header-də təşkilatın adı görünür. Hər iki rol üçün header-də **“Şifrəni dəyiş”** (açar ikonu) var: hazırkı şifrə + yeni şifrə (min. 8); digər cihazlardakı sessiyalar bağlanır.
@@ -60,24 +60,36 @@ printf '%s' 'PAROL' | node scripts/hash-password.mjs   # və ya stdin ilə
 | `BOOTSTRAP_COORD_USERNAME` | `demo` |
 | `BOOTSTRAP_COORD_HASH_B64` | `hash-password.mjs`-in çıxışı (base64) |
 
-Koordinator yarandıqdan sonra env-ləri silmək olar (qalsalar da zərərsizdir). Eyni işi root `/admin/orgs` səhifəsindən də edə bilər.
+Koordinator yarandıqdan sonra env-ləri silmək olar (qalsalar da zərərsizdir). Eyni işi root `/root` panelindən də edə bilər.
 
 ## munsif.im: komanda girişi, prezentasiyalar və səhnə
 
-**Komanda girişi.** Quraşdırma → "Komanda girişi və materiallar" (və ya canlı paneldə "Komandaların materialları" → *Link*) hər komanda üçün giriş linki + QR yaradır (`/t/ABCD-EFGH-JKMN`). Komandanın bütün üzvləri eyni linklə daxil olur; kodu `/team` səhifəsində əl ilə də yazmaq olar. "Yeni link" köhnəsini etibarsız edir, "Ləğv et" komandanın bütün sessiyalarını bağlayır. *Açıq qeydiyyat* (standart: söndürülüb) açılsa komanda `/team`-də özü qeydiyyatdan keçir, "təsdiq gözləyir" statusunda yaranır və koordinator təsdiqləyənə qədər sıraya/reytinqə düşmür.
+**Komanda girişi.** Quraşdırma → Komandalar → komandanı açın → *Giriş linki / QR* (və ya canlı panel → Komandalar → ⋯) hər komanda üçün giriş linki + QR yaradır (`/t/ABCD-EFGH-JKMN`). Komandanın bütün üzvləri eyni linklə daxil olur; kodu `/team` səhifəsində əl ilə də yazmaq olar. "Yeni link" köhnəsini etibarsız edir, "Ləğv et" komandanın bütün sessiyalarını bağlayır. *Açıq qeydiyyat* (standart: söndürülüb) açılsa komanda `/team`-də özü qeydiyyatdan keçir, "təsdiq gözləyir" statusunda yaranır və koordinator təsdiqləyənə qədər sıraya/reytinqə düşmür.
 
-**Komanda paneli (`/team`).** Status (təsdiq / yoxlanılır / qəbul edildi / geri qaytarıldı + səbəb), çıxış sırası, deadline; prezentasiya (PDF; PPTX serverdə LibreOffice varsa avtomatik PDF-ə çevrilir, yoxdursa "PDF kimi yükləyin"), versiyalar, loqo, üzvlər, layihə saytı və demo video linki; komanda/layihə adı yalnız koordinator icazə versə dəyişir. Komanda bal və ya reytinq görmür.
+**Komanda paneli (`/team`) — bir səhifəlik sadə forma.** Yuxarıda status və **deadline geri sayımı** (saniyə ilə; 1 saatdan az qalanda sarı, keçəndə “yükləmə bağlıdır”), çıxış sırası; altında forma: komanda adı, layihə, üzvlər, sayt linki, prezentasiya (sürüklə-burax və ya “Fayl seç”; PDF; PPTX serverdə LibreOffice varsa avtomatik PDF-ə çevrilir), *Yadda saxla*. Demo video və loqo “Əlavə (istəyə bağlı)” altında. Komanda/layihə adı yalnız koordinator icazə versə dəyişir. Komanda bal və ya reytinq görmür.
+
+**“Səhnədəsiniz” — komanda öz slaydlarını çevirir.** Komanda səhnəyə çıxanda `/team`-in başında böyük ← → düymələri və proyektordakı slaydın kiçik görüntüsü çıxır (Bluetooth klikker / klaviatura ←/→/PageUp/PageDown da işləyir). Hüquq yalnız **öz prezentasiyası səhnədə olanda** var (komanda səhnəsi, slayd görünüşü); səhnədən düşəndə, proyektorda tədbirin prezentasiyası və ya taymer/sayt göstəriləndə itir. Koordinator Quraşdırma → *Səhnə taymeri* → “Komanda öz slaydlarını çevirə bilsin” ilə söndürə bilər (standart: açıq). Server hər sorğuda yoxlayır (`POST /api/team/slide`, `test/v3.test.ts`).
+
+**Prezentasiyaya baxış.** Canlı panel → **Komandalar**: hər komanda bir sətir — *Bax* (pdf.js ilə tam ekran, ← → / sürüşdürmə, slayd sayı), *Sayt*, *Səhnəyə*. “Qəbul et / Geri qaytar” istəyə bağlıdır (⋯ menyusunda); səhnəyə çıxarmaq üçün qəbul tələb olunmur.
+
+**Tədbirin öz prezentasiyası** (açılış, fasilə, sponsorlar, qaydalar). Quraşdırma → *Tədbirin prezentasiyası*: bir və ya bir neçə PDF/PPTX yüklənir (ad, sıra, silmə). Canlı panel → Səhnə və ya pult → *Proyektora*: proyektor komandasız, taymer bubble-sız (istəyə görə açılır) həmin faylı göstərir; slaydlar panel/pult ← →, proyektordakı klikker ilə çevrilir; *Komandaya qayıt* və ya komandanı səhnəyə çıxarmaq proyektoru komandaya qaytarır. Fayl yalnız proyektorda olduğu müddətdə ictimaidir (`/api/stage/event-presentation`).
 
 **Fayllar.** Maksimum 50 MB (`MAX_UPLOAD_MB`), loqo 5 MB; uzantı + magic byte yoxlanılır (PDF `%PDF-`, PPTX zip, PNG/JPEG/WebP); fayllar `DATA_DIR/uploads`-da təsadüfi adla (0600) saxlanılır — Docker-də persistent volume içindədir. Endirmə: admin hamısını, komanda yalnız özününkünü (başqasınınkı 403), münsif yalnız "Münsiflər materialları görsün" açıq olanda; girişsiz səhnə ekranı yalnız **hazırda səhnədə olan** komandanın prezentasiyasını ala bilər (`/api/stage/presentation`).
 
 **Bildirişlər** (socket.io + brauzer Notification API): koordinatora "Komanda X prezentasiya yüklədi" (toast + zəng ikonu + siyahı), canlı paneldə *Qəbul et / Geri qaytar (səbəblə)*; komandaya "Prezentasiyanız qəbul edildi / geri qaytarıldı", "Sıranız yaxınlaşır" (qabaqda 2 komanda qalanda), "Növbəti sizsiniz", "Səhnəyə dəvət olunursunuz", deadline-a 1 saat qalmış xatırlatma.
 
 **Səhnə (`/stage` = `/timer`).** Səhnədəki komandanın PDF-i pdf.js ilə tam ekranda, taymer üstündə üzən **bubble** kimi (sürüşdürülə bilər, ikiqat klik yerinə qaytarır): son 30 s amber, son 10 s qırmızı; **son 5 saniyə** (həm pitch, həm sual-cavab) bubble mərkəzə uçub ekranı örtür, rəqəmlər kiçilərək azalır, halqa/zərrəciklər hər saniyə çoxalır, ekran titrəyir; 0-da "VAXT BİTDİ" partlayışı və sual-cavab başlayır (mövcud pitch → sual-cavab → vaxt bitdi axını). Səs: köhnə siqnallar qalır, takeover zamanı tik-səsləri effektin öz səsi ilə əvəz olunur (ikiqat səs yoxdur); `M` səsi söndürür. Zəif cihazda effekt avtomatik *lite* rejimə keçir; `prefers-reduced-motion` hörmət olunur. Prezentasiyası olmayan komandada köhnə böyük taymer (yeni dizaynla) görünür.
-Slaydlar: `←/→`, `PageUp/PageDown` (klikker), sürüşdürmə, canlı panel, pult — slayd nömrəsi serverdə saxlanılır və bütün səhnə/danışan ekranlarında sinxron dəyişir. Köhnə qısayollar (Space, S, R, N, F, +/−) dəyişməyib. *Sayt rejimi*: layihə saytı iframe-də; sayt daxil edilməyə icazə vermirsə (X-Frame-Options/CSP, server yoxlayır) böyük QR kod. *Intro*: "Növbəti çıxış" ekranı + 3·2·1.
+Slaydlar: `←/→`, `PageUp/PageDown` (klikker, admin sessiyası olan proyektorda), canlı panel, pult, səhnədəki komanda — slayd nömrəsi serverdə saxlanılır və bütün səhnə/danışan ekranlarında sinxron dəyişir. **Proyektorda idarə düyməsi və taymer qısayolu yoxdur** (Space/S/R/N işləmir): yalnız avtomatik gizlənən səs (`M`) və tam ekran (`F`) ikonları. Taymeri canlı paneldən və ya pultdan idarə edin. *Səhnə taymeri* ayarları (Quraşdırma): pitch və sual-cavab müddəti, son 5 saniyə effekti aç/bağla, səs aç/bağla. *Sayt rejimi*: layihə saytı iframe-də; sayt daxil edilməyə icazə vermirsə (X-Frame-Options/CSP, server yoxlayır) böyük QR kod. *Intro*: "Növbəti çıxış" ekranı + 3·2·1.
 
 **PPTX → PDF.** Server `soffice`-u PATH-da tapır (və ya `SOFFICE` env). Eyni anda bir çevirmə, 90 s limit, profil `DATA_DIR/lo-profile`. Docker image-ə `libreoffice-impress` + şriftlər əlavə olunub (~400 MB).
 
 **Təşkilatlar miqrasiyası (v9).** Bütün mövcud cədvəllərə `org_id INTEGER NOT NULL DEFAULT 1` əlavə olunur — yəni bütün köhnə data (tədbir, komandalar, meyarlar, ballar, tarixçə, münsiflər, QR-lar, komanda linkləri/sessiyaları/faylları, bildirişlər, audit, səhnə/taymer/açıqlama vəziyyəti) təşkilat #1-də (`root`, adı = mövcud brend, məs. “TechConnect Hakaton”) qalır; mövcud admin `is_root = 1` olur. Yeni `orgs` cədvəli. İki cədvəl yenidən qurulur, çünki məhdudiyyətləri tək tədbir fərz edirdi: `event` (`CHECK (id = 1)` → `UNIQUE (org_id)`, sətir id-si 1 qalır) və `criteria` (`key` qlobal unikal → `UNIQUE (org_id, key)`). Hər ikisi eyni transaksiyada bütün sətirləri köçürür, köçürmə orijinalla müqayisə olunur, sonda `PRAGMA foreign_key_check`; hər hansı uyğunsuzluqda bütün v9 geri qaytarılır və baza v8 kimi qalır (`test/orgs-migration.test.ts`). Miqrasiyadan əvvəl `pre-v9-*.db` surəti alınır.
+
+**Tədbirlər və arxiv (v10).** Təşkilat bir neçə tədbir keçirə bilər; hər an bir tədbir aktivdir. Quraşdırma → Tədbir → **“Yeni tədbir yarat”**: ad, növ, tarix, pitch/sual-cavab müddəti, yükləmə deadline-ı; meyarları köçür (standart), komanda adlarını köçür (istəyə görə; fayl/link/bal köçmür). Hazırkı tədbir **arxivə** keçir: nəticələri, tarixçəsi, Excel/PDF ixracı “Arxiv” siyahısında oxuma rejimində qalır; arxivdəki münsif və komanda sessiyaları bağlanır. Miqrasiya yalnız əlavədir: yeni `events` (hər təşkilatın mövcud tədbiri onun aktiv tədbiri olur, id = köhnə `event` sətrinin id-si) və `event_files` cədvəlləri; `users`, `teams`, `criteria`, `scores`, `score_history`, `juror_invites`, `team_links`, `team_sessions`, `team_files`, `notifications` cədvəllərinə `event_id` sütunu (mövcud sətirlər öz təşkilatının aktiv tədbirinə yazılır, sətir sayı və boş `event_id` yoxlanılır); `event`-ə səhnə sütunları (`stage_scene`, `stage_event_file`, `event_slide`, `event_bubble`, `team_slide_control`, `last5_fx`, `stage_sound`). Heç bir sətir köçürülmür və silinmir; bir transaksiyada, uğursuzluqda baza v9 kimi qalır. Əvvəlcə `pre-v10-*.db` surəti (`test/events-migration.test.ts` — 537b462-in donmuş data qatı ilə yazılmış v9 baza).
+
+**Qiymətləndirmə tarixçəsi (Excel).** Canlı panel → Nəticələr → *Qiymətləndirmə tarixçəsi* → Excel: kim, nə vaxt, hansı komanda, meyar, köhnə → yeni bal (hər göndərmə/dəyişiklikdə hər meyar bir sətir; silinmələr də). Koordinator öz təşkilatı üçün (`/api/admin/history.xlsx`, arxiv tədbiri üçün `/api/admin/events/<id>/history.xlsx`), root istənilən təşkilat üçün (`/api/root/orgs/<id>/history.xlsx`).
+
+**Realtime etibarlılığı.** socket.io: əvvəl WebSocket, alınmasa polling; `pingInterval` 15 s / `pingTimeout` 10 s (Traefik/Coolify arxasında boş bağlantı kəsilmir, ölü bağlantı ~25 s-də tapılır); klient 0.5 s → 5 s eksponensial backoff ilə yenidən qoşulur, ekranda “Yenidən qoşulur…” göstəricisi; hər yenidən qoşulmada, telefon arxa plandan qayıdanda (`visibilitychange`) və şəbəkə qayıdanda (`online`) tam vəziyyət (səhnə, taymer, slayd, bildirişlər) yenidən yüklənir. Taymer hər saniyə yayımlanmır — ekranlar `serverNow` ilə özü hesablayır; tez-tez gələn yayımlar birləşdirilir. PDF səhifə sayma worker thread-də, PPTX çevirmə ayrıca prosesdə — event loop bloklanmır. Yük testi (30 münsif + 5 ekran socket-i): slayd dəyişikliyi p95 ~20 ms (`test/v3.test.ts`, limit 150 ms).
 
 **Backup və miqrasiya.** Sxem yalnız əlavə ilə dəyişir (v8: yeni cədvəllər `team_links`, `team_sessions`, `team_files`, `notifications`; `teams`/`event`-ə default-lu sütunlar). Server açılanda sxem köhnədirsə miqrasiyadan **əvvəl** bazanın surəti `DATA_DIR/backups/pre-v<N>-<vaxt>.db` kimi saxlanılır (better-sqlite3 `.backup()`, son 10 nüsxə). Köhnə (v7) bazanın itkisiz açılması `test/munsif-migration.test.ts`-də yoxlanılır.
 
@@ -114,30 +126,28 @@ Köhnə "Pitch Deck Taymeri" (`docs/reference/pitch-deck-timer.html`) yalnız ö
 - **Pitch → Sual-cavab → Vaxt bitdi** keçidi avtomatikdir (3:00 + 2:00, müddət Quraşdırmada dəyişdirilə bilər). Fasilə və davam etmə dəstəklənir.
 - Bütün cihazlar serverin saatına görə hesablayır (`serverNow`). Proyektor, münsif telefonu və admin noutbuku eyni saniyəni göstərir.
 - Komanda adları **Quraşdırma** səhifəsində və ya canlı paneldə "Adı dəyiş" düyməsi ilə dəyişdirilir. Dəyişiklik bütün ekranlarda dərhal yenilənir.
-- `/timer` səhifəsini istənilən cihaz girişsiz aça bilər. O, yalnız səhnə və taymer məlumatını görür, heç bir bal görmür. Admin kimi daxil olmuş brauzerdə həmin səhifədə idarə düymələri və klaviatura qısayolları da görünür:
+- `/timer` səhifəsini istənilən cihaz girişsiz aça bilər. O, yalnız səhnə və taymer məlumatını görür, heç bir bal görmür. **v3: proyektorda idarə düymələri yoxdur — admin sessiyası ilə açılanda belə.** İdarə yalnız canlı paneldən (`/admin`, Səhnə bölməsi; orada Space/Q/R/N qısayolları qalır) və pultdan (`/admin/pult`). Proyektorda qalan klaviatura:
 
 | Düymə | Funksiya |
 |---|---|
-| Space | Başlat / fasilə |
-| S və ya Q | Dərhal sual-cavaba keç |
-| R | Sıfırla (3:00, hazır) |
-| N | Növbəti komanda |
+| ← / → , PageUp / PageDown | slayd (klikker; yalnız həmin təşkilatın admin sessiyası ilə) |
 | F | Tam ekran |
+| M | Səs |
 
 Səs siqnalları orijinaldakı kimidir: son 5 saniyədə tik, pitch bitəndə keçid melodiyası, vaxt bitəndə 3 dəfə həyəcan siqnalı. Brauzer səsi yalnız ilk toxunuşdan sonra açır. Proyektorda bir dəfə "Səs" düyməsinə basın.
 
 ## Nəticə açıqlaması (`/reveal`)
 
-1. Proyektorda `/reveal` səhifəsini açın və **F** ilə tam ekran edin. Səs üçün ekrana bir dəfə toxunun. İcazə verilənə qədər ekranda yalnız "Nəticələr tezliklə açıqlanacaq" yazısı görünür.
+1. Proyektorda `/reveal` səhifəsini açın və **F** ilə tam ekran edin. Proyektorda düymə yoxdur — açıqlamanı canlı paneldən (Nəticələr) və ya pultdan idarə edin. Səs üçün ekrana bir dəfə toxunun. İcazə verilənə qədər ekranda yalnız "Nəticələr tezliklə açıqlanacaq" yazısı görünür.
 2. Canlı paneldəki **Nəticə açıqlaması** kartında **"Açıqlamaya icazə ver"** düyməsini basıb təsdiqləyin. Düymə yaşıl ✓ olur, qiymətləndirmə avtomatik bağlanır və həmin anın reytinqi qeydə alınır. Açıqlama bu siyahı ilə gedir, sonradan heç nə dəyişə bilməz.
 3. **"Sıradakını açıqla →"** düyməsi hər basılanda ekranda bir yer açılır: sonuncu yerdən başlayaraq yuxarıya. Kartda növbəti komanda yalnız sizə görünür.
 4. **İlk üçlük iki addımla açılır:**
-   - birinci basış intizarı başladır: qaranlıq ekran, böyük "3-cü yer", ürək döyüntüsü və səsi, döyüntü getdikcə sürətlənir;
-   - ikinci basış adı açır.
-   1-ci yer üçün qısa təbrik animasiyası (konfetti) oynayır.
+   - birinci basış böyük yer nömrəsini göstərir (sakit, yumşaq animasiya);
+   - ikinci basış komandanın adını, layihəsini və balını açır.
+   1-ci yer üçün təmkinli konfetti. İntizar mətnləri, ürək döyüntüsü və fişəng yoxdur.
 5. Səhv basılsa, **"← Geri"** düyməsindən istifadə edin. **"Sıfırla"** açıqlamanı əvvələ qaytarır və reytinqi yenidən qeydə alır. İcazəni söndürmək ekranı gözləmə rejiminə keçirir, irəliləyiş saxlanılır.
 
-Admin kimi daxil olmuş proyektorda klaviatura da işləyir: **→ / Space** növbəti, **←** geri, **F** tam ekran, **M** səs.
+Proyektorda yalnız **F** (tam ekran) və **M** (səs) işləyir.
 
 Gizlilik serverdə təmin olunur: ekrana yalnız artıq açıqlanmış yerlər göndərilir. İntizar addımında belə komandanın adı və balı göndərilmir, yalnız yer nömrəsi gedir (`test/reveal.test.ts`, `test/privacy.test.ts`).
 
@@ -321,5 +331,6 @@ assets/brand    munsif.im loqoları
 | Proyektorda səs yoxdur | Səhifədə bir dəfə klikləyin və ya "Səs" düyməsinə basın (brauzer qaydası). |
 | `docker build` zamanı "Temporary failure resolving 'deb.debian.org'" | Docker konteynerində DNS işləmir. `docker build --network=host -t ignite-jury .` ilə build edin və ya Docker daemon-un DNS ayarlarını düzəldin. |
 | Admin (root) şifrəsini unutmusunuz | `data/` qovluğunun yedəyini alın, `users` cədvəlindən `is_root = 1` sətrini silin, serveri `.env`-dəki yeni `ADMIN_PASSWORD` ilə yenidən başladın. |
-| Koordinator şifrəsini unudub | Root: `/admin/orgs` → koordinator → “Şifrəni sıfırla”. |
-| `/o/<slug>/stage` 404 verir | Təşkilat deaktivdir və ya slug səhvdir (`/admin/orgs`-da yoxlayın). |
+| Koordinator şifrəsini unudub | Root: `/root` → təşkilat → Koordinatorlar → “Şifrə”. |
+| `/o/<slug>/stage` 404 verir | Təşkilat deaktivdir və ya slug səhvdir (`/root`-da yoxlayın). |
+| Ekranda “Yenidən qoşulur…” | Şəbəkə kəsilib; socket özü yenidən qoşulur (0.5 s → 5 s backoff) və qoşulan kimi vəziyyəti tam yeniləyir. Proyektor əlavə olaraq hər 60 s vəziyyəti özü yoxlayır. |

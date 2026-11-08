@@ -174,7 +174,7 @@ function deadlineSection() {
   return `<section class="card pad stack" aria-labelledby="h-dl">
     <div class="row between"><h3 id="h-dl">${icon("lock")}Yükləmə deadline-ı</h3><span class="saved" id="taSaved"></span></div>
     <div class="toggle" style="border-top:0;padding-top:0"><div><b>Deadline</b><small>Bu vaxtdan sonra komandalar prezentasiya, sayt və video linkini dəyişə bilmir. Bir saat qalmış prezentasiyası olmayan komandalara xatırlatma gedir. Boş = deadline yoxdur.</small></div>
-      <div class="row" style="flex-wrap:nowrap;gap:6px"><input type="datetime-local" id="taDeadline" value="${dtLocal(dl)}" style="width:auto">
+      <div class="row dlrow"><input type="datetime-local" id="taDeadline" value="${dtLocal(dl)}">
       ${dl ? `<button class="btn sm ghost" type="button" data-tset-clear>Sil</button>` : ""}</div></div>
     <p class="sub" style="margin:0">${dl ? `Komandalar /team səhifəsində geri sayımı görür. ${Date.now() > dl ? `<b class="danger-t">Deadline keçib.</b>` : ""}` : "Deadline qoyulmayıb."}
       Konkret komandaya əlavə vaxt: aşağıda komandanı açın → “Deadline-ı uzat”.${ext.length ? ` Uzadılıb: ${ext.map(t => `<b>${esc(t.name)}</b> (${dtShow(t.extendUntil!)})`).join(", ")}.` : ""}</p>
@@ -223,7 +223,7 @@ function teamsSection(ev: EventState) {
               ${p?.viewable ? `<button class="btn sm" type="button" data-view="${t.id}" style="margin-top:6px">${icon("expand")}Bax</button>` : ""}</div>
             <div><span class="f">Sayt / video</span>${m?.siteUrl ? `<a href="${esc(m.siteUrl)}" target="_blank" rel="noopener noreferrer">${esc(m.siteUrl)}</a>` : `<span class="faint">Sayt yoxdur</span>`}
               ${m?.videoUrl ? `<br><a href="${esc(m.videoUrl)}" target="_blank" rel="noopener noreferrer">Demo video</a>` : ""}</div>
-            <div><span class="f">Deadline-ı uzat (yalnız bu komanda)</span><div class="row" style="flex-wrap:nowrap;gap:6px"><input type="datetime-local" data-ext="${t.id}" value="${dtLocal(m?.extendUntil ?? null)}" style="width:auto">
+            <div><span class="f">Deadline-ı uzat (yalnız bu komanda)</span><div class="row dlrow"><input type="datetime-local" data-ext="${t.id}" value="${dtLocal(m?.extendUntil ?? null)}">
               ${m?.extendUntil ? `<button class="btn sm ghost" type="button" data-ext-clear="${t.id}">Sil</button>` : ""}</div>
               <small class="sub">${m?.extendUntil && (!dl || m.extendUntil > dl) ? `Bu komanda ${dtShow(m.extendUntil)}-dək yükləyə bilər.` : dl ? `Ümumi deadline: ${dtShow(dl)}` : "Ümumi deadline yoxdur."}</small></div>
           </div>
