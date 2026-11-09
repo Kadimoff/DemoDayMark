@@ -11,6 +11,8 @@ export interface TeamRow {
   extend_until: number | null; review: string; review_note: string; reviewed_at: number | null; submitted_at: number | null;
   /** v14: first sign-in of the team (shared link pick or its own link); a claimed team is not offered on the shared link. */
   claimed_at: number | null;
+  /** v15: how many times the team changed its own name. */
+  renames: number;
   org_id: number;
   event_id: number;
 }
@@ -152,6 +154,16 @@ export class TeamRepo {
   }
   setApproval(id: number, approval: TeamApproval) {
     this.db.prepare("UPDATE teams SET approval=?, active=? WHERE id=? AND org_id=?").run(approval, approval === "approved" ? 1 : 0, id, this.orgId);
+  }
+  countRename(id: number) { this.db.prepare("UPDATE teams SET renames = renames + 1 WHERE id=? AND org_id=?").run(id, this.orgId); }
+  /** v14/15: a teammate who joined with the team link is added to the member list (no duplicates, max 12). */
+  addMember(id: number, name: string) {
+    const t = this.row(id);
+    if (!t) return;
+    const list: string[] = (() => { try { const v = JSON.parse(t.members_json || "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } })();
+    const n = name.trim().replace(/\s+/g, " ").slice(0, 80);
+    if (!n || list.some(x => x.toLocaleLowerCase("az") === n.toLocaleLowerCase("az")) || list.length >= 12) return;
+    this.db.prepare("UPDATE teams SET members_json=? WHERE id=? AND org_id=?").run(JSON.stringify([...list, n]), id, this.orgId);
   }
   setExtend(id: number, until: number | null) { this.db.prepare("UPDATE teams SET extend_until=? WHERE id=? AND org_id=?").run(until, id, this.orgId); }
   /** Self-registration: the team waits (inactive) until the coordinator approves it. */

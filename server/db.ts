@@ -314,6 +314,12 @@ const MIGRATIONS: Array<string | ((db: DB) => void)> = [
   ALTER TABLE teams ADD COLUMN claimed_at INTEGER;
   UPDATE teams SET claimed_at = (SELECT MIN(s.created_at) FROM team_sessions s WHERE s.team_id = teams.id);
   `,
+  // v15 (rename limit): how many times a signed-in team may change its own name when the coordinator allows renaming
+  // (NULL = no limit, as before), and how many times each team has done it. Additive only.
+  `
+  ALTER TABLE event ADD COLUMN team_rename_limit INTEGER;
+  ALTER TABLE teams ADD COLUMN renames INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 /** Tables whose rows belong to one event of an organisation (v10). */

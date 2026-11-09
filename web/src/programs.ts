@@ -104,7 +104,7 @@ function newFormHtml(cur: EventItem | undefined) {
         <div style="flex:1 1 130px"><label class="f" for="neDate">Tarix</label><input id="neDate" maxlength="40" placeholder="${esc(ev.date)}"></div>
       </div>
       <div class="row" style="align-items:flex-start">
-        <div style="flex:1 1 110px"><label class="f" for="nePitch">Təqdimat (dəq:san)</label><input id="nePitch" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.pitchSec)}"></div>
+        <div style="flex:1 1 110px"><label class="f" for="nePitch">Təqdimat (dəq:san)</label><input id="nePitch" class="mono" inputmode="numeric" value="3:00"></div>
         <div style="flex:1 1 110px"><label class="f" for="neQa">Sual-cavab (dəq:san)</label><input id="neQa" class="mono" inputmode="numeric" value="${fmtClock(ev.timer.qaSec)}"></div>
         <div style="flex:2 1 220px"><label class="f" for="neDeadline">Yükləmə üçün son tarix (istəyə bağlı)</label><input id="neDeadline" type="datetime-local"></div>
       </div>

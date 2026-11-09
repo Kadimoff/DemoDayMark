@@ -1464,6 +1464,8 @@ body.idle-ui .st-hud, body.idle-ui .st-demo { opacity: 0; }
 img.mlogo { height: 30px; width: auto; display: block; }
 img.mmark { display: none; height: 30px; width: 30px; }
 :root[data-theme="light"] img.mlogo, :root[data-theme="light"] .mlogo-lg img { content: url("/brand/munsif-logo-light.svg"); }
+/* on a white background the mark uses its light tile (the dark tile looked like a black square) */
+:root[data-theme="light"] img.mmark, :root[data-theme="light"] .jmark img { content: url("/brand/munsif-mark-light.svg"); }
 .brand { gap: 12px; }
 .evpill { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 10px 5px 12px; border-radius: var(--r-pill); background: var(--accent-soft); border: 1px solid var(--line); }
 .evpill b { font-weight: 800; font-size: 13px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch; }
@@ -2078,3 +2080,41 @@ h1[id], h2[id], h3[id], details[id] { scroll-margin-top: 90px; }
 .qr-pickrow { grid-template-columns: minmax(0, 420px); }
 .qr-card.qr-pick { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 @media print { .noprint { display: none !important; } }
+/* phones: the bell sits left of other header buttons, so an anchored panel ran off the left edge: span the screen instead */
+@media (max-width: 700px) {
+  .npanel { position: fixed; left: 12px; right: 12px; width: auto; top: calc(env(safe-area-inset-top, 0px) + 64px); max-height: min(70vh, 520px);
+    background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* v15: team phone: Panel · Pult · Komanda */
+.ttabs { display: flex; gap: 6px; padding: 4px; margin: 0; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--line); }
+.ttabs a { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border-radius: var(--r-pill); font-weight: 700; font-size: 14px; color: var(--muted); text-decoration: none; }
+.ttabs a .ni .ic { width: 18px; height: 18px; }
+.ttabs a[aria-current="page"] { background: var(--surface); color: var(--fg); box-shadow: 0 2px 10px var(--shadow-soft); }
+.tlive { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); vertical-align: middle; margin-left: 2px; animation: tlivepulse 1.4s ease-in-out infinite; }
+@keyframes tlivepulse { 50% { opacity: .35; } }
+@media (max-width: 700px) { .ttabs { display: none; } }
+.tclock-card .tclock-team { font-family: var(--f-display); font-size: 22px; margin: 2px 0 10px; overflow-wrap: anywhere; }
+.tclock { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.tclock b { font-size: clamp(44px, 16vw, 64px); line-height: 1; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.tclock span { color: var(--muted); font-weight: 600; }
+.tbar { height: 6px; border-radius: 4px; background: var(--surface-2); margin-top: 12px; overflow: hidden; }
+.tbar i { display: block; height: 100%; width: 100%; background: var(--accent); border-radius: inherit; transition: width .25s linear; }
+.tclock-card.mine { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.tclock-card.warn .tclock b, .tclock-card.warn .tbar i { color: var(--amber); background-color: var(--amber); }
+.tclock-card.warn .tclock b { background: none; }
+.tclock-card.danger .tclock b { color: var(--danger); }
+.tclock-card.danger .tbar i { background: var(--danger); }
+.tmembers { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.tmembers li { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); }
+.tmembers .ini { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); font-size: 12px; font-weight: 800; }
+.tmembers b { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.tmembers .x { flex: 0 0 auto; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }
+.tmembers .x:hover, .tmembers .x:focus-visible { color: var(--danger); background: var(--surface); }
+.tinvite { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.tinvite h2 { align-self: stretch; }
+.tinvite .qrbox { width: min(240px, 70vw); padding: 10px; background: #fff; border-radius: 16px; }
+.tinvite .qrbox svg { display: block; width: 100%; height: auto; }
+.tinvite .tl-code { font-size: 18px; font-weight: 800; letter-spacing: .08em; }
+.qr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+@media print { #revokeAll { display: none !important; } }

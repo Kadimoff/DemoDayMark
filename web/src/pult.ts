@@ -5,7 +5,7 @@ import "./styles.css";
 import { fmtClock, type TimerView } from "../../shared/timer";
 import type { AdminTeam, Notice, StagePayload, TimerAction, TimerState } from "../../shared/types";
 import { api, ApiError } from "./lib/api";
-import { $, esc, icon, toast } from "./lib/dom";
+import { $, esc, guarded, icon, toast } from "./lib/dom";
 import { bindShowCtl, eventCtlHtml, showCtlHtml } from "./lib/materials";
 import type { EventFile } from "../../shared/types";
 import { ordinal } from "../../shared/reveal";
@@ -135,7 +135,11 @@ async function load() {
   void loadReveal();
 }
 
-async function patchEvent(body: Record<string, unknown>) {
+function patchEvent(body: Record<string, unknown>) {
+  const stagey = "timer" in body || "currentTeamId" in body;
+  return guarded(`ev:${JSON.stringify(body)}`, () => patchEventNow(body), stagey ? 900 : 200);
+}
+async function patchEventNow(body: Record<string, unknown>) {
   try { const r = await api<{ stage: StagePayload }>("/api/admin/event", { method: "PATCH", body }); setStage(r.stage); navigator.vibrate?.(30); }
   catch (e) { toast((e as ApiError).message, "err"); }
 }
@@ -151,8 +155,10 @@ main.addEventListener("click", async e => {
   const adj = t.closest<HTMLButtonElement>("[data-adj]");
   if (adj) { await patchEvent({ timerAdd: Number(adj.dataset.adj) }); return; }
   if (t.closest("#plNext")) {
-    try { const r = await api<{ stage: StagePayload }>("/api/admin/event/next", { method: "POST" }); setStage(r.stage); toast(r.stage.team ? `Səhnədə: ${r.stage.team.name}` : "Səhnə boşdur"); }
-    catch (ex) { toast((ex as ApiError).message, "err"); }
+    await guarded("next", async () => {
+      try { const r = await api<{ stage: StagePayload }>("/api/admin/event/next", { method: "POST" }); setStage(r.stage); toast(r.stage.team ? `Səhnədə: ${r.stage.team.name}` : "Səhnə boşdur"); }
+      catch (ex) { toast((ex as ApiError).message, "err"); }
+    }, 1500);
     return;
   }
   const cur = t.closest<HTMLElement>("[data-cur]");

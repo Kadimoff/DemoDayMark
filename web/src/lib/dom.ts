@@ -115,3 +115,17 @@ export function ago(ms: number, now = Date.now()) {
 export function brandHtml(name: string) {
   return esc((name || "").trim());
 }
+
+// ---------- double-tap guard (slow network) ----------
+const lastRun = new Map<string, number>(); // -1 = still running
+/**
+ * Runs `fn` unless the same control (key) is still waiting for the server or finished less than `gap` ms ago.
+ * On a slow network a second tap on "Başlat" / "Növbəti" / a slide button must not pause the timer again, skip a team or
+ * jump two slides. Returns undefined when the tap was ignored.
+ */
+export async function guarded<T>(key: string, fn: () => Promise<T>, gap = 600): Promise<T | undefined> {
+  const last = lastRun.get(key);
+  if (last === -1 || (last != null && Date.now() - last < gap)) return undefined;
+  lastRun.set(key, -1);
+  try { return await fn(); } finally { lastRun.set(key, Date.now()); }
+}

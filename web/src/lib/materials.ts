@@ -4,12 +4,12 @@ import { bindShare, shareHtml } from "./share";
 import type { AdminTeamMaterials, EventFile, StagePayload, TeamReview } from "../../../shared/types";
 import { openViewer } from "./viewer";
 import { api, ApiError } from "./api";
-import { ago, esc, icon, toast } from "./dom";
+import { ago, esc, guarded, icon, toast } from "./dom";
 import { showLinkQr } from "./qr";
 
 export interface MaterialsData {
   teams: AdminTeamMaterials[];
-  settings: { teamRegistration: boolean; teamCanRename: boolean; jurorsSeeMaterials: boolean; uploadDeadline: number | null };
+  settings: { teamRegistration: boolean; teamCanRename: boolean; teamRenameLimit: number | null; jurorsSeeMaterials: boolean; uploadDeadline: number | null };
   /** v14: the shared team link (every team picks its name), or null. */
   pick: { code: string; path: string } | null;
   soffice: boolean;
@@ -236,13 +236,13 @@ export function bindShowCtl(root: HTMLElement, get: () => StagePayload | null, s
     const s = get();
     const body = m ? { mode: m.dataset.showMode } : sl ? { delta: Number(sl.dataset.slide) } : evShow ? { eventFile: Number(evShow.dataset.evShow), scene: "event" }
       : evBack ? { scene: "team" } : evBubble ? { bubble: !(s?.show.bubble ?? false) } : { intro: true };
-    try {
+    await guarded(`show:${JSON.stringify(body)}`, async () => { try {
       const r = await api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body });
       set(r.stage);
       if (intro) toast("Anons səhnə ekranında göstərilir");
       if (evShow) toast("Proqramın prezentasiyası səhnə ekranında");
       if (evBack) toast("Səhnə ekranı komandaya qayıtdı");
-    } catch (ex) { toast((ex as ApiError).message, "err"); }
+    } catch (ex) { toast((ex as ApiError).message, "err"); } }, sl ? 250 : 700);
   });
 }
 
@@ -264,6 +264,9 @@ export function teamAccessHtml(D: MaterialsData | null) {
     ${pickHtml(D)}
     ${sw("teamRegistration", s.teamRegistration, "Açıq qeydiyyat", "Komandalar özləri qeydiyyatdan keçə bilər (munsif.im/team). Yeni komanda “təsdiq gözləyir” statusunda yaranır və siz təsdiqləyənə qədər sıraya düşmür.")}
     ${sw("teamCanRename", s.teamCanRename, "Komanda adını özü dəyişə bilsin", "Bağlı olanda komanda və layihə adını yalnız siz dəyişirsiniz.")}
+    ${s.teamCanRename ? `<div class="row" style="gap:10px;align-items:center;margin:-4px 0 4px"><label class="f" for="taRenames" style="margin:0">Komanda adını neçə dəfə dəyişə bilər</label>
+      <select id="taRenames" style="width:auto">${[1, 2, 3, 5, 10].map(n => `<option value="${n}"${s.teamRenameLimit === n ? " selected" : ""}>${n} dəfə</option>`).join("")}
+        <option value=""${s.teamRenameLimit == null ? " selected" : ""}>Limitsiz</option></select></div>` : ""}
     ${sw("jurorsSeeMaterials", s.jurorsSeeMaterials, "Münsiflər materialları görsün", "Münsif panelində komandanın prezentasiyası və saytı üçün baxış linki görünür.")}
     <p class="sub" style="margin:0">Hər komandanın giriş linki (QR) yuxarıda, “Komandalar” bölməsində komandanı açanda görünür. Son tarix “Yükləmə üçün son tarix” bölməsindədir.</p>`;
 }
@@ -336,6 +339,7 @@ export function bindTeamAccess(root: HTMLElement, getData: () => MaterialsData |
   });
   root.addEventListener("change", async e => {
     const i = e.target as HTMLInputElement;
+    if (i.id === "taRenames") { await save({ teamRenameLimit: i.value ? Number(i.value) : null }); return; }
     if (i.id !== "taDeadline") return;
     const ms = i.value ? new Date(i.value).getTime() : null;
     await save({ uploadDeadline: ms && Number.isFinite(ms) ? ms : null });

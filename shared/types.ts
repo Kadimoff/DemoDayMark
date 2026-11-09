@@ -177,6 +177,8 @@ export interface TeamStatePayload {
   materials: TeamMaterials;
   history: TeamFile[];
   event: { displayName: string; date: string; deadline: number | null; uploadsOpen: boolean; canRename: boolean; pitchSec: number; qaSec: number;
+    /** v15: how many more times the team may change its name (null = no limit). */
+    renamesLeft: number | null;
     /** v3: this team's own deadline (an extension the coordinator gave it), when later than the event's. */
     extendedUntil: number | null };
   /** v3: the team is on stage with its presentation and may turn its slides now. */

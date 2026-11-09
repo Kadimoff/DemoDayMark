@@ -100,6 +100,7 @@ export class TeamService {
       materials: materials(this.trepo.db, t),
       history: this.trepo.history(teamId),
       event: { displayName: ev.displayName, date: ev.date, deadline: ev.uploadDeadline, uploadsOpen: this.uploadsOpen(teamId), canRename: ev.teamCanRename,
+        renamesLeft: ev.teamRenameLimit == null ? null : Math.max(0, ev.teamRenameLimit - (t.renames ?? 0)),
         pitchSec: ev.timer.pitchSec, qaSec: ev.timer.qaSec, extendedUntil: t.extend_until && (!ev.uploadDeadline || t.extend_until > ev.uploadDeadline) ? t.extend_until : null },
       slideControl: this.slidePermission(teamId),
       queue: this.queue(teamId),

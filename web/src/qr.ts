@@ -119,7 +119,8 @@ async function render() {
     ${shown.length ? `<div class="qr-grid">${(await Promise.all(shown.map(jurorCardHtml))).join("")}</div>` : ""}`;
   main.innerHTML = `
     <section class="qr-head"><div><h1>${icon("qr")} QR kodlar</h1>
-      <p class="sub"><b>${esc(D.eventName)}</b>: komanda və münsif girişləri. Çap edin, PDF yükləyin və ya linki WhatsApp, Telegram ilə göndərin.</p></div></section>
+      <p class="sub"><b>${esc(D.eventName)}</b>: komanda və münsif girişləri. Çap edin, PDF yükləyin və ya linki WhatsApp, Telegram ilə göndərin.</p></div>
+      <button class="btn ghost danger" id="revokeAll">${icon("trash")}Bütün QR-ları ləğv et</button></section>
     ${localHost() ? `<div class="banner lock">${icon("warn")}<span>Panel <b>${esc(location.host)}</b> ünvanında açılıb. Telefonlar bu ünvana çata bilməz. Paneli server ünvanı ilə açın.</span></div>` : ""}
     <div class="seg qr-tabs" role="tablist" aria-label="QR növü">
       <button role="tab" data-qtab="teams" aria-selected="${tab === "teams"}" aria-pressed="${tab === "teams"}">${icon("list")}Komandalar <b>${D.teams.length}</b></button>
@@ -135,6 +136,15 @@ async function makeLinks() {
   try { const r = await api<{ made: number; teams: TeamCard[] }>("/api/admin/qr/teams", { method: "POST", body: {} }); D!.teams = r.teams; toast(`${r.made} komandaya link yaradıldı`); }
   catch (e) { toast((e as ApiError).message, "err"); }
   busy = false; await render();
+}
+async function revokeAll() {
+  if (!confirm("Bütün QR-lar və linklər ləğv edilsin?\n\n• hər komandanın öz linki\n• ümumi komanda QR-ı\n• istifadə olunmamış münsif QR-ları\n\nÇap olunmuş və göndərilmiş QR-lar işləməyəcək. Artıq daxil olmuş komandalar və münsiflər çıxmır. Sonra yenilərini yarada bilərsiniz.")) return;
+  try {
+    const r = await api<{ teams: number; jurors: number; shared: boolean }>("/api/admin/qr/revoke-all", { method: "POST", body: {} });
+    invites.clear(); svgCache.clear();
+    toast(`Ləğv edildi: ${r.teams} komanda linki${r.shared ? ", ümumi QR" : ""}, ${r.jurors} münsif QR-ı`);
+    await load();
+  } catch (e) { toast((e as ApiError).message, "err"); }
 }
 async function makePick(again: boolean) {
   if (again && !confirm("Yeni ümumi link yaradılsın? Köhnə link və QR işləməyəcək (daxil olmuş komandalar çıxmır).")) return;
@@ -230,6 +240,7 @@ main.addEventListener("click", e => {
   const tb = t.closest<HTMLElement>("[data-qtab]");
   if (tb) { tab = tb.dataset.qtab as typeof tab; history.replaceState(null, "", `#${tab}`); void render(); return; }
   if (t.closest("#mkLinks")) { void makeLinks(); return; }
+  if (t.closest("#revokeAll")) { void revokeAll(); return; }
   if (t.closest("#mkPick") || t.closest("#newPick")) { void makePick(!!t.closest("#newPick")); return; }
   if (t.closest("#bigPick") && D?.pick) {
     void showLinkQr({ title: "Komanda girişi", heading: "Komandanızı seçib daxil olun", path: D.pick.path,

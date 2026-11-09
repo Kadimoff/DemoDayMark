@@ -24,7 +24,8 @@ const registerBody = z.object({
   project: z.string().trim().max(160).default(""),
 });
 const slideBody = z.object({ slide: z.number().int().min(1).max(5000).optional(), delta: z.number().int().min(-50).max(50).optional() });
-const codeBody = z.object({ code: z.string().trim().min(4, "Kodu yazın.").max(200) });
+const memberName = z.string().trim().max(80, "Ad 80 simvoldan uzun ola bilməz.").optional();
+const codeBody = z.object({ code: z.string().trim().min(4, "Kodu yazın.").max(200), memberName });
 
 /** Uploads come as a raw body (application/octet-stream) and are streamed to disk, never buffered. */
 export function rawUploadParser(app: FastifyInstance) {
@@ -135,7 +136,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     limiter.fail(key);
     return reply.code(410).send({ error: "Bu komanda linki artıq işləmir. Koordinatordan yenisini istəyin." });
   });
-  const signIn = async (req: FastifyRequest, reply: FastifyReply, raw: string, pickId?: number) => {
+  const signIn = async (req: FastifyRequest, reply: FastifyReply, raw: string, pickId?: number, member?: string) => {
     const key = limiter.key(req.ip, "team-code");
     if (throttled(req, reply, key)) return;
     const code = normalizeTeamCode(raw);
@@ -145,6 +146,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
       limiter.success(key);
       startTeamSession(req, reply, t.id);
       sc.trepo.markClaimed(t.id);
+      if (member) { sc.trepo.addMember(t.id, member); sc.teams.changed(t.id); }
       sc.repo.audit(null, "team.login", { teamId: t.id, ip: req.ip });
       sc.rt.to("admin").emit("materials:changed", { teamId: t.id });
       return { teamId: t.id, name: t.name, redirect: "/team" };
@@ -161,19 +163,20 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     limiter.success(key);
     if (!ps.trepo.link(team.id)?.code) ps.trepo.issueLink(team.id); // the panel shows this code to the teammates
     startTeamSession(req, reply, team.id);
+    if (member) ps.trepo.addMember(team.id, member);
     ps.repo.audit(null, "team.pick", { teamId: team.id, ip: req.ip });
     ps.teams.notifyAdmin("pick", `${team.name} daxil oldu`, "Ümumi komanda linki ilə öz adını seçdi.", team.id);
     ps.rt.to("admin").emit("materials:changed", { teamId: team.id });
     return { teamId: team.id, name: team.name, redirect: "/team" };
   };
-  const pickBody = z.object({ teamId: z.number().int().positive().optional() }).default({});
+  const pickBody = z.object({ teamId: z.number().int().positive().optional(), memberName }).default({});
   app.post<{ Params: { code: string } }>("/api/auth/team/:code", async (req, reply) => {
     const b = parseBody(pickBody, req.body ?? {}, reply); if (!b) return;
-    return signIn(req, reply, req.params.code, b.teamId);
+    return signIn(req, reply, req.params.code, b.teamId, b.memberName);
   });
   app.post("/api/auth/team-code", async (req, reply) => {
     const b = parseBody(codeBody, req.body, reply); if (!b) return;
-    return signIn(req, reply, b.code);
+    return signIn(req, reply, b.code, undefined, b.memberName);
   });
 
   // Open registration (off by default): the team waits as "pending" until the coordinator approves it.
@@ -223,12 +226,19 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
       const id = req.team!.teamId;
       const ev = repo.getEvent();
       const t = trepo.row(id)!;
-      if ((b.name !== undefined && b.name !== t.name) || (b.project !== undefined && b.project !== t.project)) {
+      const nameChange = b.name !== undefined && b.name !== t.name;
+      if (nameChange || (b.project !== undefined && b.project !== t.project)) {
         if (!ev.teamCanRename && t.approval !== "pending") return reply.code(403).send({ error: "Komanda və layihə adını yalnız koordinator dəyişə bilər." });
+      }
+      // v15: the coordinator may limit how many times a team renames itself (a pending, self-registered team is free)
+      const counted = nameChange && t.approval !== "pending";
+      if (counted && ev.teamRenameLimit != null && (t.renames ?? 0) >= ev.teamRenameLimit) {
+        return reply.code(403).send({ error: `Komanda adını ${ev.teamRenameLimit} dəfə dəyişmək olardı, limit dolub. Koordinatora yazın.` });
       }
       const linksChange = (b.siteUrl !== undefined && b.siteUrl !== t.site_url) || (b.videoUrl !== undefined && b.videoUrl !== t.video_url);
       if (linksChange && !teams.uploadsOpen(id)) return reply.code(403).send({ error: "Son tarix keçib, linkləri dəyişmək olmur. Koordinatora yazın." });
       trepo.updateProfile(id, b);
+      if (counted) trepo.countRename(id);
       repo.audit(null, "team.profile", { teamId: id, ...b });
       if (b.siteUrl && b.siteUrl !== t.site_url) {
         void checkEmbeddable(b.siteUrl).then(ok => { try { trepo.updateProfile(id, { siteEmbeddable: ok }); teams.changed(id); if (repo.getEvent().currentTeamId === id) rt.emitStage(); } catch { /* closed */ } });

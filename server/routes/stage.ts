@@ -28,6 +28,7 @@ const settingsBody = z.object({
   teamSlideControl: z.boolean().optional(),
   teamRegistration: z.boolean().optional(),
   teamCanRename: z.boolean().optional(),
+  teamRenameLimit: z.number().int().min(1).max(50).nullable().optional(),
   jurorsSeeMaterials: z.boolean().optional(),
   uploadDeadline: z.number().int().positive().nullable().optional(),
 });
@@ -68,7 +69,7 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       const ev = repo.getEvent();
       return {
         teams: teams.adminList(),
-        settings: { teamRegistration: ev.teamRegistration, teamCanRename: ev.teamCanRename, jurorsSeeMaterials: ev.jurorsSeeMaterials, uploadDeadline: ev.uploadDeadline },
+        settings: { teamRegistration: ev.teamRegistration, teamCanRename: ev.teamCanRename, teamRenameLimit: ev.teamRenameLimit, jurorsSeeMaterials: ev.jurorsSeeMaterials, uploadDeadline: ev.uploadDeadline },
         pick: (() => { const c = trepo.pickCode(); return c ? { code: prettyCode(c), path: `/t/${c}` } : null; })(),
         soffice: teams.converter.available,
         maxUploadMb: Math.round(ctx.cfg.maxUploadBytes / 1048576),
@@ -82,7 +83,7 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       repo.audit(req.user!.id, "teams.settings", b);
       rt.emitConfig();
       rt.to("admin").emit("materials:changed", {});
-      return { teamRegistration: ev.teamRegistration, teamCanRename: ev.teamCanRename, jurorsSeeMaterials: ev.jurorsSeeMaterials, uploadDeadline: ev.uploadDeadline };
+      return { teamRegistration: ev.teamRegistration, teamCanRename: ev.teamCanRename, teamRenameLimit: ev.teamRenameLimit, jurorsSeeMaterials: ev.jurorsSeeMaterials, uploadDeadline: ev.uploadDeadline };
     });
 
     // ---------- v14: one shared link for every team (the team picks its name) ----------

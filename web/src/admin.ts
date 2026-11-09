@@ -6,7 +6,7 @@ import { fmtClock, type TimerView } from "../../shared/timer";
 import type { AdminTeam, Criterion, Juror, PresenceEntry, ProgressEntry, ScoreRow, StagePayload, TimerAction, TimerState } from "../../shared/types";
 import { api, ApiError } from "./lib/api";
 import { now } from "./lib/clock";
-import { $, ago, esc, flip, hhmm, icon, initials, toast } from "./lib/dom";
+import { $, ago, esc, flip, guarded, hhmm, icon, initials, toast } from "./lib/dom";
 import { mountHistory, refreshHistory } from "./lib/history";
 import { createJuror, jurorJoined, onQrChange, reissue, showLinkQr } from "./lib/qr";
 import { live } from "./lib/socket";
@@ -90,6 +90,11 @@ async function load() {
 }
 
 async function patchEvent(body: Record<string, unknown>) {
+  // stage / timer actions: a repeated tap while the server answers is ignored (toggle twice = pause again)
+  const stagey = "timer" in body || "currentTeamId" in body || "timerSet" in body;
+  return guarded(`ev:${JSON.stringify(body)}`, () => patchEventNow(body), stagey ? 900 : 200);
+}
+async function patchEventNow(body: Record<string, unknown>) {
   try {
     const r = await api<{ event: EventState; stage: StagePayload }>("/api/admin/event", { method: "PATCH", body });
     if (S) { S.event = r.event; S.stage = r.stage; }
@@ -100,7 +105,8 @@ async function patchEvent(body: Record<string, unknown>) {
   } catch (e) { toast((e as ApiError).message, "err"); }
 }
 
-async function nextTeam() {
+function nextTeam() { return guarded("next", nextTeamNow, 1500); }
+async function nextTeamNow() {
   editing = null;
   try {
     const r = await api<{ event: EventState; stage: StagePayload }>("/api/admin/event/next", { method: "POST" });
@@ -925,8 +931,8 @@ document.addEventListener("keydown", e => {
   else if ((k === "arrowright" || k === "pagedown" || k === "arrowleft" || k === "pageup") && (S.stage.show.scene === "event" ? !!S.stage.show.eventPres : has && !!S.stage.show.pres)) {
     e.preventDefault();
     const d = k === "arrowright" || k === "pagedown" ? 1 : -1;
-    api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body: { delta: d } })
-      .then(r => { if (S) { S.stage = r.stage; strip.set(r.stage); renderStage(); } }).catch(ex => toast((ex as ApiError).message, "err"));
+    void guarded("slide", () => api<{ stage: StagePayload }>("/api/admin/stage", { method: "PATCH", body: { delta: d } })
+      .then(r => { if (S) { S.stage = r.stage; strip.set(r.stage); renderStage(); } }).catch(ex => toast((ex as ApiError).message, "err")), 250);
   }
 });
 

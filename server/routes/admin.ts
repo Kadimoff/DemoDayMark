@@ -297,6 +297,21 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const pick = pc ? { code: prettyCode(pc), path: `/t/${pc}`, claimed: active.filter(t => sc.trepo.row(t.id)?.claimed_at).length, total: active.length } : null;
       return { eventName: sc.repo.getEvent().displayName, origin: publicOrigin(req), teams: teamCards(sc), jurors: jurorCards(sc.repo), inviteTtlHours: [24, 72], pick };
     });
+    // "Bütün QR-ları ləğv et": every team link, the shared team link and every unused juror QR of the program stop working.
+    // People who already signed in stay signed in (their sessions are separate); new links / QRs can be made again.
+    r.post("/api/admin/qr/revoke-all", async req => {
+      const sc = scopeOf(ctx, req);
+      const now = Date.now();
+      const db = sc.repo.db;
+      const teams = db.prepare("UPDATE team_links SET revoked_at = ? WHERE org_id = ? AND event_id = ? AND revoked_at IS NULL").run(now, sc.orgId, sc.eventId).changes;
+      const jurors = db.prepare("UPDATE juror_invites SET revoked_at = ? WHERE org_id = ? AND event_id = ? AND used_at IS NULL AND revoked_at IS NULL").run(now, sc.orgId, sc.eventId).changes;
+      const shared = !!sc.trepo.pickCode();
+      sc.trepo.revokePick();
+      sc.repo.audit(req.user!.id, "qr.revoke-all", { teams, jurors, shared });
+      sc.rt.to("admin").emit("materials:changed", {});
+      sc.rt.emitConfig();
+      return { teams, jurors, shared };
+    });
     // Links for every active team that has none yet (existing links stay as they are).
     r.post("/api/admin/qr/teams", async req => {
       const sc = scopeOf(ctx, req);

@@ -27,6 +27,7 @@ interface EventRow {
   reveal_batch: number;
   team_registration: number;
   team_can_rename: number;
+  team_rename_limit?: number | null;
   upload_deadline: number | null;
   jurors_see_materials: number;
   stage_mode: string;
@@ -74,6 +75,8 @@ export interface EventState {
   teamRegistration: boolean;
   /** munsif: teams may change their team and project name. */
   teamCanRename: boolean;
+  /** v15: how many times a team may change its own name (null = no limit). */
+  teamRenameLimit: number | null;
   /** munsif: uploads close at this time (ms), null = no deadline. */
   uploadDeadline: number | null;
   /** munsif: jurors see links to each team's presentation and website. */
@@ -181,6 +184,7 @@ export class Repo {
       finalOrder: parseIds(r.final_order_json),
       teamRegistration: !!r.team_registration,
       teamCanRename: !!r.team_can_rename,
+      teamRenameLimit: r.team_rename_limit ?? null,
       uploadDeadline: r.upload_deadline ?? null,
       jurorsSeeMaterials: !!r.jurors_see_materials,
       stageMode: (STAGE_MODES as readonly string[]).includes(r.stage_mode) ? (r.stage_mode as StageMode) : "auto",
@@ -203,13 +207,13 @@ export class Repo {
     this.db.prepare(`UPDATE event SET name=?, date=?, current_team_id=?, timer_visible=?, timer_running=?,
       timer_offset_sec=?, timer_anchor_at=?, pitch_sec=?, qa_sec=?, locked=?, show_juror_total=?, include_entry=?, entry_max=?,
       feedback_tags_json=?, reveal_top=?, product=?, final_order_json=?, reveal_hide_scores=?, reveal_batch=?,
-      team_registration=?, team_can_rename=?, upload_deadline=?, jurors_see_materials=?, stage_mode=?, stage_slide=?, stage_intro_at=?,
+      team_registration=?, team_can_rename=?, team_rename_limit=?, upload_deadline=?, jurors_see_materials=?, stage_mode=?, stage_slide=?, stage_intro_at=?,
       stage_scene=?, stage_event_file=?, event_slide=?, event_bubble=?, team_slide_control=?, last5_fx=?, stage_sound=? WHERE org_id = ?`)
       .run(n.name, n.date, n.currentTeamId, +n.timer.visible, +n.timer.running, n.timer.offsetSec,
         n.timer.anchorAt, n.timer.pitchSec, n.timer.qaSec, +n.locked, +n.showJurorTotal, +n.includeEntry, n.entryMax,
         JSON.stringify(n.feedbackTags), n.revealTop, n.product, n.finalOrder ? JSON.stringify(n.finalOrder) : null,
         +n.revealHideScores, n.revealBatch,
-        +n.teamRegistration, +n.teamCanRename, n.uploadDeadline, +n.jurorsSeeMaterials, n.stageMode, n.stageSlide, n.stageIntroAt,
+        +n.teamRegistration, +n.teamCanRename, n.teamRenameLimit, n.uploadDeadline, +n.jurorsSeeMaterials, n.stageMode, n.stageSlide, n.stageIntroAt,
         n.stageScene, n.stageEventFile, n.eventSlide, +n.eventBubble, +n.teamSlideControl, +n.last5Fx, +n.stageSound, this.orgId);
     // the program list (`events`) shows the same name as every screen
     if (n.name !== cur.name || n.product !== cur.product) {
