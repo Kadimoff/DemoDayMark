@@ -129,3 +129,27 @@ export async function guarded<T>(key: string, fn: () => Promise<T>, gap = 600): 
   lastRun.set(key, -1);
   try { return await fn(); } finally { lastRun.set(key, Date.now()); }
 }
+
+// ---------- dropdown menus stay on screen ----------
+// "⋯ Daha çox" menus (details.more > .menu) open under their button; on a phone a button near the right edge pushed the
+// menu off the screen. When one opens, it is placed so it fits: right-aligned if it would overflow, never past the edges.
+if (typeof document !== "undefined") {
+  document.addEventListener("toggle", e => {
+    const d = e.target as HTMLElement;
+    if (!(d instanceof HTMLDetailsElement) || !d.open || !d.classList.contains("more")) return;
+    const menu = d.querySelector<HTMLElement>(":scope > .menu");
+    if (!menu) return;
+    menu.style.left = "0px"; menu.style.right = "auto"; menu.style.maxWidth = `calc(100vw - 24px)`;
+    const r = menu.getBoundingClientRect(), W = document.documentElement.clientWidth, pad = 12;
+    if (r.right > W - pad) {
+      const shift = Math.min(r.right - (W - pad), r.left - pad);
+      menu.style.left = `${-Math.max(0, shift)}px`;
+    }
+    // close the other open menus and close on a tap outside
+    document.querySelectorAll<HTMLDetailsElement>("details.more[open]").forEach(o => { if (o !== d) o.open = false; });
+  }, true);
+  document.addEventListener("click", e => {
+    const t = e.target as HTMLElement;
+    document.querySelectorAll<HTMLDetailsElement>("details.more[open]").forEach(o => { if (!o.contains(t)) o.open = false; });
+  });
+}

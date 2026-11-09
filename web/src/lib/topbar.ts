@@ -1,5 +1,6 @@
 import { api, ApiError, logout } from "./api";
 import { $, brandHtml, esc, icon, toast } from "./dom";
+import { LiveBar } from "./livebar";
 import { setPanelOrg } from "./org";
 import { themeSwitch, themeToggleHtml, toggleTheme } from "./theme";
 
@@ -54,7 +55,16 @@ export function topbar(opts: TopbarOpts) {
   }
   root.querySelector("#logout")?.addEventListener("click", () => logout(opts.role));
   root.querySelector("#pwBtn")?.addEventListener("click", () => passwordDialog());
-  if (opts.role === "admin") void whoAmI().then(me => { if (me) applyMe(me, opts); });
+  // v15: the stage timer on every coordinator page (phones: above the tab bar; tap = phone remote). The live panel shows
+  // its own big timer on desktop, the remote always does.
+  const path = location.pathname.replace(/\/$/, "");
+  const liveBar = opts.role === "admin" && opts.nav && path !== "/admin/pult" && path !== "/root"
+    ? new LiveBar({ href: "/admin/pult", mobileOnly: path === "/admin" }) : null;
+  if (opts.role === "admin") void whoAmI().then(me => {
+    if (!me) return;
+    applyMe(me, opts);
+    if (liveBar && me.org) liveBar.follow(`/api/stage?org=${encodeURIComponent(me.org.slug)}`);
+  });
   themeSwitch($("#themeSw"));
   // Phones get one light/dark button instead of the three-way switch.
   const one = $("#themeOne");

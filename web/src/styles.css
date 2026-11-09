@@ -1715,9 +1715,7 @@ details.more .menu .btn { justify-content: flex-start; width: 100%; }
   .tl-row { grid-template-columns: 26px minmax(0, 1fr); }
   .tl-st { grid-column: 2; } .tl-act { grid-column: 1 / -1; justify-content: flex-start; }
   .tl-act > .btn, .tl-act > .pill { flex: 1 1 auto; justify-content: center; }
-  details.more .menu { right: auto; left: auto; }
   .tl-act details.more { margin-left: auto; }
-  .tl-act details.more .menu { right: 0; }
 }
 /* event presentation rows (Səhnə tab + pult) */
 .evf { display: grid; gap: 6px; }
@@ -1778,7 +1776,7 @@ dialog.peek { width: min(1100px, calc(100vw - 24px)); max-width: none; backgroun
 nav.jump { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 nav.jump a { font-size: 12.5px; font-weight: 700; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); text-decoration: none; }
 nav.jump a:hover { color: var(--fg); border-color: var(--accent-line); }
-@media (max-width: 700px) { nav.jump { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; } nav.jump a { white-space: nowrap; } }
+@media (max-width: 700px) { nav.jump { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; -webkit-mask-image: linear-gradient(90deg, #000 82%, transparent); mask-image: linear-gradient(90deg, #000 82%, transparent); } nav.jump a { white-space: nowrap; } }
 section[aria-labelledby] { scroll-margin-top: 80px; }
 .accs { display: grid; gap: 6px; }
 details.acc { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); }
@@ -2118,3 +2116,34 @@ h1[id], h2[id], h3[id], details[id] { scroll-margin-top: 90px; }
 .tinvite .tl-code { font-size: 18px; font-weight: 800; letter-spacing: .08em; }
 .qr-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 @media print { #revokeAll { display: none !important; } }
+
+/* v15: live stage timer pill on every signed-in screen */
+.livebar { position: fixed; z-index: 30; right: 20px; bottom: 20px; display: inline-flex; align-items: center; gap: 10px; max-width: min(420px, calc(100vw - 32px));
+  padding: 8px 14px 8px 12px; border-radius: var(--r-pill); background: var(--surface); color: var(--fg); border: 1px solid var(--line-2);
+  box-shadow: 0 12px 36px var(--shadow); text-decoration: none; font-size: 13.5px; }
+.livebar[hidden] { display: none; }
+.livebar .lb-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.livebar[data-state="run"] .lb-dot { background: var(--ok, #10B981); animation: tlivepulse 1.4s ease-in-out infinite; }
+.livebar[data-state="warn"] .lb-dot { background: var(--amber); animation: tlivepulse .9s ease-in-out infinite; }
+.livebar[data-state="danger"] .lb-dot, .livebar[data-state="done"] .lb-dot { background: var(--danger); }
+.livebar .lb-team { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.livebar .lb-time { flex: 0 0 auto; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.livebar[data-state="warn"] .lb-time { color: var(--amber); }
+.livebar[data-state="danger"] .lb-time, .livebar[data-state="done"] .lb-time { color: var(--danger); }
+.livebar .lb-phase { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-weight: 600; }
+@media (min-width: 701px) { .livebar.mobile-only { display: none !important; } }
+@media (max-width: 700px) {
+  .livebar { left: 12px; right: 12px; justify-content: center; max-width: none; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  body.has-livebar main { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)) !important; }
+  body.has-livebar .toast { bottom: calc(132px + env(safe-area-inset-bottom, 0px)); }
+}
+/* v15: phone remote: running order */
+.pl-tm.ord { cursor: default; padding: 0 6px 0 4px; gap: 6px; }
+.pl-tm.ord .grip { flex: 0 0 auto; width: 36px; height: 48px; display: grid; place-items: center; color: var(--muted); font-size: 18px; letter-spacing: -2px; cursor: grab; touch-action: none; user-select: none; }
+.pl-tm.ord .grip:active { cursor: grabbing; }
+.pl-mv { flex: 0 0 auto; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--fg); cursor: pointer; }
+.pl-mv:disabled { opacity: .35; cursor: default; }
+.pl-mv .ic { width: 18px; height: 18px; }
+/* v15: the stage intro fades out by itself (no 3·2·1 count) */
+.st-intro { transition: opacity .7s ease; }
+.st-intro.leaving { opacity: 0; }

@@ -10,6 +10,7 @@ import { now, syncClock } from "./lib/clock";
 import { $, ago, esc, guarded, icon, toast } from "./lib/dom";
 import { bindShare, shareHtml } from "./lib/share";
 import { PHASE_LABEL } from "./lib/stage";
+import { LiveBar } from "./lib/livebar";
 import { askNotifications, noticeBell, type NoticeBell } from "./lib/notices";
 import { renderPage, openPdf } from "./lib/pdfdeck";
 import { live } from "./lib/socket";
@@ -214,10 +215,13 @@ type Tab = "panel" | "pult" | "team";
 const TABS: Array<{ id: Tab; label: string; ic: string }> = [
   { id: "panel", label: "Panel", ic: "doc" }, { id: "pult", label: "Pult", ic: "timer" }, { id: "team", label: "Komanda", ic: "users" },
 ];
+// v15: the stage timer on the other tabs too (tap → Pult)
+const liveBar = new LiveBar({ onClick: () => setTab("pult"), hidden: () => tab === "pult" || !S });
 let tab: Tab = (() => { try { const v = sessionStorage.getItem("munsif-team-tab"); return v === "pult" || v === "team" ? v : "panel"; } catch { return "panel"; } })();
 let wasOnStage = false;
 function setTab(t: Tab) {
   tab = t;
+  queueMicrotask(() => liveBar.tick());
   try { sessionStorage.setItem("munsif-team-tab", t); } catch { /* private mode */ }
   render(true);
   scrollTo({ top: 0 });
@@ -590,7 +594,7 @@ main.addEventListener("submit", async e => {
 });
 
 async function load() {
-  try { S = await api<TeamStatePayload>("/api/team/state"); syncClock(S.stage.serverNow); render(); return true; }
+  try { S = await api<TeamStatePayload>("/api/team/state"); syncClock(S.stage.serverNow); liveBar.set(S.stage); render(); return true; }
   catch (e) { if ((e as ApiError).status === 401) return false; toast((e as ApiError).message, "err"); return !!S; }
 }
 
@@ -625,6 +629,7 @@ async function boot() {
       notice: (n: Notice) => { bell?.push(n); void load(); },
       "team:changed": () => void load(),
       "stage:changed": (st: StagePayload) => {
+        liveBar.set(st);
         const me = S?.team.id;
         const changed = (st.team?.id ?? 0) !== lastStageTeam;
         lastStageTeam = st.team?.id ?? 0;
@@ -635,7 +640,7 @@ async function boot() {
         if (changed || st.team?.id === me || S?.queue.onStage) void load();
       },
       "config:changed": () => void load(),
-      "timer:changed": (p: { timer: StagePayload["timer"]; serverNow: number }) => { if (S) { S.stage = { ...S.stage, timer: p.timer }; syncClock(p.serverNow); tickClock(); } },
+      "timer:changed": (p: { timer: StagePayload["timer"]; serverNow: number }) => { if (S) { S.stage = { ...S.stage, timer: p.timer }; syncClock(p.serverNow); liveBar.setTimer(p.timer, p.serverNow); tickClock(); } },
     },
     resync: () => void load(),
   });

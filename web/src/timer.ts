@@ -241,17 +241,19 @@ function bubbleFrame(v: TimerView) {
   if (live && v.remaining <= 10 && v.remaining > 5 && v.remaining !== lastSoft && !eventScene()) { lastSoft = v.remaining; sfx.soft(); }
 }
 
-// ---------- intro ("Növbəti çıxış" + 3·2·1) ----------
+// ---------- intro ("Növbəti çıxış": logo, name, project, members) ----------
+// v15: no 3·2·1 / "BAŞLA!" count any more: the intro shows the team for a few seconds and fades, the coordinator
+// starts the timer when the speaker is ready.
+const INTRO_MS = 5000;
 let introShown: number | null = null;
-let introCountN: number | null = null;
 let introOn = false;
 function introFrame() {
   const at = show()?.introAt ?? null;
   const t = stage?.team;
   const age = at != null ? now() - at : Infinity;
-  const on = !!t && !eventScene() && at != null && age >= 0 && age < 7000;
+  const on = !!t && !eventScene() && at != null && age >= 0 && age < INTRO_MS;
   if (on && introShown !== at) {
-    introShown = at; introCountN = null;
+    introShown = at;
     el.introLogo.innerHTML = show()?.logo ? `<img src="${esc(show()!.logo!)}" alt="">` : esc((t!.name.trim()[0] ?? "m").toLocaleUpperCase("az"));
     el.introName.innerHTML = [...t!.name].map((ch, i) => `<span style="animation-delay:${0.7 + i * 0.045}s">${ch === " " ? "&nbsp;" : esc(ch)}</span>`).join("");
     el.introProject.textContent = t!.project || "";
@@ -261,19 +263,9 @@ function introFrame() {
     for (const a of el.intro.querySelectorAll<HTMLElement>("*")) { a.style.animation = "none"; void a.offsetWidth; a.style.animation = ""; }
     if (age < 1500) sfx.whoosh();
   }
-  if (!on) { if (!el.intro.hidden) el.intro.hidden = true; introOn = false; return; }
+  if (!on) { if (!el.intro.hidden) { el.intro.hidden = true; el.intro.classList.remove("leaving"); } introOn = false; return; }
   introOn = true;
-  const n = age < 3200 ? null : age < 4100 ? 3 : age < 5000 ? 2 : age < 5900 ? 1 : 0;
-  if (n !== introCountN) {
-    introCountN = n;
-    if (n === null) return;
-    el.intro.classList.add("counting");
-    const b = document.createElement("b");
-    b.textContent = n === 0 ? "BAŞLA!" : String(n);
-    if (n === 0) b.className = "go";
-    el.introCount.replaceChildren(b);
-    if (n === 0) sfx.go(); else sfx.tick(n + 2);
-  }
+  el.intro.classList.toggle("leaving", age > INTRO_MS - 700); // soft fade instead of a cut
 }
 
 // ---------- dial rendering ----------

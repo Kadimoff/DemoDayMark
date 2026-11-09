@@ -14,6 +14,7 @@ import { live } from "./lib/socket";
 import { PHASE_LABEL, StageStrip } from "./lib/stage";
 import { topbar } from "./lib/topbar";
 import { adminNav } from "./lib/adminnav";
+import { sortable } from "./lib/sortable";
 
 const bar = topbar({
   role: "admin",
@@ -52,7 +53,10 @@ function build() {
         <button class="pl-btn" id="plNext">${icon("next")}Növbəti komanda</button>
       </div>
     </div>
-    <section class="card pad stack section-gap"><h3>Komandanı səhnəyə çıxar</h3><div class="pl-teams" id="plTeams"></div></section>
+    <section class="card pad stack section-gap"><div class="row between" style="gap:8px"><h3 id="plTeamsH">Komandanı səhnəyə çıxar</h3>
+      <button class="btn sm" id="plOrder">${icon("list")}Sıranı dəyiş</button></div>
+      <p class="sub" id="plOrderHint" hidden style="margin:0">Komandanı ⋮⋮ tutub sürüşdürün və ya ↑ / ↓ basın. Sıra dərhal yadda qalır və səhnə ekranında, komandaların telefonunda yenilənir.</p>
+      <div class="pl-teams" id="plTeams"></div></section>
     <section class="card pad stack section-gap" id="plEvent"></section>
     <section class="card pad stack section-gap" id="plReveal"></section>`;
 }
@@ -71,8 +75,36 @@ function renderStatic() {
     const d = Number(b.dataset.slide);
     b.disabled = !deck || (d < 0 ? slide <= 1 : !!deck.pages && slide >= deck.pages);
   });
-  $("#plTeams").innerHTML = teams.filter(t => t.active).map((t, i) => `<button class="pl-tm ${stage!.team?.id === t.id ? "on" : ""}" data-cur="${t.id}">
+  renderTeams();
+}
+
+// v15: the running order, also from the phone: "Sıranı dəyiş" → drag by ⋮⋮ or ↑ / ↓ (tapping a team no longer puts it on stage)
+let ordering = false;
+function renderTeams() {
+  if (!stage) return;
+  const act = teams.filter(t => t.active);
+  $("#plOrder").innerHTML = ordering ? `${icon("check")}Hazır` : `${icon("list")}Sıranı dəyiş`;
+  $("#plOrder").classList.toggle("primary", ordering);
+  $("#plTeamsH").textContent = ordering ? "Çıxış sırası" : "Komandanı səhnəyə çıxar";
+  $<HTMLElement>("#plOrderHint").hidden = !ordering;
+  $("#plTeams").innerHTML = ordering
+    ? act.map((t, i) => `<div class="pl-tm ord ${stage!.team?.id === t.id ? "on" : ""}" data-id="${t.id}">
+        <span class="grip" aria-hidden="true">⋮⋮</span><span class="mono">#${i + 1}</span><b>${esc(t.name)}</b>
+        <button class="pl-mv" data-mv="-1" data-mid="${t.id}" ${i === 0 ? "disabled" : ""} aria-label="${esc(t.name)} yuxarı">${icon("up")}</button>
+        <button class="pl-mv" data-mv="1" data-mid="${t.id}" ${i === act.length - 1 ? "disabled" : ""} aria-label="${esc(t.name)} aşağı">${icon("down")}</button></div>`).join("")
+    : act.map((t, i) => `<button class="pl-tm ${stage!.team?.id === t.id ? "on" : ""}" data-cur="${t.id}">
     <span class="mono">#${i + 1}</span><b>${esc(t.name)}</b>${stage!.team?.id === t.id ? `<span class="pill fill">Səhnədə</span>` : ""}</button>`).join("");
+}
+async function saveOrder(activeIds: number[]) {
+  const ids = [...activeIds, ...teams.filter(t => !t.active).map(t => t.id)];
+  // optimistic: the list moves at once
+  const byId = new Map(teams.map(t => [t.id, t]));
+  teams = ids.map(id => byId.get(id)!).filter(Boolean);
+  renderTeams();
+  navigator.vibrate?.(15);
+  // each save sends the whole order, so quick moves in a row end in the last order shown
+  try { await api("/api/admin/teams/reorder", { method: "POST", body: { ids } }); }
+  catch (e) { toast((e as ApiError).message, "err"); await load(); }
 }
 
 function onTick(v: TimerView) {
@@ -161,6 +193,16 @@ main.addEventListener("click", async e => {
     }, 1500);
     return;
   }
+  if (t.closest("#plOrder")) { ordering = !ordering; renderTeams(); if (!ordering) toast("Sıra yadda saxlanıldı"); return; }
+  const mv = t.closest<HTMLButtonElement>("[data-mv]");
+  if (mv && !mv.disabled) {
+    const ids = teams.filter(x => x.active).map(x => x.id);
+    const i = ids.indexOf(Number(mv.dataset.mid)), j = i + Number(mv.dataset.mv);
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    await saveOrder(ids);
+    return;
+  }
   const cur = t.closest<HTMLElement>("[data-cur]");
   if (cur) { await patchEvent({ currentTeamId: Number(cur.dataset.cur) }); return; }
   const r = t.closest<HTMLButtonElement>("[data-rv]");
@@ -173,6 +215,7 @@ main.addEventListener("click", async e => {
 bindShowCtl(main, () => stage, s => { setStage(s); navigator.vibrate?.(20); });
 
 build();
+sortable(main, { item: "#plTeams .pl-tm.ord", handle: ".grip", onDrop: ids => void saveOrder(ids) });
 live({
   role: "admin",
   on: {
