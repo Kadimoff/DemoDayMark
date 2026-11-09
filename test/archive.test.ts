@@ -154,7 +154,7 @@ describe("backups → archived programs (root)", () => {
     }
     coord = cookieOf(await post("/api/auth/login").send({ username: "acme-coord", password: "coord-pass-123" }));
     other = cookieOf(await post("/api/auth/login").send({ username: "zeta-coord", password: "coord-pass-123" }));
-  });
+  }, 120_000); // five migrated backups + argon2 logins: ~3 s here, but the Docker build host can be busy (load 6+ on 6 CPUs)
   afterAll(async () => { await A?.close(); });
 
   it("lists every backup with schema and program summary; root only, no scores or names of jurors", async () => {
