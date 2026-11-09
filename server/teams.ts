@@ -107,6 +107,7 @@ export class TeamService {
       stage: this.repo.stage(),
       soffice: this.converter.available,
       maxUploadMb: Math.round(this.cfg.maxUploadBytes / 1048576),
+      code: (() => { const c = this.trepo.link(teamId)?.code; return c ? prettyCode(c) : null; })(),
     };
   }
 
@@ -135,6 +136,7 @@ export class TeamService {
         ...materials(this.trepo.db, row), teamId: t.id, name: t.name, project: t.project, active: t.active, orderIndex: t.orderIndex,
         link: link ? { code: link.code ? prettyCode(link.code) : null, createdAt: link.createdAt } : null,
         sessions: this.trepo.sessionCount(t.id),
+        claimedAt: row.claimed_at ?? null,
       };
     });
   }

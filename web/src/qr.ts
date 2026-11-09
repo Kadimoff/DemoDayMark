@@ -13,10 +13,13 @@ import { $, esc, icon, toast } from "./lib/dom";
 import { bindShare, shareHtml } from "./lib/share";
 import { live } from "./lib/socket";
 import { topbar } from "./lib/topbar";
+import { showLinkQr } from "./lib/qr";
 
 interface TeamCard { id: number; name: string; project: string; code: string | null; path: string | null }
 interface JurorCard { id: number; displayName: string; active: boolean; placeholder: boolean; claimed: boolean; openInviteUntil: number | null }
-interface QrData { eventName: string; origin: string; teams: TeamCard[]; jurors: JurorCard[] }
+interface QrData { eventName: string; origin: string; teams: TeamCard[]; jurors: JurorCard[];
+  /** v14: the shared team link (every team picks its name). */
+  pick: { code: string; path: string; claimed: number; total: number } | null }
 interface Invite { id: number; displayName: string; path: string; expiresAt: number }
 
 const bar = topbar({ role: "admin", nav: adminNav("qr"), wide: true });
@@ -57,6 +60,22 @@ async function teamCardHtml(t: TeamCard) {
     <p class="qc-note">Komanda üzvlərinin hamısı bu linklə daxil olur.</p>
     ${shareHtml(url, `${D!.eventName}: ${t.name} komandasının giriş linki`)}</article>`;
 }
+/** v14: one QR for every team (shown on the projector or sent to the group): each team picks its own name. */
+async function pickCardHtml() {
+  const p = D!.pick;
+  if (!p) return `<article class="qr-card qr-pick empty"><div class="qc-h"><b>Ümumi komanda QR-ı</b><small>Bir QR hamı üçün</small></div>
+    <p class="sub" style="max-width:46ch">Bir QR kodu ekrana çıxarın və ya linki qrupa göndərin: hər komanda skan edib siyahıdan öz adını seçir. Seçilən komanda bağlanır.</p>
+    <button class="btn primary" id="mkPick">${icon("qr")}Ümumi link yarat</button></article>`;
+  const url = origin() + p.path;
+  return `<article class="qr-card qr-pick"><div class="qc-h"><b>Ümumi komanda QR-ı</b><small>Daxil olub: ${p.claimed} / ${p.total}</small></div>
+    <div class="qc-qr">${await qrSvg(url)}</div>
+    <div class="qc-link mono">${esc(url.replace(/^https?:\/\//, ""))}</div>
+    <div class="qc-code mono">${esc(p.code)}</div>
+    <p class="qc-note">Hər komanda skan edib siyahıdan öz adını seçir. Seçilən komanda bağlanır, başqası onun adından daxil ola bilməz.</p>
+    ${shareHtml(url, `${D!.eventName}: komanda girişi (komandanızı seçin)`)}
+    <div class="row noprint" style="justify-content:center;gap:8px"><button class="btn sm" id="bigPick">${icon("expand")}Böyük göstər</button>
+      <button class="btn sm ghost" id="newPick">${icon("retry")}Yeni link</button></div></article>`;
+}
 async function jurorCardHtml(j: JurorCard) {
   const inv = invites.get(j.id);
   if (!inv) return "";
@@ -80,7 +99,8 @@ async function render() {
       <button class="btn" id="printAll"${D.teams.length - missing ? "" : " disabled"}>${icon("doc")}Hamısını çap et</button>
       <a class="btn" href="/api/admin/qr/teams.pdf" download${D.teams.length - missing ? "" : ' aria-disabled="true"'}>${icon("download")}PDF yüklə</a>
     </div>
-    <p class="note">Komanda linki çoxdəfəlikdir: komandanın bütün üzvləri eyni linklə daxil olur. Ona görə linki yalnız həmin komandaya göndərin, səhnə ekranında göstərməyin.</p>
+    <div class="qr-grid qr-pickrow">${await pickCardHtml()}</div>
+    <p class="note">Ümumi QR-ı səhnə ekranında göstərmək olar. Hər komandanın <b>öz</b> linki isə çoxdəfəlikdir: komandanın bütün üzvləri eyni linklə daxil olur. Ona görə öz linki yalnız həmin komandaya göndərin, səhnə ekranında göstərməyin.</p>
     ${D.teams.length ? `<div class="qr-grid">${(await Promise.all(D.teams.map(teamCardHtml))).join("")}</div>` : `<p class="note">Aktiv komanda yoxdur. Quraşdırmada komanda əlavə edin.</p>`}`;
   const jurorsPane = `
     <div class="qr-bar row">
@@ -115,6 +135,11 @@ async function makeLinks() {
   try { const r = await api<{ made: number; teams: TeamCard[] }>("/api/admin/qr/teams", { method: "POST", body: {} }); D!.teams = r.teams; toast(`${r.made} komandaya link yaradıldı`); }
   catch (e) { toast((e as ApiError).message, "err"); }
   busy = false; await render();
+}
+async function makePick(again: boolean) {
+  if (again && !confirm("Yeni ümumi link yaradılsın? Köhnə link və QR işləməyəcək (daxil olmuş komandalar çıxmır).")) return;
+  try { await api("/api/admin/team-pick", { method: "POST", body: {} }); toast("Ümumi komanda linki hazırdır"); await load(); }
+  catch (e) { toast((e as ApiError).message, "err"); }
 }
 async function makeInvites() {
   const n = D!.jurors.filter(j => j.active && !j.claimed && j.openInviteUntil).length;
@@ -205,6 +230,12 @@ main.addEventListener("click", e => {
   const tb = t.closest<HTMLElement>("[data-qtab]");
   if (tb) { tab = tb.dataset.qtab as typeof tab; history.replaceState(null, "", `#${tab}`); void render(); return; }
   if (t.closest("#mkLinks")) { void makeLinks(); return; }
+  if (t.closest("#mkPick") || t.closest("#newPick")) { void makePick(!!t.closest("#newPick")); return; }
+  if (t.closest("#bigPick") && D?.pick) {
+    void showLinkQr({ title: "Komanda girişi", heading: "Komandanızı seçib daxil olun", path: D.pick.path,
+      note: "Telefonun kamerası ilə skan edin və siyahıdan öz komandanızı seçin. Komandanın digər üzvləri paneldəki komanda kodu ilə daxil olur." });
+    return;
+  }
   if (t.closest("#mkInv")) { void makeInvites(); return; }
   if (t.closest("#printAll")) { document.body.dataset.print = tab; window.print(); return; }
   if (t.closest("#jPdf")) { void jurorsPdf(); return; }

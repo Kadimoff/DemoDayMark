@@ -69,7 +69,11 @@ async function signedOut(err = "") {
     e.preventDefault();
     const code = $<HTMLInputElement>("#code").value.trim();
     if (!code) { $("#err").textContent = "Kodu yazın."; return; }
-    try { await api("/api/auth/team-code", { method: "POST", body: { code } }); await boot(); }
+    try {
+      const r = await api<{ pick?: boolean; path?: string }>("/api/auth/team-code", { method: "POST", body: { code } });
+      if (r.pick && r.path) history.replaceState(null, "", r.path);
+      await boot();
+    }
     catch (ex) { $("#err").textContent = (ex as ApiError).message; }
   });
   document.getElementById("regForm")?.addEventListener("submit", async e => {
@@ -81,6 +85,45 @@ async function signedOut(err = "") {
       sessionStorage.setItem("munsif-newcode", r.code);
       await boot();
     } catch (ex) { $("#rErr").textContent = (ex as ApiError).message; }
+  });
+}
+
+// ---------- v14: shared team link: pick your team from the list ----------
+interface PickInfo { pick: true; eventName: string; teams: Array<{ id: number; name: string; project: string; taken: boolean }> }
+async function pickScreen(code: string, info: PickInfo, err = "") {
+  header(false);
+  headerFor = "out";
+  const free = info.teams.filter(t => !t.taken);
+  main.innerHTML = `
+    <section class="tcard hero-card fade">
+      <span class="kicker">${esc(info.eventName || "munsif.im")}</span>
+      <h1 class="tgrad">Komandanızı seçin</h1>
+      <p class="sub">Siyahıdan öz komandanızı seçib daxil olun. Seçilən komanda siyahıda bağlanır: başqası onun adından daxil ola bilməz.</p>
+      ${info.teams.length ? `<form id="pickForm" class="stack" novalidate>
+        <div class="pick-list" role="radiogroup" aria-label="Komandalar">${info.teams.map(t => `
+          <label class="pick${t.taken ? " taken" : ""}"><input type="radio" name="team" value="${t.id}" ${t.taken ? "disabled" : ""}>
+            <span class="pk-nm"><b>${esc(t.name)}</b>${t.project ? `<small>${esc(t.project)}</small>` : ""}</span>
+            ${t.taken ? `<span class="pill">daxil olub</span>` : ""}</label>`).join("")}</div>
+        <p class="err-t" id="err" role="alert">${esc(err)}</p>
+        <button class="btn primary lg" type="submit" ${free.length ? "" : "disabled"}>Daxil ol</button>
+      </form>` : `<p class="note">Siyahıda hələ komanda yoxdur. Koordinatora yazın.</p>`}
+      <p class="sub" style="margin:0">Komandanız artıq daxil olubsa, komanda yoldaşınızın panelindəki <b>komanda kodunu</b> <a href="/team">${esc(location.host)}/team</a> səhifəsində yazın.</p>
+    </section>`;
+  document.getElementById("pickForm")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    const sel = main.querySelector<HTMLInputElement>("input[name=team]:checked");
+    if (!sel) { $("#err").textContent = "Komandanızı seçin."; return; }
+    const name = info.teams.find(t => t.id === Number(sel.value))?.name ?? "";
+    if (!confirm(`“${name}” komandası kimi daxil olursunuz. Düzdür?`)) return;
+    try {
+      await api(`/api/auth/team/${encodeURIComponent(code)}`, { method: "POST", body: { teamId: Number(sel.value) } });
+      history.replaceState(null, "", "/team");
+      await boot();
+    } catch (ex) {
+      // somebody may have picked it a moment ago: show the fresh list
+      const fresh = await api<PickInfo>(`/api/auth/team/${encodeURIComponent(code)}`).catch(() => info);
+      await pickScreen(code, fresh, (ex as ApiError).message);
+    }
   });
 }
 
@@ -131,7 +174,7 @@ function statusHtml() {
     : q.onStage ? `<b class="ok-t">Səhnədəsiniz</b>`
     : q.ahead != null ? `Sıranız <b>${q.position}</b> / ${q.total} · qabaqda <b>${q.ahead}</b> komanda`
     : `Sıranız <b>${q.position}</b> / ${q.total}${q.current ? "" : " · çıxışlar başlamayıb"}`;
-  const newCode = sessionStorage.getItem("munsif-newcode");
+  const code = s.code ?? sessionStorage.getItem("munsif-newcode");
   return `<section class="tcard status-card ${st.cls}">
     <div class="row between" style="align-items:flex-start;gap:12px;flex-wrap:nowrap">
       <div style="min-width:0"><span class="kicker">${esc(s.event.displayName)}${s.event.date ? ` · ${esc(s.event.date)}` : ""}</span>
@@ -141,7 +184,8 @@ function statusHtml() {
     <div class="tstep ${st.cls}"><b>${st.t}</b><span>${esc(st.d)}</span></div>
     ${deadlineHtml()}
     <div class="tmeta"><span>${icon("list")}${queue}</span><span>${icon("timer")}Təqdimat ${Math.round(s.event.pitchSec / 6) / 10} dəq + sual-cavab ${Math.round(s.event.qaSec / 6) / 10} dəq</span></div>
-    ${newCode ? `<div class="note" style="margin-top:12px">Komanda kodunuz: <b class="mono">${esc(newCode)}</b>. Üzvlərə göndərin, onlar kodu munsif.im/team səhifəsində yazıb daxil olacaq.</div>` : ""}
+    ${code ? `<div class="note tcode" style="margin-top:12px">Komanda kodunuz: <b class="mono">${esc(code)}</b>
+      <span>Komanda yoldaşlarınız <b>${esc(location.host)}/team</b> səhifəsində bu kodu yazıb daxil olur.</span></div>` : ""}
     ${"Notification" in window && Notification.permission === "default" ? `<button class="btn sm" id="allowNotif" style="margin-top:12px">${icon("bell")}Bildirişlərə icazə ver</button>` : ""}
   </section>`;
 }
@@ -355,8 +399,15 @@ async function boot() {
   // /t/<code>: sign in with the link, then continue at /team (the code leaves the address bar)
   const m = location.pathname.match(/^\/t\/([^/]+)\/?$/);
   if (m) {
-    try { await api(`/api/auth/team/${encodeURIComponent(m[1])}`, { method: "POST", body: {} }); }
-    catch (e) { history.replaceState(null, "", "/team"); if (!(await load())) await signedOut((e as ApiError).message); return; }
+    // v14: the shared link of the program shows the team list first (a team already signed in here goes to its panel)
+    const info = await api<{ pick?: boolean }>(`/api/auth/team/${encodeURIComponent(m[1])}`).catch(() => null);
+    if (info?.pick) {
+      const ses = await api<{ team: boolean }>("/api/auth/session").catch(() => ({ team: false }));
+      if (!ses.team || !(await load())) { await pickScreen(m[1], info as PickInfo); return; }
+    } else {
+      try { await api(`/api/auth/team/${encodeURIComponent(m[1])}`, { method: "POST", body: {} }); }
+      catch (e) { history.replaceState(null, "", "/team"); if (!(await load())) await signedOut((e as ApiError).message); return; }
+    }
     history.replaceState(null, "", "/team");
   }
   // ask without a 401 first (a fresh visitor gets the sign-in form, and no console error)

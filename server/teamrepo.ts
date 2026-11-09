@@ -9,6 +9,8 @@ export interface TeamRow {
   id: number; order_index: number; name: string; project: string; active: number; entry_score: number | null;
   approval: string; members_json: string; site_url: string; video_url: string; site_embeddable: number | null;
   extend_until: number | null; review: string; review_note: string; reviewed_at: number | null; submitted_at: number | null;
+  /** v14: first sign-in of the team (shared link pick or its own link); a claimed team is not offered on the shared link. */
+  claimed_at: number | null;
   org_id: number;
   event_id: number;
 }
@@ -40,6 +42,13 @@ export function normalizeTeamCode(input: string): string | null {
 }
 export const prettyCode = (c: string) => c.replace(/(.{4})(?=.)/g, "$1-");
 export const codeHash = (code: string) => createHash("sha256").update(`team:${code}`).digest("hex");
+/** v14: the shared team link has its own hash namespace (a shared code never matches a team's own code). */
+export const pickHash = (code: string) => createHash("sha256").update(`team-pick:${code}`).digest("hex");
+/** v14: organisation whose shared team link this code is, or null. Global on purpose (like teamByCode). */
+export function orgByPickCode(db: DB, code: string): number | null {
+  const r = db.prepare("SELECT org_id FROM event WHERE team_pick_hash = ?").get(pickHash(code)) as { org_id: number } | undefined;
+  return r?.org_id ?? null;
+}
 
 function keyFrom(secret: string) { return createHash("sha256").update(`munsif-team-link:${secret}`).digest(); }
 export function sealCode(code: string, secret: string): string {
@@ -175,6 +184,28 @@ export class TeamRepo {
     const r = this.db.prepare("SELECT team_id FROM team_links WHERE token_hash=? AND revoked_at IS NULL").get(codeHash(code)) as { team_id: number } | undefined;
     return r ? teamRow(this.db, r.team_id) : null;
   }
+
+  // ---------- v14: shared team link (/t/<code>, the team picks its name) ----------
+  /** The current shared code (plain, for the admin), or null when there is none. */
+  pickCode(): string | null {
+    const r = this.db.prepare("SELECT team_pick_enc FROM event WHERE org_id = ?").get(this.orgId) as { team_pick_enc: string | null } | undefined;
+    return r?.team_pick_enc ? openCode(r.team_pick_enc, this.secret) : null;
+  }
+  /** New shared code; the earlier one stops working. */
+  issuePick(): string {
+    const code = newTeamCode();
+    this.db.prepare("UPDATE event SET team_pick_hash = ?, team_pick_enc = ? WHERE org_id = ?").run(pickHash(code), sealCode(code, this.secret), this.orgId);
+    return code;
+  }
+  revokePick() { this.db.prepare("UPDATE event SET team_pick_hash = NULL, team_pick_enc = NULL WHERE org_id = ?").run(this.orgId); }
+  /** Picks the team from the shared link: true only for the first one (a claimed team cannot be picked again). */
+  claim(teamId: number): boolean {
+    return this.db.prepare("UPDATE teams SET claimed_at = ? WHERE id = ? AND org_id = ? AND event_id = ? AND claimed_at IS NULL").run(Date.now(), teamId, this.orgId, this.eventId).changes === 1;
+  }
+  /** Any sign-in of the team (own link / code / registration) claims it too. */
+  markClaimed(teamId: number) { this.db.prepare("UPDATE teams SET claimed_at = COALESCE(claimed_at, ?) WHERE id = ?").run(Date.now(), teamId); }
+  /** The coordinator lets the team be picked from the shared link again (a wrong pick). Sessions stay unless closed separately. */
+  unclaim(teamId: number) { return this.db.prepare("UPDATE teams SET claimed_at = NULL WHERE id = ? AND org_id = ?").run(teamId, this.orgId).changes; }
 
   // ---------- sessions ----------
   createSession(id: string, teamId: number, ua: string, ip: string) {

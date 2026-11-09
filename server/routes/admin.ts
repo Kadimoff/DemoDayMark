@@ -292,7 +292,10 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     };
     r.get("/api/admin/qr", async req => {
       const sc = scopeOf(ctx, req);
-      return { eventName: sc.repo.getEvent().displayName, origin: publicOrigin(req), teams: teamCards(sc), jurors: jurorCards(sc.repo), inviteTtlHours: [24, 72] };
+      const pc = sc.trepo.pickCode();
+      const active = sc.repo.teams().filter(t => t.active);
+      const pick = pc ? { code: prettyCode(pc), path: `/t/${pc}`, claimed: active.filter(t => sc.trepo.row(t.id)?.claimed_at).length, total: active.length } : null;
+      return { eventName: sc.repo.getEvent().displayName, origin: publicOrigin(req), teams: teamCards(sc), jurors: jurorCards(sc.repo), inviteTtlHours: [24, 72], pick };
     });
     // Links for every active team that has none yet (existing links stay as they are).
     r.post("/api/admin/qr/teams", async req => {

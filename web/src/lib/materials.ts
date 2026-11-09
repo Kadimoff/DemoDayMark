@@ -5,10 +5,13 @@ import type { AdminTeamMaterials, EventFile, StagePayload, TeamReview } from "..
 import { openViewer } from "./viewer";
 import { api, ApiError } from "./api";
 import { ago, esc, icon, toast } from "./dom";
+import { showLinkQr } from "./qr";
 
 export interface MaterialsData {
   teams: AdminTeamMaterials[];
   settings: { teamRegistration: boolean; teamCanRename: boolean; jurorsSeeMaterials: boolean; uploadDeadline: number | null };
+  /** v14: the shared team link (every team picks its name), or null. */
+  pick: { code: string; path: string } | null;
   soffice: boolean;
   maxUploadMb: number;
 }
@@ -258,11 +261,36 @@ export function teamAccessHtml(D: MaterialsData | null) {
     <div class="row between"><h3 id="h-tacc">Komanda girişi</h3></div>
     <p class="sub" style="margin:0">Hər komandaya giriş linki (QR) verin: komanda <b>/t/kod</b> linki ilə daxil olur, prezentasiyasını (PDF${D.soffice ? " və ya PPTX" : ""}, maks. ${D.maxUploadMb} MB), sayt və video linkini yükləyir.
       Bal və reytinq komandalara heç vaxt göstərilmir.${D.soffice ? "" : " <b>Serverdə LibreOffice yoxdur</b>, komandalardan PDF istəyin."}</p>
+    ${pickHtml(D)}
     ${sw("teamRegistration", s.teamRegistration, "Açıq qeydiyyat", "Komandalar özləri qeydiyyatdan keçə bilər (munsif.im/team). Yeni komanda “təsdiq gözləyir” statusunda yaranır və siz təsdiqləyənə qədər sıraya düşmür.")}
     ${sw("teamCanRename", s.teamCanRename, "Komanda adını özü dəyişə bilsin", "Bağlı olanda komanda və layihə adını yalnız siz dəyişirsiniz.")}
     ${sw("jurorsSeeMaterials", s.jurorsSeeMaterials, "Münsiflər materialları görsün", "Münsif panelində komandanın prezentasiyası və saytı üçün baxış linki görünür.")}
     <p class="sub" style="margin:0">Hər komandanın giriş linki (QR) yuxarıda, “Komandalar” bölməsində komandanı açanda görünür. Son tarix “Yükləmə üçün son tarix” bölməsindədir.</p>`;
 }
+/** v14: one link / QR for every team: the team scans it and picks its own name from the list. */
+function pickHtml(D: MaterialsData) {
+  const teams = D.teams.filter(t => t.active);
+  const done = teams.filter(t => t.claimedAt);
+  const url = D.pick ? `${location.origin}${D.pick.path}` : "";
+  return `<div class="pickbox">
+    <div><b>Ümumi komanda linki (bir QR hamı üçün)</b>
+      <p class="sub" style="margin:2px 0 0">Bir QR kodu ekrana çıxarın və ya linki qrupa göndərin: hər komanda skan edib siyahıdan öz adını seçir.
+        Seçilən komanda bağlanır, başqası onun adından daxil ola bilməz. Komandanın digər üzvləri paneldə görünən komanda kodu ilə daxil olur.</p></div>
+    ${D.pick ? `<div class="row" style="gap:8px;align-items:center"><span class="pb-code">${esc(D.pick.code)}</span><span class="tl-url mono" style="font-size:12.5px;color:var(--muted);overflow-wrap:anywhere">${esc(url)}</span></div>
+      <div class="row" style="gap:8px">
+        <button type="button" class="btn sm primary" data-pick-qr>${icon("qr")}QR göstər</button>
+        <button type="button" class="btn sm" data-pick-copy>${icon("doc")}Linki kopyala</button>
+        <button type="button" class="btn sm ghost" data-pick-new>${icon("retry")}Yeni link</button>
+        <button type="button" class="btn sm ghost danger" data-pick-off>Söndür</button>
+      </div>
+      <div><span class="caps">Daxil olub: ${done.length} / ${teams.length}</span>
+        <div class="pb-teams" style="margin-top:6px">${teams.map(t => t.claimedAt
+          ? `<span class="pb-t">${icon("check")}${esc(t.name)}<button type="button" data-unclaim="${t.teamId}" title="Səhv seçilibsə: komanda ümumi linkdə yenidən seçilə bilsin">Sıfırla</button></span>`
+          : `<span class="pb-t off">${esc(t.name)}</span>`).join("") || `<span class="sub">Hələ komanda yoxdur.</span>`}</div></div>`
+    : `<div><button type="button" class="btn sm primary" data-pick-new>${icon("qr")}Ümumi link yarat</button></div>`}
+  </div>`;
+}
+
 export function bindTeamAccess(root: HTMLElement, getData: () => MaterialsData | null, reload: () => Promise<void>) {
   const flash = () => { const s = document.getElementById("taSaved"); if (s) { s.textContent = "Saxlanıldı"; setTimeout(() => { s.textContent = ""; }, 1800); } };
   const save = async (body: Record<string, unknown>) => {
@@ -273,6 +301,34 @@ export function bindTeamAccess(root: HTMLElement, getData: () => MaterialsData |
     const sw = t.closest<HTMLElement>("[data-tset]");
     if (sw) { await save({ [sw.dataset.tset!]: sw.getAttribute("aria-checked") !== "true" }); return; }
     if (t.closest("[data-tset-clear]")) { await save({ uploadDeadline: null }); return; }
+    // v14: shared team link
+    const D = getData();
+    if (t.closest("#teamAccess [data-pick-new]")) {
+      if (D?.pick && !confirm("Yeni ümumi link yaradılsın? Köhnə link və QR işləməyəcək (daxil olmuş komandalar çıxmır).")) return;
+      try { await api("/api/admin/team-pick", { method: "POST", body: {} }); toast("Ümumi komanda linki hazırdır"); await reload(); } catch (ex) { toast((ex as ApiError).message, "err"); }
+      return;
+    }
+    if (t.closest("#teamAccess [data-pick-off]")) {
+      if (!confirm("Ümumi link söndürülsün? Link və QR işləməyəcək. Komandaların öz linkləri işləməyə davam edir.")) return;
+      try { await api("/api/admin/team-pick", { method: "DELETE" }); toast("Ümumi link söndürüldü"); await reload(); } catch (ex) { toast((ex as ApiError).message, "err"); }
+      return;
+    }
+    if (t.closest("#teamAccess [data-pick-qr]") && D?.pick) {
+      await showLinkQr({ title: "Komanda girişi", heading: "Komandanızı seçib daxil olun", path: D.pick.path,
+        note: "Telefonun kamerası ilə skan edin və siyahıdan öz komandanızı seçin. Komandanın digər üzvləri paneldəki komanda kodu ilə daxil olur." });
+      return;
+    }
+    if (t.closest("#teamAccess [data-pick-copy]") && D?.pick) {
+      try { await navigator.clipboard.writeText(`${location.origin}${D.pick.path}`); toast("Link kopyalandı"); } catch { toast("Kopyalamaq alınmadı, linki əl ilə seçin", "err"); }
+      return;
+    }
+    const uc = t.closest<HTMLElement>("#teamAccess [data-unclaim]");
+    if (uc) {
+      const name = D?.teams.find(x => x.teamId === Number(uc.dataset.unclaim))?.name ?? "";
+      if (!confirm(`“${name}” ümumi linkdə yenidən seçilə bilsin? (Səhv komanda seçilibsə.) Açıq sessiyalar qalır, onları komandanın linkindən bağlaya bilərsiniz.`)) return;
+      try { await api(`/api/admin/teams/${uc.dataset.unclaim}/unclaim`, { method: "POST", body: {} }); await reload(); } catch (ex) { toast((ex as ApiError).message, "err"); }
+      return;
+    }
     const l = t.closest<HTMLElement>("[data-tlink]");
     if (l) { const id = Number(l.dataset.tlink); await openTeamLink(id, getData()?.teams.find(x => x.teamId === id)?.name ?? ""); await reload(); return; }
     const ap = t.closest<HTMLElement>("#teamAccess [data-mat-approve]");

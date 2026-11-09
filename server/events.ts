@@ -143,7 +143,8 @@ export function createEvent(orgs: Orgs, sc: Scope, cfg: Config, actorId: number,
     const timer = applyTimerAction({ ...ev.timer, pitchSec: input.pitchSec ?? ev.timer.pitchSec, qaSec: input.qaSec ?? ev.timer.qaSec }, "stop", now);
     db.prepare(`UPDATE event SET name = ?, product = ?, date = ?, current_team_id = NULL, timer_visible = 0, timer_running = 0, timer_offset_sec = 0,
       timer_anchor_at = NULL, pitch_sec = ?, qa_sec = ?, locked = 0, final_order_json = NULL, reveal_enabled = 0, reveal_step = 0, reveal_snapshot = NULL,
-      upload_deadline = ?, stage_mode = 'auto', stage_slide = 1, stage_intro_at = NULL, stage_scene = 'team', stage_event_file = NULL, event_slide = 1
+      upload_deadline = ?, stage_mode = 'auto', stage_slide = 1, stage_intro_at = NULL, stage_scene = 'team', stage_event_file = NULL, event_slide = 1,
+      team_pick_hash = NULL, team_pick_enc = NULL
       WHERE org_id = ?`).run(input.name, product, input.date?.trim() || todayDate(), timer.pitchSec, timer.qaSec, input.uploadDeadline ?? null, orgId);
 
     orgs.invalidate(orgId);

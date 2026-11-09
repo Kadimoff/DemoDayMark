@@ -69,6 +69,7 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       return {
         teams: teams.adminList(),
         settings: { teamRegistration: ev.teamRegistration, teamCanRename: ev.teamCanRename, jurorsSeeMaterials: ev.jurorsSeeMaterials, uploadDeadline: ev.uploadDeadline },
+        pick: (() => { const c = trepo.pickCode(); return c ? { code: prettyCode(c), path: `/t/${c}` } : null; })(),
         soffice: teams.converter.available,
         maxUploadMb: Math.round(ctx.cfg.maxUploadBytes / 1048576),
       };
@@ -82,6 +83,30 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       rt.emitConfig();
       rt.to("admin").emit("materials:changed", {});
       return { teamRegistration: ev.teamRegistration, teamCanRename: ev.teamCanRename, jurorsSeeMaterials: ev.jurorsSeeMaterials, uploadDeadline: ev.uploadDeadline };
+    });
+
+    // ---------- v14: one shared link for every team (the team picks its name) ----------
+    r.post("/api/admin/team-pick", async req => {
+      const { repo, trepo, rt } = scopeOf(ctx, req);
+      const code = trepo.issuePick();
+      repo.audit(req.user!.id, "team.pick-link", {});
+      rt.to("admin").emit("materials:changed", {});
+      return { code: prettyCode(code), path: `/t/${code}` };
+    });
+    r.delete("/api/admin/team-pick", async req => {
+      const { repo, trepo, rt } = scopeOf(ctx, req);
+      trepo.revokePick();
+      repo.audit(req.user!.id, "team.pick-link.revoke", {});
+      rt.to("admin").emit("materials:changed", {});
+      return { ok: true };
+    });
+    r.post("/api/admin/teams/:id/unclaim", async (req, reply) => {
+      const { repo, trepo, rt } = scopeOf(ctx, req);
+      const tid = id(repo, req.params, reply); if (!tid) return;
+      trepo.unclaim(tid);
+      repo.audit(req.user!.id, "team.unclaim", { teamId: tid });
+      rt.to("admin").emit("materials:changed", { teamId: tid });
+      return { ok: true };
     });
 
     // ---------- team sign-in links ----------

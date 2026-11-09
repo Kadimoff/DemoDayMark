@@ -2054,3 +2054,27 @@ h1[id], h2[id], h3[id], details[id] { scroll-margin-top: 90px; }
   .top .nav { flex: none; overflow: visible; }
   .top .evpill { flex: 0 1 auto; min-width: 90px; }
 }
+
+/* v14: shared team link: the team picks its name (/t/<code>) */
+.pick-list { display: grid; gap: 8px; max-height: min(56vh, 520px); overflow-y: auto; padding: 2px; }
+.pick { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 14px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface-2); cursor: pointer; }
+.pick input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--accent); margin: 0; }
+.pick .pk-nm { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.pick .pk-nm b { font-weight: 700; overflow-wrap: anywhere; }
+.pick .pk-nm small { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.pick:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pick.taken { opacity: .55; cursor: not-allowed; }
+.pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tcode { display: flex; flex-direction: column; gap: 4px; }
+.tcode b.mono { font-size: 17px; letter-spacing: .06em; color: var(--fg); }
+/* coordinator: shared link block in "Komanda girişi" */
+.pickbox { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface-2); }
+.pickbox .pb-code { font-family: var(--f-mono); font-weight: 700; font-size: 15px; letter-spacing: .06em; overflow-wrap: anywhere; }
+.pickbox .pb-teams { display: flex; flex-wrap: wrap; gap: 6px; }
+.pickbox .pb-t { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); font-size: 12.5px; font-weight: 600; }
+.pickbox .pb-t.off { color: var(--muted); padding-right: 10px; }
+.pickbox .pb-t button { border: 0; background: transparent; color: var(--accent-text); font: inherit; font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: var(--r-pill); }
+.pickbox .pb-t button:hover { background: var(--accent-soft); }
+.qr-pickrow { grid-template-columns: minmax(0, 420px); }
+.qr-card.qr-pick { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+@media print { .noprint { display: none !important; } }

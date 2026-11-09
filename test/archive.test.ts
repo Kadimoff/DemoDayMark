@@ -297,7 +297,7 @@ describe("IMPORT_ARCHIVE_MATCH", () => {
     const A = await buildApp(cfg);
     try {
       // v11 → current: a pre-migration copy of the live database is kept
-      expect(SCHEMA_VERSION).toBe(13);
+      expect(SCHEMA_VERSION).toBe(14);
       const pre = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
       expect(pre.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, pre[0]), { readonly: true });

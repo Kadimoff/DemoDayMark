@@ -303,6 +303,17 @@ const MIGRATIONS: Array<string | ((db: DB) => void)> = [
     product = ''
   WHERE product <> '';
   `,
+  // v14 (shared team link): one link / QR for every team of the program (/t/<code>): the team picks its own name from the
+  // list and signs in. A picked team is "claimed" and leaves the list, so nobody else can sign in as it from the shared
+  // link (teammates use the team's own code shown on its panel). Additive only: new columns. Teams that have signed in
+  // before count as claimed from their first session.
+  `
+  ALTER TABLE event ADD COLUMN team_pick_hash TEXT;     -- sha256 of the shared code (lookup)
+  ALTER TABLE event ADD COLUMN team_pick_enc TEXT;      -- the shared code, encrypted with SESSION_SECRET (shown again to the admin)
+  CREATE UNIQUE INDEX event_team_pick ON event(team_pick_hash) WHERE team_pick_hash IS NOT NULL;
+  ALTER TABLE teams ADD COLUMN claimed_at INTEGER;
+  UPDATE teams SET claimed_at = (SELECT MIN(s.created_at) FROM team_sessions s WHERE s.team_id = teams.id);
+  `,
 ];
 
 /** Tables whose rows belong to one event of an organisation (v10). */

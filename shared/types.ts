@@ -186,6 +186,8 @@ export interface TeamStatePayload {
   stage: StagePayload;
   soffice: boolean;
   maxUploadMb: number;
+  /** v14: the team's own code, so a member can bring teammates in (they type it on /team). */
+  code: string | null;
 }
 
 /** One team in the admin's materials list. */
@@ -197,6 +199,8 @@ export interface AdminTeamMaterials extends TeamMaterials {
   orderIndex: number;
   link: { code: string | null; createdAt: number } | null;
   sessions: number;
+  /** v14: first sign-in of the team; null = it can still pick its name on the shared link. */
+  claimedAt: number | null;
 }
 
 export interface MyScore {

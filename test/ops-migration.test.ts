@@ -61,7 +61,7 @@ describe("upgrading the live 468f2a0 (v10) database to score ops (v11)", () => {
     const { cfg, snapshot, ranking, reveal, stage } = await v10Database(path.join(tmp, "a"));
     const A = await buildApp(cfg);
     try {
-      expect(SCHEMA_VERSION).toBe(13);
+      expect(SCHEMA_VERSION).toBe(14);
       const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
       expect(backups.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, backups[0]), { readonly: true });
@@ -72,7 +72,12 @@ describe("upgrading the live 468f2a0 (v10) database to score ops (v11)", () => {
       expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
       expect(db.pragma("integrity_check", { simple: true })).toBe("ok");
       expect(db.pragma("foreign_key_check")).toEqual([]);
-      for (const t of TABLES) expect(db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(), t).toEqual(asV13(t, snapshot[t]));
+      // the same rows and the same values in every old column (later versions only add columns: v14 team_pick_*, claimed_at)
+      for (const t of TABLES) {
+        const old = asV13(t, snapshot[t] as Array<Record<string, unknown>>);
+        const now = db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all() as Array<Record<string, unknown>>;
+        expect(now.map(r => (old[0] ? Object.fromEntries(Object.keys(old[0]).map(k => [k, r[k]])) : r)), t).toEqual(old);
+      }
       for (const t of EVENT_TABLES_V11) expect(db.prepare(`SELECT COUNT(*) n FROM ${t}`).get(), t).toEqual({ n: 0 });
       const repo = A.ctx.orgs.root.repo;
       expect(adminResults(repo, cfg).results.ranking.map(r => [r.team.id, r.rank, r.score, r.n])).toEqual(ranking);

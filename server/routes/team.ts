@@ -6,7 +6,7 @@ import { newToken, resolveUser, tokenId } from "../auth.js";
 import { parseBody, publicScope, scopeOf, type Ctx } from "../context.js";
 import type { Scope } from "../orgs.js";
 import { KINDS, MIME, receiveUpload, storedPath, UploadError, type UploadKind } from "../files.js";
-import { fileRow, normalizeTeamCode, prettyCode, type FileRow } from "../teamrepo.js";
+import { fileRow, normalizeTeamCode, orgByPickCode, prettyCode, type FileRow } from "../teamrepo.js";
 import { activeEventOf, orgActive } from "../auth.js";
 import { checkEmbeddable, TEAM_COOKIE } from "../teams.js";
 import { moveSlide } from "../stagectl.js";
@@ -114,29 +114,63 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     return true;
   };
 
-  // Public: what the /t/<code> page shows before signing in.
+  // v14: the shared team link of an organisation (every team picks its own name), or null.
+  const pickScope = (code: string | null) => {
+    const org = code ? orgByPickCode(trepo.db, code) : null;
+    return org && orgActive(repo, org) ? orgs.scope(org) : null;
+  };
+  /** Teams offered on the shared link: the program's active teams; a claimed one is shown but cannot be picked. */
+  const pickList = (sc: Scope) => sc.repo.teams().filter(t => t.active).map(t => ({ id: t.id, name: t.name, project: t.project, taken: !!sc.trepo.row(t.id)?.claimed_at }));
+
+  // Public: what the /t/<code> page shows before signing in (a team's own link, or the shared link with the team list).
   app.get<{ Params: { code: string } }>("/api/auth/team/:code", async (req, reply) => {
     const key = limiter.key(req.ip, "team-code");
     if (throttled(req, reply, key)) return;
     const code = normalizeTeamCode(req.params.code);
     const t = code ? trepo.teamByCode(code) : null;
     const sc = t ? teamScope(t) : null;
-    if (!t || !sc) { limiter.fail(key); return reply.code(410).send({ error: "Bu komanda linki artıq işləmir. Koordinatordan yenisini istəyin." }); }
-    return { valid: true, teamName: t.name, project: t.project, eventName: sc.repo.stage().eventName };
+    if (t && sc) return { valid: true, teamName: t.name, project: t.project, eventName: sc.repo.stage().eventName };
+    const ps = pickScope(code);
+    if (ps) return { valid: true, pick: true, eventName: ps.repo.stage().eventName, teams: pickList(ps) };
+    limiter.fail(key);
+    return reply.code(410).send({ error: "Bu komanda linki artıq işləmir. Koordinatordan yenisini istəyin." });
   });
-  const signIn = async (req: FastifyRequest, reply: FastifyReply, raw: string) => {
+  const signIn = async (req: FastifyRequest, reply: FastifyReply, raw: string, pickId?: number) => {
     const key = limiter.key(req.ip, "team-code");
     if (throttled(req, reply, key)) return;
     const code = normalizeTeamCode(raw);
     const t = code ? trepo.teamByCode(code) : null;
     const sc = t ? teamScope(t) : null;
-    if (!t || !sc) { limiter.fail(key); return reply.code(410).send({ error: "Kod tapılmadı. Koordinatorun göndərdiyi linki və ya kodu yoxlayın." }); }
+    if (t && sc) {
+      limiter.success(key);
+      startTeamSession(req, reply, t.id);
+      sc.trepo.markClaimed(t.id);
+      sc.repo.audit(null, "team.login", { teamId: t.id, ip: req.ip });
+      sc.rt.to("admin").emit("materials:changed", { teamId: t.id });
+      return { teamId: t.id, name: t.name, redirect: "/team" };
+    }
+    // v14: shared link: without a team id the page shows the list; with one, the first pick of that team signs in
+    const ps = pickScope(code);
+    if (!ps) { limiter.fail(key); return reply.code(410).send({ error: "Kod tapılmadı. Koordinatorun göndərdiyi linki və ya kodu yoxlayın." }); }
+    if (pickId == null) return { pick: true, path: `/t/${code}` };
+    const team = ps.repo.teams().find(x => x.id === pickId && x.active);
+    if (!team) return reply.code(404).send({ error: "Komanda tapılmadı. Siyahını yeniləyin." });
+    if (!ps.trepo.claim(team.id)) {
+      return reply.code(409).send({ error: "Bu komanda artıq daxil olub. Komanda yoldaşınızdan komanda kodunu alın və ya koordinatora yazın." });
+    }
     limiter.success(key);
-    startTeamSession(req, reply, t.id);
-    sc.repo.audit(null, "team.login", { teamId: t.id, ip: req.ip });
-    return { teamId: t.id, name: t.name, redirect: "/team" };
+    if (!ps.trepo.link(team.id)?.code) ps.trepo.issueLink(team.id); // the panel shows this code to the teammates
+    startTeamSession(req, reply, team.id);
+    ps.repo.audit(null, "team.pick", { teamId: team.id, ip: req.ip });
+    ps.teams.notifyAdmin("pick", `${team.name} daxil oldu`, "Ümumi komanda linki ilə öz adını seçdi.", team.id);
+    ps.rt.to("admin").emit("materials:changed", { teamId: team.id });
+    return { teamId: team.id, name: team.name, redirect: "/team" };
   };
-  app.post<{ Params: { code: string } }>("/api/auth/team/:code", async (req, reply) => signIn(req, reply, req.params.code));
+  const pickBody = z.object({ teamId: z.number().int().positive().optional() }).default({});
+  app.post<{ Params: { code: string } }>("/api/auth/team/:code", async (req, reply) => {
+    const b = parseBody(pickBody, req.body ?? {}, reply); if (!b) return;
+    return signIn(req, reply, req.params.code, b.teamId);
+  });
   app.post("/api/auth/team-code", async (req, reply) => {
     const b = parseBody(codeBody, req.body, reply); if (!b) return;
     return signIn(req, reply, b.code);
@@ -162,6 +196,7 @@ export function teamRoutes(app: FastifyInstance, ctx: Ctx) {
     const id = trepo.register(b.name, b.project);
     const { code } = trepo.issueLink(id);
     startTeamSession(req, reply, id);
+    trepo.markClaimed(id);
     repo.audit(null, "team.register", { teamId: id, name: b.name, ip: req.ip });
     teams.notifyAdmin("register", `Yeni komanda: ${b.name}`, "Qeydiyyatdan keçdi və təsdiqinizi gözləyir.", id);
     sc.rt.emitConfig();
