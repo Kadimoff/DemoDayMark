@@ -6,6 +6,8 @@ import { hashPassword } from "../baseline.js";
 import { parseBody, type Ctx } from "../context.js";
 import type { UserRow } from "../repo.js";
 import { isPlaceholderName } from "../../shared/brand.js";
+import { normalizeTeamCode, orgByJurorPickCode } from "../teamrepo.js";
+import type { Scope } from "../orgs.js";
 
 // Verified against on unknown usernames so response time does not reveal which accounts exist.
 let dummyHash: Promise<string> | null = null;
@@ -92,6 +94,61 @@ export function authRoutes(app: FastifyInstance, ctx: Ctx) {
     sc.repo.audit(u.id, "juror.claim", { ip: req.ip, displayName: u.display_name });
     sc.rt.emitJurorJoined(u.id, u.display_name);
     sc.rt.emitConfig();
+    return { role: u.role, displayName: u.display_name, redirect: "/juror" };
+  });
+
+  // ---------- v16: shared juror link (/jp/<code>) — one QR for every juror ----------
+  const jurorPickScope = (raw: string): Scope | null => {
+    const code = normalizeTeamCode(raw);
+    const org = code ? orgByJurorPickCode(repo.db, code) : null;
+    return org && orgActive(repo, org) ? orgs.scope(org) : null;
+  };
+  /** Juror seats the coordinator created that nobody has signed in to yet, oldest first. */
+  const freeSeats = (sc: Scope) => {
+    const claimed = sc.repo.claimedJurors();
+    return sc.repo.jurors().filter(j => j.active && !claimed.has(j.id));
+  };
+  /** The juror this browser already is in that program: scanning the shared QR again must not take a second seat. */
+  const ownJuror = (req: FastifyRequest, sc: Scope) => {
+    const u = resolveUser(repo, cfg, req.cookies, v => req.unsignCookie(v), "juror");
+    const row = u && u.orgId === sc.orgId ? repo.userById(u.id) : null;
+    return row && row.event_id === sc.eventId && row.active ? row : null;
+  };
+  const PICK_GONE = "Bu QR kod artıq işləmir. Koordinatordan yenisini istəyin.";
+
+  app.get<{ Params: { code: string } }>("/api/auth/juror-pick/:code", async (req, reply) => {
+    const sc = jurorPickScope(req.params.code);
+    if (!sc) return reply.code(410).send({ error: PICK_GONE });
+    const me = ownJuror(req, sc);
+    return { valid: true, eventName: sc.repo.stage().eventName, date: sc.repo.getEvent().date, free: freeSeats(sc).length, signedInAs: me?.display_name ?? null };
+  });
+
+  app.post<{ Params: { code: string } }>("/api/auth/juror-pick/:code", async (req, reply) => {
+    const key = limiter.key(req.ip, "juror-pick");
+    const wait = limiter.retryAfter(key);
+    if (wait) {
+      reply.header("Retry-After", String(wait));
+      return reply.code(429).send({ error: `Çox sayda uğursuz cəhd. ${Math.ceil(wait / 60)} dəqiqə sonra yenidən yoxlayın.` });
+    }
+    const body = parseBody(claimBody, req.body, reply);
+    if (!body) return;
+    const sc = jurorPickScope(req.params.code);
+    if (!sc) { limiter.fail(key); return reply.code(410).send({ error: PICK_GONE }); }
+    const me = ownJuror(req, sc);
+    if (me) return { role: "juror", displayName: me.display_name, redirect: "/juror" };
+    // No await from here to the session: two jurors scanning at the same moment cannot take the same seat.
+    const seat = freeSeats(sc)[0];
+    if (!seat) return reply.code(409).send({ error: "Bütün münsif yerləri doludur. Koordinatordan yeni münsif yeri əlavə etməsini istəyin." });
+    const token = newToken();
+    sc.repo.createInvite(seat.id, tokenId(token), 60_000);
+    const inv = sc.repo.invite(tokenId(token));
+    if (!inv || !sc.repo.useInvite(inv.id)) return reply.code(409).send({ error: "Yer artıq tutulub, yenidən cəhd edin." });
+    const u = sc.repo.updateUser(seat.id, { displayName: body.displayName })!;
+    startSession(req, reply, u);
+    sc.repo.audit(u.id, "juror.claim", { ip: req.ip, displayName: u.display_name, via: "shared" });
+    sc.rt.emitJurorJoined(u.id, u.display_name);
+    sc.rt.emitConfig();
+    sc.rt.to("admin").emit("materials:changed", {});
     return { role: u.role, displayName: u.display_name, redirect: "/juror" };
   });
 

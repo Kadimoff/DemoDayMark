@@ -178,6 +178,14 @@ describe("uploads", () => {
     const v2 = await upload("/api/team/files", teamB.cookie, "deck-v2.pdf", makePdf(2));
     expect(v2.body.state.history.map((f: { name: string; active: boolean }) => [f.name, f.active])).toEqual([["deck-v2.pdf", true], ["deck.pptx", false]]);
   });
+  it("a new team gets its sign-in link at once, returned with the public address", async () => {
+    const t = await post("/api/admin/teams", admin).send({ name: "Avtolink", project: "" });
+    expect(t.status).toBe(200);
+    const l = await get(`/api/admin/teams/${t.body.id}/link`, admin);
+    expect(l.body.code).toMatch(/^[A-Z2-9-]+$/);
+    expect(l.body.url).toBe(`${base}${l.body.path}`);
+    expect((await patch(`/api/admin/teams/${t.body.id}`, admin).send({ active: false })).status).toBe(200); // out of the later queue tests
+  });
   it("files: own team and admin only; jurors when allowed; others 403, anonymous 401", async () => {
     expect((await get(`/api/files/${fileA}`, teamA.cookie)).status).toBe(200);
     expect((await get(`/api/files/${fileA}`, teamA.cookie)).headers["content-type"]).toBe("application/pdf");
@@ -185,6 +193,13 @@ describe("uploads", () => {
     expect((await get(`/api/files/${fileA}`)).status).toBe(401);
     expect((await get(`/api/files/${fileA}`, admin)).status).toBe(200);
     expect((await get(`/api/files/${fileA}`, juror)).status).toBe(200);
+    // unchanged file → 304 with the stored name as validator (team panels and the projector don't re-download)
+    const first = await get(`/api/files/${fileA}`, teamA.cookie);
+    expect(first.headers.etag).toMatch(/^"pres-[0-9a-f]{32}\.pdf"$/);
+    const again = await get(`/api/files/${fileA}`, teamA.cookie).set("If-None-Match", first.headers.etag);
+    expect(again.status).toBe(304);
+    expect(Buffer.byteLength(again.text ?? "") + (Buffer.isBuffer(again.body) ? again.body.length : 0)).toBe(0);
+    expect((await get(`/api/files/${fileA}`, teamB.cookie).set("If-None-Match", first.headers.etag)).status).toBe(403);
     const js = await get("/api/juror/state", juror);
     expect(js.body.materials.find((m: { teamId: number }) => m.teamId === teamIds[0]).presentation.url).toBe(`/api/files/${fileA}`);
     await patch("/api/admin/settings/teams", admin).send({ jurorsSeeMaterials: false });
@@ -277,11 +292,17 @@ describe("presentation stage", () => {
   it("slide changes reach every stage screen, are clamped to the deck, and reset with a new team", async () => {
     await patch("/api/admin/event", admin).send({ currentTeamId: teamIds[0] });
     const s1 = await socket(undefined), s2 = await socket(undefined);
+    // a team panel refetches on team:changed: slide turns must not send it (the queue did not move)
+    const teamPanel = collect(await socket(teamB.cookie, "team"), "team:changed");
     const p1 = waitFor<any>(s1, "stage:changed", s => s.show.slide === 2);
     const p2 = waitFor<any>(s2, "stage:changed", s => s.show.slide === 2);
     const r = await patch("/api/admin/stage", admin).send({ delta: 1 });
     expect(r.body.stage.show.slide).toBe(2);
     await Promise.all([p1, p2]);
+    await patch("/api/admin/stage", admin).send({ delta: -1 });
+    await patch("/api/admin/stage", admin).send({ delta: 1 });
+    await new Promise(res => setTimeout(res, 300));
+    expect(teamPanel).toHaveLength(0);
     expect((await patch("/api/admin/stage", admin).send({ slide: 99 })).body.stage.show.slide).toBe(2); // 2-page deck
     expect((await patch("/api/admin/stage", admin).send({ delta: -5 })).body.stage.show.slide).toBe(1);
     await patch("/api/admin/stage", admin).send({ slide: 2, mode: "site", intro: true });

@@ -14,12 +14,15 @@ import { bindShare, shareHtml } from "./lib/share";
 import { live } from "./lib/socket";
 import { topbar } from "./lib/topbar";
 import { showLinkQr } from "./lib/qr";
+import { openTeamLink } from "./lib/materials";
 
 interface TeamCard { id: number; name: string; project: string; code: string | null; path: string | null }
 interface JurorCard { id: number; displayName: string; active: boolean; placeholder: boolean; claimed: boolean; openInviteUntil: number | null }
 interface QrData { eventName: string; origin: string; teams: TeamCard[]; jurors: JurorCard[];
   /** v14: the shared team link (every team picks its name). */
-  pick: { code: string; path: string; claimed: number; total: number } | null }
+  pick: { code: string; path: string; claimed: number; total: number } | null;
+  /** v16: the shared juror link (every juror types a name and takes the next free seat). */
+  jurorPick: { code: string; path: string; claimed: number; total: number } | null }
 interface Invite { id: number; displayName: string; path: string; expiresAt: number }
 
 const bar = topbar({ role: "admin", nav: adminNav("qr"), wide: true });
@@ -41,9 +44,15 @@ async function qrSvg(url: string) {
 const p2 = (n: number) => String(n).padStart(2, "0");
 const until = (ms: number) => { const x = new Date(ms); return `${p2(x.getDate())}.${p2(x.getMonth() + 1)} ${p2(x.getHours())}:${p2(x.getMinutes())}`; };
 
+let autoLinked = false;
 async function load() {
   try { D = await api<QrData>("/api/admin/qr"); }
   catch (e) { main.innerHTML = `<div class="banner err">${esc((e as Error).message)}</div>`; return; }
+  // Teams created before links were automatic: make their links once, so every card is ready to hand out
+  if (!autoLinked && D.teams.some(t => !t.path)) {
+    autoLinked = true;
+    try { D.teams = (await api<{ made: number; teams: TeamCard[] }>("/api/admin/qr/teams", { method: "POST", body: {} })).teams; } catch { /* the button below still works */ }
+  }
   bar.setEventName(D.eventName);
   // a juror who signed in meanwhile has no usable QR on this page any more
   for (const j of D.jurors) if (j.claimed && invites.has(j.id) && !j.openInviteUntil) invites.delete(j.id);
@@ -58,6 +67,7 @@ async function teamCardHtml(t: TeamCard) {
     <div class="qc-link mono">${esc(url.replace(/^https?:\/\//, ""))}</div>
     <div class="qc-code mono">${esc(t.code ?? "")}</div>
     <p class="qc-note">Komanda üzvlərinin hamısı bu linklə daxil olur.</p>
+    <button class="btn sm" data-tbig="${t.id}">${icon("expand")}Böyük göstər</button>
     ${shareHtml(url, `${D!.eventName}: ${t.name} komandasının giriş linki`)}</article>`;
 }
 /** v14: one QR for every team (shown on the projector or sent to the group): each team picks its own name. */
@@ -75,6 +85,25 @@ async function pickCardHtml() {
     ${shareHtml(url, `${D!.eventName}: komanda girişi (komandanızı seçin)`)}
     <div class="row noprint" style="justify-content:center;gap:8px"><button class="btn sm" id="bigPick">${icon("expand")}Böyük göstər</button>
       <button class="btn sm ghost" id="newPick">${icon("retry")}Yeni link</button></div></article>`;
+}
+async function jurorPickCardHtml() {
+  const p = D!.jurorPick;
+  const seats = D!.jurors.filter(j => j.active);
+  const free = seats.filter(j => !j.claimed).length;
+  const noSeat = free ? "" : `<p class="note warn-t" style="margin:0">Boş münsif yeri yoxdur. Əvvəlcə “Münsif əlavə et” ilə yer yaradın: QR yalnız boş yerləri doldurur.</p>`;
+  if (!p) return `<article class="qr-card qr-pick empty"><div class="qc-h"><b>Ümumi münsif QR-ı</b><small>Bir QR bütün münsiflər üçün</small></div>
+    <p class="sub" style="max-width:46ch">QR-ı ekrana çıxarın və ya linki münsiflərin qrupuna göndərin: hər münsif skan edib adını yazır və boş münsif yerinə qoşulur. Münsiflərin sayını siz təyin edirsiniz (${seats.length} yer, ${free} boş).</p>
+    ${noSeat}<button class="btn primary" id="mkJPick">${icon("qr")}Ümumi münsif QR-ı yarat</button></article>`;
+  const url = origin() + p.path;
+  return `<article class="qr-card qr-pick"><div class="qc-h"><b>Ümumi münsif QR-ı</b><small>Qoşulub: ${p.claimed} / ${p.total} · boş yer: ${free}</small></div>
+    <div class="qc-qr">${await qrSvg(url)}</div>
+    <div class="qc-link mono">${esc(url.replace(/^https?:\/\//, ""))}</div>
+    <p class="qc-note">Hər münsif skan edib adını yazır və növbəti boş yerə qoşulur. Eyni telefonla təkrar skan yeni yer tutmur.</p>
+    ${noSeat}
+    ${shareHtml(url, `${D!.eventName}: münsif girişi`)}
+    <div class="row noprint" style="justify-content:center;gap:8px"><button class="btn sm" id="bigJPick">${icon("expand")}Böyük göstər</button>
+      <button class="btn sm ghost" id="newJPick">${icon("retry")}Yeni link</button>
+      <button class="btn sm ghost danger" id="offJPick">Söndür</button></div></article>`;
 }
 async function jurorCardHtml(j: JurorCard) {
   const inv = invites.get(j.id);
@@ -97,7 +126,7 @@ async function render() {
     <div class="qr-bar row">
       ${missing ? `<button class="btn primary" id="mkLinks"${busy ? " disabled" : ""}>${icon("plus")}Link yarat (${missing} komanda)</button>` : ""}
       <button class="btn" id="printAll"${D.teams.length - missing ? "" : " disabled"}>${icon("doc")}Hamısını çap et</button>
-      <a class="btn" href="/api/admin/qr/teams.pdf" download${D.teams.length - missing ? "" : ' aria-disabled="true"'}>${icon("download")}PDF yüklə</a>
+      ${D.teams.length - missing ? `<a class="btn" href="/api/admin/qr/teams.pdf" download>${icon("download")}PDF yüklə</a>` : `<button class="btn" disabled>${icon("download")}PDF yüklə</button>`}
     </div>
     <div class="qr-grid qr-pickrow">${await pickCardHtml()}</div>
     <p class="note">Ümumi QR-ı səhnə ekranında göstərmək olar. Hər komandanın <b>öz</b> linki isə çoxdəfəlikdir: komandanın bütün üzvləri eyni linklə daxil olur. Ona görə öz linki yalnız həmin komandaya göndərin, səhnə ekranında göstərməyin.</p>
@@ -112,6 +141,7 @@ async function render() {
       <button class="btn" id="showBig"${shown.length ? "" : " disabled"}>${icon("expand")}Səhnə ekranında göstər</button>
       <button class="btn ghost" id="addJ">${icon("plus")}Münsif əlavə et</button>
     </div>
+    <div class="qr-grid qr-pickrow">${await jurorPickCardHtml()}</div>
     <p class="note">Münsif QR-ı bir dəfə işləyir: münsif skan edib adını yazan kimi QR bağlanır. QR yalnız hələ qoşulmamış münsiflər üçün yaradılır. Yeni QR yaradanda əvvəl çap olunmuş QR-lar işləmir.
       “Səhnə ekranında göstər” QR-ları proyektora qoşulmuş öz kompüterinizdə bir-bir, böyük göstərir.</p>
     <ul class="qr-jlist">${jActive.map(j => `<li><b>${esc(j.displayName)}</b>${j.claimed ? `<span class="pill ok">${icon("check")}Qoşulub</span>` : invites.has(j.id) ? `<span class="pill warn">QR hazırdır</span>`
@@ -145,6 +175,16 @@ async function revokeAll() {
     toast(`Ləğv edildi: ${r.teams} komanda linki${r.shared ? ", ümumi QR" : ""}, ${r.jurors} münsif QR-ı`);
     await load();
   } catch (e) { toast((e as ApiError).message, "err"); }
+}
+async function makeJurorPick(again: boolean) {
+  if (again && !confirm("Yeni ümumi münsif linki yaradılsın? Köhnə link və QR işləməyəcək (qoşulmuş münsiflər çıxmır).")) return;
+  try { await api("/api/admin/juror-pick", { method: "POST", body: {} }); toast("Ümumi münsif QR-ı hazırdır"); await load(); }
+  catch (e) { toast((e as ApiError).message, "err"); }
+}
+async function offJurorPick() {
+  if (!confirm("Ümumi münsif QR-ı söndürülsün? Qoşulmuş münsiflər paneldə qalır, yeni münsif bu QR ilə qoşula bilməz.")) return;
+  try { await api("/api/admin/juror-pick", { method: "DELETE" }); toast("Ümumi münsif QR-ı söndürüldü"); await load(); }
+  catch (e) { toast((e as ApiError).message, "err"); }
 }
 async function makePick(again: boolean) {
   if (again && !confirm("Yeni ümumi link yaradılsın? Köhnə link və QR işləməyəcək (daxil olmuş komandalar çıxmır).")) return;
@@ -240,11 +280,25 @@ main.addEventListener("click", e => {
   const tb = t.closest<HTMLElement>("[data-qtab]");
   if (tb) { tab = tb.dataset.qtab as typeof tab; history.replaceState(null, "", `#${tab}`); void render(); return; }
   if (t.closest("#mkLinks")) { void makeLinks(); return; }
+  const big = t.closest<HTMLElement>("[data-tbig]");
+  if (big && D) {
+    // one dialog for every team: fullscreen, print, "Növbəti komanda" — in the order of this page
+    const id = Number(big.dataset.tbig);
+    void openTeamLink(id, D.teams.find(x => x.id === id)?.name ?? "", false, D.teams.map(x => ({ teamId: x.id, name: x.name })));
+    return;
+  }
   if (t.closest("#revokeAll")) { void revokeAll(); return; }
   if (t.closest("#mkPick") || t.closest("#newPick")) { void makePick(!!t.closest("#newPick")); return; }
   if (t.closest("#bigPick") && D?.pick) {
     void showLinkQr({ title: "Komanda girişi", heading: "Komandanızı seçib daxil olun", path: D.pick.path,
       note: "Telefonun kamerası ilə skan edin və siyahıdan öz komandanızı seçin. Komandanın digər üzvləri paneldəki komanda kodu ilə daxil olur." });
+    return;
+  }
+  if (t.closest("#mkJPick") || t.closest("#newJPick")) { void makeJurorPick(!!t.closest("#newJPick")); return; }
+  if (t.closest("#offJPick")) { void offJurorPick(); return; }
+  if (t.closest("#bigJPick") && D?.jurorPick) {
+    void showLinkQr({ title: "Münsif girişi", heading: "Skan edin və adınızı yazın", path: D.jurorPick.path,
+      note: "Telefonun kamerası ilə skan edin, adınızı və soyadınızı yazın: münsif panelinə qoşulursunuz." });
     return;
   }
   if (t.closest("#mkInv")) { void makeInvites(); return; }

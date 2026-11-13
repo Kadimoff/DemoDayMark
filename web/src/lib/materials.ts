@@ -108,7 +108,11 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
       else if (t.closest("[data-mat-return]")) { returning = id("data-mat-return"); render(); }
       else if (t.closest("[data-mat-cancel]")) { returning = null; render(); }
       else if (t.closest("[data-mat-approve]")) { await api(`/api/admin/teams/${id("data-mat-approve")}/approve`, { method: "POST", body: {} }); toast("Komanda təsdiqləndi"); await reload(); onChange(); }
-      else if (t.closest("[data-mat-link]")) { const tid = id("data-mat-link"); await openTeamLink(tid, D?.teams.find(x => x.teamId === tid)?.name ?? ""); await reload(); }
+      else if (t.closest("[data-mat-link]")) {
+        const tid = id("data-mat-link");
+        await openTeamLink(tid, D?.teams.find(x => x.teamId === tid)?.name ?? "", false, (D?.teams ?? []).filter(x => x.active).map(x => ({ teamId: x.teamId, name: x.name })));
+        await reload();
+      }
     } catch (ex) { toast((ex as ApiError).message, "err"); }
   });
   card.addEventListener("submit", async e => {
@@ -125,46 +129,114 @@ export function mountMaterials(card: HTMLElement, onChange: () => void = () => {
 }
 
 // ---------- team sign-in link dialog (/t/<code>) ----------
+// Same look and controls as the juror QR dialog: fullscreen for showing on a phone or screen, print one card, and
+// "next team" so a coordinator can hand out every team's QR from one dialog (arrow keys work too).
+type TeamRef = { teamId: number; name: string };
+type TeamLink = { code: string | null; path: string | null; url?: string | null };
 let dlg: HTMLDialogElement | null = null;
-export async function openTeamLink(teamId: number, teamName: string, fresh = false) {
-  let link: { code: string | null; path: string | null } | null = null;
+let tl: { team: TeamRef; list: TeamRef[]; link: TeamLink & { code: string; path: string }; url: string } | null = null;
+
+function teamDialog() {
+  if (dlg) return dlg;
+  dlg = document.createElement("dialog");
+  dlg.className = "qrdlg tlink";
+  document.body.appendChild(dlg);
+  bindShare(dlg);
+  dlg.addEventListener("click", e => {
+    const t = e.target as HTMLElement;
+    if (t === dlg || t.closest("[data-tl-close]")) { dlg!.close(); return; }
+    if (t.closest("[data-tl-big]")) { dlg!.classList.toggle("big"); return; }
+    if (t.closest("[data-tl-print]")) { if (tl) void printTeamCard(tl.team.name, tl.link.code, tl.url); return; }
+    const step = t.closest<HTMLElement>("[data-tl-step]");
+    if (step) { void stepTeam(Number(step.dataset.tlStep)); return; }
+    if (t.closest("[data-tl-new]")) {
+      if (!tl || !confirm("Yeni link yaradılsın? Köhnə link işləməyəcək (artıq daxil olmuş komanda üzvləri çıxmır).")) return;
+      void openTeamLink(tl.team.teamId, tl.team.name, true, tl.list);
+      return;
+    }
+    if (t.closest("[data-tl-revoke]")) {
+      if (!tl || !confirm("Link ləğv edilsin və komandanın bütün sessiyaları bağlansın?")) return;
+      const id = tl.team.teamId;
+      api(`/api/admin/teams/${id}/link`, { method: "DELETE" }).then(() => { toast("Link ləğv edildi"); dlg!.close(); }, e => toast((e as ApiError).message, "err"));
+    }
+  });
+  dlg.addEventListener("keydown", e => {
+    if (!tl || tl.list.length < 2 || (e.target as HTMLElement).closest("input,textarea")) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); void stepTeam(1); } else if (e.key === "ArrowLeft") { e.preventDefault(); void stepTeam(-1); }
+  });
+  dlg.addEventListener("close", () => { dlg!.classList.remove("big"); });
+  return dlg;
+}
+
+async function stepTeam(d: number) {
+  if (!tl || tl.list.length < 2) return;
+  const i = tl.list.findIndex(x => x.teamId === tl!.team.teamId);
+  const next = tl.list[(i + d + tl.list.length) % tl.list.length];
+  await openTeamLink(next.teamId, next.name, false, tl.list);
+}
+
+/** Prints one team's sign-in card (A5-ish: name, QR, code, link) without leaving the panel. */
+async function printTeamCard(name: string, code: string, url: string) {
+  const svg = await QRCode.toString(url, { type: "svg", errorCorrectionLevel: "M", margin: 1, color: { dark: "#0B0F19", light: "#FFFFFF" } });
+  const f = document.createElement("iframe");
+  f.style.cssText = "position:fixed;width:0;height:0;border:0;opacity:0";
+  document.body.appendChild(f);
+  const doc = f.contentDocument!;
+  doc.open();
+  doc.write(`<!doctype html><html lang="az"><head><meta charset="utf-8"><title>${esc(name)} · komanda girişi</title>
+    <style>body{font-family:system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;color:#0B0F19}
+    .c{text-align:center;padding:24px}.c h1{font-size:28px;margin:0 0 4px}.c p{margin:4px 0;color:#444}
+    .q{width:300px;margin:16px auto}.k{font:700 22px ui-monospace,monospace;letter-spacing:.12em}.u{font:12px ui-monospace,monospace;word-break:break-all;color:#555}</style>
+    </head><body><div class="c"><p>Komanda girişi</p><h1>${esc(name)}</h1><div class="q">${svg}</div>
+    <div class="k">${esc(code)}</div><p class="u">${esc(url)}</p><p>Telefonun kamerası ilə skan edin və ya kodu munsif.im/team səhifəsində yazın.</p></div></body></html>`);
+  doc.close();
+  setTimeout(() => { f.contentWindow!.focus(); f.contentWindow!.print(); setTimeout(() => f.remove(), 1000); }, 50);
+}
+
+/**
+ * Opens a team's sign-in QR (creating the link if the team has none). `list`: the teams to step through with
+ * "Növbəti komanda" / arrow keys, in the order the coordinator sees them.
+ */
+export async function openTeamLink(teamId: number, teamName: string, fresh = false, list: TeamRef[] = []) {
+  let link: TeamLink | null = null;
   try {
-    if (!fresh) link = await api<{ code: string | null; path: string | null }>(`/api/admin/teams/${teamId}/link`);
-    if (fresh || !link?.code) link = await api<{ code: string; path: string }>(`/api/admin/teams/${teamId}/link`, { method: "POST", body: {} });
+    if (!fresh) link = await api<TeamLink>(`/api/admin/teams/${teamId}/link`);
+    if (fresh || !link?.code) link = await api<TeamLink>(`/api/admin/teams/${teamId}/link`, { method: "POST", body: {} });
   } catch (e) { toast((e as ApiError).message, "err"); return; }
-  const url = `${location.origin}${link!.path}`;
-  const qr = await QRCode.toDataURL(url, { margin: 1, width: 640, color: { dark: "#0B0B14", light: "#FFFFFF" } });
-  if (!dlg) {
-    dlg = document.createElement("dialog");
-    dlg.className = "qrdlg tlink";
-    document.body.appendChild(dlg);
-    dlg.addEventListener("click", e => { if (e.target === dlg || (e.target as HTMLElement).closest("[data-tl-close]")) dlg!.close(); });
-    bindShare(dlg);
-  }
-  const local = /^(localhost|127\.|\[?::1\]?$)/.test(location.hostname);
-  dlg.innerHTML = `<div class="qrwrap">
-    <div class="row between" style="width:100%"><div><span class="caps">Komanda girişi</span><h2 style="margin-top:4px">${esc(teamName)}</h2></div>
-      <button class="icon-btn" data-tl-close aria-label="Bağla">${icon("close")}</button></div>
-    <div class="qrbox"><img src="${qr}" alt="Komanda giriş QR kodu" width="320" height="320"></div>
-    <div class="tl-code mono">${esc(link!.code)}</div>
-    <div class="tl-url mono">${esc(url)}</div>
-    ${shareHtml(url, `${teamName}: komanda giriş linki`)}
-    <p class="sub" style="margin:0;text-align:center">Linki komandaya göndərin. Komanda üzvlərinin hamısı eyni linklə daxil ola bilər.
-      Kodu <b>munsif.im/team</b> səhifəsində əl ilə də yazmaq olar.</p>
-    ${local ? `<p class="note warn-t">Panel localhost ünvanında açılıb, komandalar bu linkə çata bilməz. Paneli server ünvanı ilə açın.</p>` : ""}
-    <div class="row" style="justify-content:center">
-      <button class="btn" data-tl-new>${icon("retry")}Yeni link</button>
-      <button class="btn ghost danger" data-tl-revoke>Ləğv et</button>
-    </div></div>`;
-  dlg.querySelector("[data-tl-new]")!.addEventListener("click", async () => {
-    if (!confirm("Yeni link yaradılsın? Köhnə link işləməyəcək (artıq daxil olmuş komanda üzvləri çıxmır).")) return;
-    dlg!.close(); await openTeamLink(teamId, teamName, true);
-  });
-  dlg.querySelector("[data-tl-revoke]")!.addEventListener("click", async () => {
-    if (!confirm("Link ləğv edilsin və komandanın bütün sessiyaları bağlansın?")) return;
-    try { await api(`/api/admin/teams/${teamId}/link`, { method: "DELETE" }); toast("Link ləğv edildi"); dlg!.close(); } catch (e) { toast((e as ApiError).message, "err"); }
-  });
-  if (!dlg.open) dlg.showModal();
+  const ok = link as TeamLink & { code: string; path: string };
+  // the server's public address, not this tab's: a panel opened on another host still hands out working links
+  const url = ok.url ?? `${location.origin}${ok.path}`;
+  const svg = await QRCode.toString(url, { type: "svg", errorCorrectionLevel: "M", margin: 1, color: { dark: "#0B0F19", light: "#FFFFFF" } });
+  const d = teamDialog();
+  const team = { teamId, name: teamName };
+  tl = { team, list: list.length ? list : [team], link: ok, url };
+  const pos = tl.list.findIndex(x => x.teamId === teamId);
+  const many = tl.list.length > 1;
+  const local = /^(localhost|127\.|\[?::1\]?$)/.test(new URL(url).hostname);
+  d.innerHTML = `
+    <div class="dh">
+      <div><h3>Komanda girişi${many ? ` · ${pos + 1} / ${tl.list.length}` : ""}</h3><h2 style="margin-top:4px">${esc(teamName)}</h2></div>
+      <div class="row" style="gap:6px;flex-wrap:nowrap">
+        <button class="icon-btn" data-tl-big title="Tam ekran" aria-label="Tam ekran">${icon("expand")}</button>
+        <button class="icon-btn" data-tl-close aria-label="Bağla">${icon("close")}</button>
+      </div>
+    </div>
+    <div class="db">
+      ${local ? `<div class="banner lock" style="text-align:left">${icon("warn")}<span>Link <b>${esc(new URL(url).host)}</b> ünvanına aparır. Komandaların telefonları bu ünvana çata bilməz. Paneli server ünvanı ilə açın.</span></div>` : ""}
+      <div class="qrbox">${svg}</div>
+      <div class="tl-code mono">${esc(ok.code)}</div>
+      <span class="link">${esc(url)}</span>
+      ${shareHtml(url, `${teamName}: komanda giriş linki`)}
+      <p class="sub" style="margin:0;max-width:44ch">Komanda üzvlərinin hamısı eyni linklə daxil ola bilər. Kodu <b>munsif.im/team</b> səhifəsində əl ilə də yazmaq olar.</p>
+      <div class="acts">
+        ${many ? `<button class="btn sm" data-tl-step="-1" aria-label="Əvvəlki komanda">${icon("back")}Əvvəlki</button>
+                  <button class="btn sm primary" data-tl-step="1">Növbəti komanda ${icon("next")}</button>` : ""}
+        <button class="btn sm" data-tl-print>${icon("doc")}Çap et</button>
+        <button class="btn sm ghost" data-tl-new>${icon("retry")}Yeni link</button>
+        <button class="btn sm ghost danger" data-tl-revoke>Ləğv et</button>
+      </div>
+    </div>`;
+  if (!d.open) d.showModal();
 }
 
 // ---------- stage view controls (live panel + phone remote) ----------
@@ -333,7 +405,13 @@ export function bindTeamAccess(root: HTMLElement, getData: () => MaterialsData |
       return;
     }
     const l = t.closest<HTMLElement>("[data-tlink]");
-    if (l) { const id = Number(l.dataset.tlink); await openTeamLink(id, getData()?.teams.find(x => x.teamId === id)?.name ?? ""); await reload(); return; }
+    if (l) {
+      const id = Number(l.dataset.tlink);
+      const teams = getData()?.teams ?? [];
+      await openTeamLink(id, teams.find(x => x.teamId === id)?.name ?? "", false, teams.filter(x => x.active).map(x => ({ teamId: x.teamId, name: x.name })));
+      await reload();
+      return;
+    }
     const ap = t.closest<HTMLElement>("#teamAccess [data-mat-approve]");
     if (ap) { try { await api(`/api/admin/teams/${ap.dataset.matApprove}/approve`, { method: "POST", body: {} }); toast("Komanda təsdiqləndi"); await reload(); } catch (ex) { toast((ex as ApiError).message, "err"); } }
   });

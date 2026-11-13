@@ -89,7 +89,12 @@ export function sendStored(ctx: Ctx, reply: FastifyReply, f: Pick<FileRow, "ext"
   const dl = `${base}.${ext}`;
   reply.header("Content-Type", MIME[ext] ?? "application/octet-stream");
   reply.header("Content-Disposition", `${opts.download ? "attachment" : "inline"}; filename="${dl.replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(dl)}`);
+  // Stored names are random per upload and never rewritten, so the name is a strong validator: phones re-rendering the
+  // team panel and the projector re-opening a deck get a 304 instead of downloading the whole PDF again.
+  const etag = `"${name}"`;
   reply.header("Cache-Control", "private, no-cache");
+  reply.header("ETag", etag);
+  if (reply.request.headers["if-none-match"] === etag) return reply.code(304).send();
   return reply.send(fs.createReadStream(file));
 }
 

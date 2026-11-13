@@ -54,11 +54,11 @@ const minutes = (sec: number) => (sec % 60 === 0 ? `${sec / 60} DƏQİQƏ` : mms
 const minShort = (sec: number) => (sec % 60 === 0 ? `${sec / 60} dəq` : mmss(sec));
 
 let toastT = 0;
-function toast(text: string) {
+function toast(text: string, ms = 2600) {
   el.toast.textContent = text;
   el.toast.hidden = false;
   clearTimeout(toastT);
-  toastT = window.setTimeout(() => { el.toast.hidden = true; }, 2600);
+  toastT = window.setTimeout(() => { el.toast.hidden = true; }, ms);
 }
 
 // ---------- sound (Web Audio, unlocked on first interaction) ----------
@@ -115,8 +115,24 @@ function toggleMute() {
 const forcedFx = qs.get("fx") === "lite" ? "lite" : qs.get("fx") === "full" ? "full" : null;
 el.finale.innerHTML = FINALE_HTML;
 const finale = new Finale({ root: el.finale, bubble: el.bubble, reduced, slow: SLOW, sfx }, forcedFx);
-const deck = new Deck(el.slides, reduced, msg => { toast(msg); presFailed = deck.current; applyView(); });
+const deck = new Deck(el.slides, reduced, (msg, url) => { if (url) presentationFailed(url); else toast(msg); });
+/** The deck that could not be opened: the stage shows the timer instead of a spinner that never ends. */
 let presFailed: string | null = null;
+const presFails = new Map<string, number>();
+let presRetryT = 0;
+/** Retry after 5 s, 15 s, 30 s; after that the timer stays and the coordinator sees why. */
+const PRES_RETRY_MS = [5_000, 15_000, 30_000];
+function presentationFailed(url: string) {
+  const n = (presFails.get(url) ?? 0) + 1;
+  presFails.set(url, n);
+  presFailed = url;
+  applyView();
+  clearTimeout(presRetryT);
+  const wait = PRES_RETRY_MS[n - 1];
+  if (wait === undefined) { toast("Prezentasiya açılmadı — taymer göstərilir. Faylı yenidən yükləyin.", 12_000); return; }
+  toast(`Prezentasiya açılmadı — ${Math.round(wait / 1000)} saniyədən sonra yenidən cəhd edilir`, wait);
+  presRetryT = window.setTimeout(() => { if (presFailed === url) { presFailed = null; applyView(); } }, wait);
+}
 type View = "dial" | "pres" | "site";
 let view: View = "dial";
 
@@ -154,7 +170,7 @@ function applyView() {
   const want = deckWanted();
   if (v === "pres" && want) {
     if (deck.current !== want.url) {
-      void deck.load(want.url).then(ok => { if (ok) { void deck.show(deckWanted()?.slide ?? 1, 0, true); paintHud(); } });
+      void deck.load(want.url).then(ok => { if (ok) { presFails.delete(want.url); void deck.show(deckWanted()?.slide ?? 1, 0, true); paintHud(); } });
     } else if (deck.ready && want.slide !== deck.shown) {
       void deck.show(want.slide, deck.shown ? Math.sign(want.slide - deck.shown) : 0).then(paintHud);
     }
@@ -547,7 +563,7 @@ function onStage(s: StagePayload) {
   if (!DEMO) syncClock(s.serverNow);
   const prevTeam = stage?.team?.id;
   stage = s;
-  if (prevTeam !== s.team?.id) presFailed = null;
+  if (prevTeam !== s.team?.id) { presFailed = null; presFails.clear(); clearTimeout(presRetryT); }
   setTeam();
   applyView();
   tick();

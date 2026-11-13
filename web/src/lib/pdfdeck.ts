@@ -11,16 +11,29 @@ export function pdfjs(): Promise<PdfJs> {
     const [m, worker] = await Promise.all([import("pdfjs-dist/legacy/build/pdf.mjs") as Promise<PdfJs>, import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")]);
     m.GlobalWorkerOptions.workerSrc = worker.default;
     return m;
-  })();
+  })().catch(e => {
+    // A failed chunk load (Wi-Fi blip, old asset after a deploy) must not stick: the next open tries again.
+    lib = null;
+    throw e;
+  });
   return lib;
 }
 
-export async function openPdf(url: string): Promise<PDFDocumentProxy> {
+/** A download that stops progressing for this long is abandoned (venue Wi-Fi can stall without closing the socket). */
+export const PDF_STALL_MS = 30_000;
+
+export async function openPdf(url: string, stallMs = PDF_STALL_MS): Promise<PDFDocumentProxy> {
   const m = await pdfjs();
-  return m.getDocument({
+  const task = m.getDocument({
     url, withCredentials: true, cMapUrl: "/vendor/pdfjs/cmaps/", cMapPacked: true,
     standardFontDataUrl: "/vendor/pdfjs/standard_fonts/", wasmUrl: "/vendor/pdfjs/wasm/", iccUrl: "/vendor/pdfjs/iccs/",
-  } as Parameters<PdfJs["getDocument"]>[0]).promise;
+  } as Parameters<PdfJs["getDocument"]>[0]);
+  // Stall watchdog: re-armed on every progress event; destroying the task rejects its promise.
+  let t = 0;
+  const arm = () => { clearTimeout(t); t = window.setTimeout(() => { void task.destroy(); }, stallMs); };
+  task.onProgress = arm;
+  arm();
+  try { return await task.promise; } finally { clearTimeout(t); }
 }
 
 /** Renders page n to fit a w×h box; returns an offscreen canvas and its CSS size. */
@@ -49,7 +62,11 @@ export class Deck {
   shown = 0;
   pages = 0;
 
-  constructor(private box: HTMLElement, private reduced: boolean, private onError: (msg: string) => void = () => {}) {
+  /**
+   * onError(msg, url): url is the document that could not be opened (the caller falls back and retries later);
+   * null means one slide failed to draw — worth a notice, the document itself is fine.
+   */
+  constructor(private box: HTMLElement, private reduced: boolean, private onError: (msg: string, url: string | null) => void = () => {}) {
     this.front = document.createElement("canvas");
     this.back = document.createElement("canvas");
     for (const c of [this.front, this.back]) { c.className = "st-slide"; box.appendChild(c); }
@@ -79,7 +96,8 @@ export class Deck {
       this.box.classList.remove("busy");
       return true;
     }).catch(() => {
-      if (this.url === url) { this.url = null; this.loading = null; this.box.classList.remove("busy"); this.onError("Prezentasiya açılmadı"); }
+      // url is passed explicitly: this.url is reset first, so reading deck.current in the callback would give null
+      if (this.url === url) { this.url = null; this.loading = null; this.box.classList.remove("busy"); this.onError("Prezentasiya açılmadı", url); }
       return false;
     });
     return this.loading;
@@ -115,13 +133,19 @@ export class Deck {
   }
 
   /** Shows slide n (clamped); dir > 0 slides in from the right, < 0 from the left. */
-  async show(n: number, dir = 0, force = false) {
+  async show(n: number, dir = 0, force = false, retried = false): Promise<void> {
     if (!this.doc) return;
     n = Math.max(1, Math.min(this.pages, n));
     if (n === this.shown && !force) return;
     const tok = ++this.tok;
     let r: { c: HTMLCanvasElement; w: number; h: number };
-    try { r = await this.page(n); } catch { return; }
+    try { r = await this.page(n); } catch {
+      // A failed render is dropped from the cache: one quiet retry, then say so instead of an empty stage
+      if (tok !== this.tok) return;
+      if (!retried) { await new Promise(res => setTimeout(res, 1500)); if (tok === this.tok) return this.show(n, dir, true, true); return; }
+      this.onError(`${n}-ci slayd göstərilmədi`, null);
+      return;
+    }
     if (tok !== this.tok) return;
     const inc = this.back, out = this.front;
     inc.width = r.c.width; inc.height = r.c.height;

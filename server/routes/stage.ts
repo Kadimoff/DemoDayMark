@@ -2,7 +2,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { requireRole } from "../auth.js";
-import { idParam, parseBody, scopeOf, type Ctx } from "../context.js";
+import { idParam, parseBody, publicOrigin, scopeOf, type Ctx } from "../context.js";
 import type { Repo } from "../repo.js";
 import { prettyCode } from "../teamrepo.js";
 import { checkEmbeddable } from "../teams.js";
@@ -94,6 +94,21 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       rt.to("admin").emit("materials:changed", {});
       return { code: prettyCode(code), path: `/t/${code}` };
     });
+    // ---------- v16: one shared link for every juror (each takes the next free juror seat) ----------
+    r.post("/api/admin/juror-pick", async req => {
+      const { repo, trepo, rt } = scopeOf(ctx, req);
+      const code = trepo.issueJurorPick();
+      repo.audit(req.user!.id, "juror.pick-link", {});
+      rt.to("admin").emit("materials:changed", {});
+      return { code: prettyCode(code), path: `/jp/${code}`, url: `${publicOrigin(ctx.cfg, req)}/jp/${code}` };
+    });
+    r.delete("/api/admin/juror-pick", async req => {
+      const { repo, trepo, rt } = scopeOf(ctx, req);
+      trepo.revokeJurorPick();
+      repo.audit(req.user!.id, "juror.pick-link.revoke", {});
+      rt.to("admin").emit("materials:changed", {});
+      return { ok: true };
+    });
     r.delete("/api/admin/team-pick", async req => {
       const { repo, trepo, rt } = scopeOf(ctx, req);
       trepo.revokePick();
@@ -117,14 +132,14 @@ export function stageRoutes(app: FastifyInstance, ctx: Ctx) {
       const { code, createdAt } = trepo.issueLink(tid);
       repo.audit(req.user!.id, "team.link", { teamId: tid });
       rt.to("admin").emit("materials:changed", { teamId: tid });
-      return { code: prettyCode(code), path: `/t/${code}`, createdAt };
+      return { code: prettyCode(code), path: `/t/${code}`, url: `${publicOrigin(ctx.cfg, req)}/t/${code}`, createdAt };
     });
     r.get("/api/admin/teams/:id/link", async (req, reply) => {
       const { repo, trepo, teams, rt } = scopeOf(ctx, req);
       const tid = id(repo, req.params, reply); if (!tid) return;
       const l = trepo.link(tid);
-      if (!l?.code) return { code: null, path: null, createdAt: null }; // none yet (200: no console noise)
-      return { code: prettyCode(l.code), path: `/t/${l.code}`, createdAt: l.createdAt };
+      if (!l?.code) return { code: null, path: null, url: null, createdAt: null }; // none yet (200: no console noise)
+      return { code: prettyCode(l.code), path: `/t/${l.code}`, url: `${publicOrigin(ctx.cfg, req)}/t/${l.code}`, createdAt: l.createdAt };
     });
     r.delete("/api/admin/teams/:id/link", async (req, reply) => {
       const { repo, trepo, teams, rt } = scopeOf(ctx, req);

@@ -74,7 +74,7 @@ describe("upgrading the live 537b462 (v9) database to events (v10)", () => {
     const { cfg, snapshot, orgsOut } = await v9Database(path.join(tmp, "a"));
     const A = await buildApp(cfg);
     try {
-      expect(SCHEMA_VERSION).toBe(15);
+      expect(SCHEMA_VERSION).toBe(16);
       const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
       expect(backups.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, backups[0]), { readonly: true });

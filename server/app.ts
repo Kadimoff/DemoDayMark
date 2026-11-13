@@ -117,7 +117,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
   const sys: HealthDeps = { db, dbFile: cfg.dbFile, integrity, backups, sockets: () => rt.io.engine?.clientsCount ?? 0, loop, startedAt, archiveImport };
   const ctx: Ctx = { cfg, rt, limiter: new LoginLimiter(cfg.loginMaxFails, cfg.loginLockMs), orgs, converter, sys };
   backups.start();
-  resumeConversions(db, converter, m => app.log.warn(m));
+  resumeConversions(db, converter, orgs, m => app.log.warn(m));
 
   app.decorateRequest("user", null);
   app.decorateRequest("team", null);
@@ -279,6 +279,12 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
     reply.header("Cache-Control", "no-store");
     return reply.sendFile("join.html");
   });
+  // v16: shared juror QR (every juror types a name and takes the next free seat); the code is checked by /api/auth/juror-pick/:code.
+  app.get("/jp/:code", async (_req, reply) => {
+    if (!hasWeb) return reply.code(503).type("text/plain; charset=utf-8").send("Frontend qurulmayıb: npm run build");
+    reply.header("Cache-Control", "no-store");
+    return reply.sendFile("join.html");
+  });
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith("/api/")) return reply.code(404).send({ error: "Tapılmadı." });
     return reply.code(404).type("text/plain; charset=utf-8").send("404 · Səhifə tapılmadı");
@@ -303,13 +309,14 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}): Pr
  * v11: a PPTX conversion that was running when the server stopped stays "running" forever otherwise: start it again.
  * Files whose original is gone are marked failed.
  */
-function resumeConversions(db: DB, converter: Converter, log: (m: string) => void) {
+function resumeConversions(db: DB, converter: Converter, orgs: Orgs, log: (m: string) => void) {
   const tables = [
-    { t: "team_files", where: "active = 1 AND kind = 'presentation'" },
-    { t: "event_files", where: "deleted_at IS NULL" },
+    { t: "team_files", where: "active = 1 AND kind = 'presentation'", team: "team_id" },
+    { t: "event_files", where: "deleted_at IS NULL", team: "NULL" },
   ];
-  for (const { t, where } of tables) {
-    const rows = db.prepare(`SELECT id, stored FROM ${t} WHERE ${where} AND conv IN ('running','pending') AND ext = 'pptx'`).all() as Array<{ id: number; stored: string }>;
+  for (const { t, where, team } of tables) {
+    const rows = db.prepare(`SELECT id, stored, org_id AS orgId, ${team} AS teamId FROM ${t} WHERE ${where} AND conv IN ('running','pending') AND ext = 'pptx'`)
+      .all() as Array<{ id: number; stored: string; orgId: number; teamId: number | null }>;
     for (const r of rows) {
       if (!converter.available) { db.prepare(`UPDATE ${t} SET conv = 'unavailable' WHERE id = ?`).run(r.id); continue; }
       log(`resuming PPTX conversion (${t} #${r.id}) after a restart`);
@@ -318,7 +325,17 @@ function resumeConversions(db: DB, converter: Converter, log: (m: string) => voi
         try {
           db.prepare(`UPDATE ${t} SET conv = ?, pdf_stored = COALESCE(?, pdf_stored), pages = COALESCE(?, pages) WHERE id = ?`)
             .run(res ? "done" : "failed", res?.pdfStored ?? null, res?.pages ?? null, r.id);
-        } catch { /* database closed meanwhile */ }
+          // Same notices as a fresh upload: otherwise the team panel and the coordinator keep showing "çevrilir…"
+          // until some unrelated event, and the stage keeps the spinner.
+          const sc = orgs.scope(r.orgId);
+          if (r.teamId) {
+            if (!res) sc.teams.notifyTeam(r.teamId, "convert.failed", "PPTX PDF-ə çevrilmədi", "Prezentasiyanı PDF kimi yükləyin.");
+            sc.teams.changed(r.teamId);
+          } else {
+            sc.rt.to("admin").emit("materials:changed", {});
+          }
+          sc.rt.emitStage();
+        } catch { /* database closed meanwhile, or the organisation is gone */ }
       });
     }
   }

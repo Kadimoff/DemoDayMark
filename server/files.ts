@@ -1,7 +1,7 @@
 // munsif: team uploads. Files go to DATA_DIR/uploads (persistent volume) under random names, mode 0600,
 // after a size limit, an extension allow-list and a magic-byte check. PDFs are parsed (page count) with pdf.js;
 // PPTX is converted to PDF by LibreOffice when the server has it (one at a time, 90 s timeout).
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -61,19 +61,21 @@ parentPort.on("message", async ({ id, file }) => {
 });`;
 let worker: Worker | null = null;
 let workerBroken = false;
-const pending = new Map<number, (n: number | null) => void>();
+const pending = new Map<number, { done: (n: number | null) => void; file: string; timer: NodeJS.Timeout }>();
 let seq = 0;
 function pdfWorker(): Worker | null {
   if (workerBroken) return null;
   if (worker) return worker;
   try {
     const pdfjsUrl = pathToFileURL(createRequire(import.meta.url).resolve("pdfjs-dist/legacy/build/pdf.mjs")).href;
-    worker = new Worker(WORKER_SRC, { eval: true, workerData: { pdfjs: pdfjsUrl } });
-    worker.unref();
-    worker.on("message", (m: { id: number; n: number | null }) => { pending.get(m.id)?.(m.n); pending.delete(m.id); });
-    worker.on("error", () => { workerBroken = true; worker = null; for (const f of pending.values()) f(undefined as unknown as null); pending.clear(); });
-    worker.on("exit", () => { worker = null; });
-    return worker;
+    const w = new Worker(WORKER_SRC, { eval: true, workerData: { pdfjs: pdfjsUrl } });
+    worker = w;
+    w.unref();
+    w.on("message", (m: { id: number; n: number | null }) => { pending.get(m.id)?.done(m.n); pending.delete(m.id); });
+    w.on("error", () => { workerBroken = true; worker = null; for (const p of pending.values()) p.done(undefined as unknown as null); pending.clear(); });
+    // a worker terminated after a timeout exits later: it must not drop the fresh one that replaced it
+    w.on("exit", () => { if (worker === w) worker = null; });
+    return w;
   } catch { workerBroken = true; return null; }
 }
 
@@ -83,9 +85,21 @@ export async function pdfPages(file: string): Promise<number | null> {
   if (w) {
     const id = ++seq;
     const n = await new Promise<number | null | undefined>(res => {
-      const t = setTimeout(() => { pending.delete(id); res(undefined); }, 60_000);
+      // A PDF that keeps the worker busy for a minute is treated as unreadable. Falling back to the main thread here
+      // used to parse that same file with no time limit there, freezing every socket (scores, stage) meanwhile.
+      const t = setTimeout(() => {
+        pending.delete(id);
+        console.warn("munsif.im: PDF page count took over 60 s — file rejected, worker restarted");
+        if (worker === w) worker = null;
+        // files queued behind the stuck one go to a fresh worker instead of being lost with this one
+        const queued = [...pending.values()];
+        pending.clear();
+        void w.terminate();
+        for (const q of queued) { clearTimeout(q.timer); void pdfPages(q.file).then(q.done); }
+        res(null);
+      }, 60_000);
       t.unref();
-      pending.set(id, v => { clearTimeout(t); res(v); });
+      pending.set(id, { done: v => { clearTimeout(t); res(v); }, file, timer: t });
       w.postMessage({ id, file });
     });
     if (n !== undefined) return n;
@@ -166,16 +180,32 @@ export class Converter {
   private run(stored: string): Promise<{ pdfStored: string; pages: number | null } | null> {
     if (!this.soffice) return Promise.resolve(null);
     const out = path.join(this.dir, "tmp", `conv-${randomBytes(6).toString("hex")}`);
-    fs.mkdirSync(out, { recursive: true, mode: 0o700 });
     const args = [`-env:UserInstallation=file://${this.profileDir}`, "--headless", "--norestore", "--nolockcheck", "--convert-to", "pdf", "--outdir", out, path.join(this.dir, stored)];
     const env = { ...process.env, HOME: this.profileDir };
-    const once = () => new Promise<void>(res => execFile(this.soffice, args, { timeout: this.timeoutMs, killSignal: "SIGKILL", env }, err => {
-      if ((err as { killed?: boolean } | null)?.killed) console.warn(`munsif.im: soffice stopped after ${this.timeoutMs / 1000} s`);
-      res();
-    }));
+    // `soffice` is a wrapper that starts soffice.bin as its child. Killing only the wrapper on a timeout left
+    // soffice.bin running and holding the shared profile, so every later conversion handed its job to that
+    // orphan and failed. The process gets its own group and the whole group is killed.
+    const once = () => new Promise<void>(res => {
+      let killed = false;
+      let errText = "";
+      const child = spawn(this.soffice, args, { env, detached: true, stdio: ["ignore", "ignore", "pipe"] });
+      child.stderr?.on("data", (d: Buffer) => { if (errText.length < 2000) errText += d.toString(); });
+      const t = setTimeout(() => {
+        killed = true;
+        try { process.kill(-child.pid!, "SIGKILL"); } catch { /* already gone */ }
+      }, this.timeoutMs);
+      child.on("error", e => { clearTimeout(t); console.warn(`munsif.im: soffice could not start: ${e.message}`); res(); });
+      child.on("close", code => {
+        clearTimeout(t);
+        if (killed) console.warn(`munsif.im: soffice stopped after ${this.timeoutMs / 1000} s`);
+        else if (code) console.warn(`munsif.im: soffice exited with ${code}: ${errText.trim().slice(0, 300) || "no output"}`);
+        res();
+      });
+    });
     return (async () => {
       const t0 = Date.now();
       try {
+        fs.mkdirSync(out, { recursive: true, mode: 0o700 });
         await once();
         // A fresh LibreOffice profile sometimes exits right after creating itself: one retry.
         if (!fs.readdirSync(out).some(n => n.endsWith(".pdf"))) await once();

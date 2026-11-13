@@ -105,9 +105,14 @@ describe("QR kodlar (one organisation, active program)", () => {
     const r0 = await get("/api/admin/qr", acme);
     expect(r0.status).toBe(200);
     expect(r0.body.teams.map((t: any) => t.name)).toEqual(["Alfa", "Bəta", "Qamma"]);
-    expect(r0.body.teams.every((t: any) => t.code === null)).toBe(true);
+    // a team gets its link when it is created; the bulk call only fills a team whose link was revoked
+    expect(r0.body.teams.every((t: any) => /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(t.code))).toBe(true);
+    const ids = (await get("/api/admin/teams", acme)).body.map((t: any) => t.id);
+    expect((await request(base).delete(`/api/admin/teams/${ids[1]}/link`).set("Origin", base).set("Cookie", acme)).status).toBe(200);
+    expect((await get("/api/admin/qr", acme)).body.teams[1].code).toBeNull();
     const made = await post("/api/admin/qr/teams", acme).send({});
-    expect(made.body.made).toBe(3);
+    expect(made.body.made).toBe(1);
+    expect(made.body.teams[0].code).toBe(r0.body.teams[0].code); // existing links are kept
     const codes = made.body.teams.map((t: any) => t.code);
     expect(codes.every((c: string) => /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(c))).toBe(true);
     expect(made.body.teams[0].path).toMatch(/^\/t\/[A-Z0-9]{12}$/);
@@ -154,6 +159,46 @@ describe("QR kodlar (one organisation, active program)", () => {
     expect(j.status).toBe(200);
     expect((j.body as Buffer).subarray(0, 5).toString()).toBe("%PDF-");
     expect((await get("/api/admin/qr/teams.pdf")).status).toBe(401);
+  });
+});
+
+describe("v16: shared juror QR (/jp/<code>) fills the coordinator's free juror seats", () => {
+  it("each juror takes the next free seat; a rescan keeps the seat; full → 409; old single QR of a taken seat stops; off → 410", async () => {
+    expect((await get("/api/auth/juror-pick/ABCDABCDABCD")).status).toBe(410);
+    const seats = [await post("/api/admin/jurors", zeta).send({}), await post("/api/admin/jurors", zeta).send({})];
+    const made = await post("/api/admin/juror-pick", zeta).send({});
+    expect(made.status).toBe(200);
+    expect(made.body.path).toMatch(/^\/jp\/[A-Z0-9]{12}$/);
+    expect(made.body.url).toBe(`${base}${made.body.path}`);
+    const code = made.body.path.slice(4);
+    expect((await get(`/jp/${code}`)).status).toBe(200); // the join page
+    const pretty = made.body.code as string; // with dashes, as printed
+    const info = (await get(`/api/auth/juror-pick/${pretty}`)).body;
+    expect(info).toMatchObject({ valid: true, signedInAs: null });
+    const seatCount = info.free as number; // the organisation's default seat + the two above
+    expect(seatCount).toBeGreaterThanOrEqual(2);
+
+    const first = await post(`/api/auth/juror-pick/${code}`).send({ displayName: "Aysel Məmmədova" });
+    expect(first.status, first.body.error).toBe(200);
+    expect(first.body.redirect).toBe("/juror");
+    const c1 = cookieOf(first);
+    // the same phone scans again: no second seat, straight back to its panel
+    const again = await post(`/api/auth/juror-pick/${code}`, c1).send({ displayName: "Başqa ad" });
+    expect(again.body).toMatchObject({ displayName: "Aysel Məmmədova", redirect: "/juror" });
+    expect((await get(`/api/auth/juror-pick/${code}`, c1)).body.signedInAs).toBe("Aysel Məmmədova");
+    expect((await get("/api/admin/qr", zeta)).body.jurorPick).toMatchObject({ claimed: 1, total: seatCount });
+    for (let i = 2; i <= seatCount; i++) expect((await post(`/api/auth/juror-pick/${code}`).send({ displayName: `Münsif Adı ${i}` })).status).toBe(200);
+    // the seats' own single-use QRs from their creation no longer work (the seats are taken)
+    for (const seat of seats) expect((await get(`/api/auth/invite/${seat.body.invite.path.replace("/j/", "")}`)).status).toBe(410);
+    const full = await post(`/api/auth/juror-pick/${code}`).send({ displayName: "Artıq münsif" });
+    expect(full.status).toBe(409);
+    expect(full.body.error).toMatch(/doludur/);
+    // another organisation never sees this link
+    expect((await get("/api/admin/qr", acme)).body.jurorPick).toBeNull();
+
+    expect((await request(base).delete("/api/admin/juror-pick").set("Origin", base).set("Cookie", zeta)).status).toBe(200);
+    expect((await get(`/api/auth/juror-pick/${code}`)).status).toBe(410);
+    expect((await post(`/api/auth/juror-pick/${code}`).send({ displayName: "Gec gələn" })).status).toBe(410);
   });
 });
 

@@ -20,6 +20,14 @@ export interface Ctx {
 }
 
 /** orgs: the organisation of the signed-in admin / juror (or the team session). Route guards ran before this. */
+/**
+ * The address people outside reach (first configured origin, else this request's host). Links and QR codes are built
+ * from it everywhere, so a coordinator who opened the panel on another host still hands out working links.
+ */
+export function publicOrigin(cfg: Pick<Config, "origins">, req: FastifyRequest) {
+  return (cfg.origins[0] ?? `${req.protocol}://${(req.headers["x-forwarded-host"] as string) || req.headers.host}`).replace(/\/$/, "");
+}
+
 export function scopeOf(ctx: Ctx, req: FastifyRequest): Scope {
   const id = req.user?.orgId ?? req.team?.orgId;
   if (id == null) throw new Error("scopeOf: no session");

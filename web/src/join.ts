@@ -1,4 +1,6 @@
-// QR landing page (/j/<token>): the juror types their name once and lands in the juror panel.
+// QR landing page: the juror types their name once and lands in the juror panel.
+//   /j/<token>  — the juror's own single-use QR;
+//   /jp/<code>  — v16: the shared QR for every juror (the name takes the next free juror seat).
 import "./styles.css";
 import { api, ApiError } from "./lib/api";
 import { $, esc, icon } from "./lib/dom";
@@ -7,7 +9,9 @@ import { brandHtml } from "./lib/topbar";
 
 initTheme();
 
-const token = location.pathname.split("/").filter(Boolean)[1] ?? "";
+const [kind, token = ""] = location.pathname.split("/").filter(Boolean);
+const shared = kind === "jp";
+const endpoint = `/api/auth/${shared ? "juror-pick" : "invite"}/${encodeURIComponent(token)}`;
 const box = $("#box");
 
 function fail(msg: string) {
@@ -20,13 +24,20 @@ function fail(msg: string) {
 }
 
 async function start() {
-  let info: { currentName: string; eventName: string; date: string };
+  let info: { currentName?: string; eventName: string; date: string; free?: number; signedInAs?: string | null };
   try {
-    info = await api(`/api/auth/invite/${encodeURIComponent(token)}`);
+    info = await api(endpoint);
   } catch (e) {
     fail((e as ApiError).message);
     return;
   }
+  info.currentName ??= "";
+  if (shared && info.signedInAs) {
+    // this phone already joined from the shared QR: straight back to the panel, no second seat
+    location.replace("/juror");
+    return;
+  }
+  if (shared && !info.free) { fail("Bütün münsif yerləri doludur. Koordinatordan yeni münsif yeri əlavə etməsini istəyin."); return; }
   $("#brand").innerHTML = brandHtml(info.eventName);
   $("#evDate").textContent = `Münsif girişi${info.date ? ` · ${info.date}` : ""}`;
   document.title = `Münsif girişi · ${info.eventName}`;
@@ -55,12 +66,12 @@ async function start() {
     go.disabled = true;
     go.textContent = "Daxil olunur…";
     try {
-      const r = await api<{ redirect: string; displayName: string }>(`/api/auth/invite/${encodeURIComponent(token)}`, { method: "POST", body: { displayName } });
+      const r = await api<{ redirect: string; displayName: string }>(endpoint, { method: "POST", body: { displayName } });
       box.innerHTML = `<div class="join-ok"><span class="tick">${icon("check")}</span><div class="join-hello">${esc(r.displayName)}</div><p class="sub" style="margin:0">Münsif panelinə keçirsiniz…</p></div>`;
       location.replace(r.redirect);
     } catch (ex) {
       const a = ex as ApiError;
-      if (a.status === 410) { fail(a.message); return; }
+      if (a.status === 410 || a.status === 409) { fail(a.message); return; }
       err.textContent = a.message;
       go.disabled = false;
       go.innerHTML = `Qiymətləndirməyə başla ${icon("next")}`;

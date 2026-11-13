@@ -61,7 +61,7 @@ describe("upgrading the live 468f2a0 (v10) database to score ops (v11)", () => {
     const { cfg, snapshot, ranking, reveal, stage } = await v10Database(path.join(tmp, "a"));
     const A = await buildApp(cfg);
     try {
-      expect(SCHEMA_VERSION).toBe(15);
+      expect(SCHEMA_VERSION).toBe(16);
       const backups = fs.readdirSync(cfg.backupDir).filter(n => n.startsWith(`pre-v${SCHEMA_VERSION}-`));
       expect(backups.length).toBe(1);
       const copy = new Database(path.join(cfg.backupDir, backups[0]), { readonly: true });

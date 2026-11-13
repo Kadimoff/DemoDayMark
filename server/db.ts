@@ -320,6 +320,14 @@ const MIGRATIONS: Array<string | ((db: DB) => void)> = [
   ALTER TABLE event ADD COLUMN team_rename_limit INTEGER;
   ALTER TABLE teams ADD COLUMN renames INTEGER NOT NULL DEFAULT 0;
   `,
+  // v16 (shared juror link): one QR for every juror (/jp/<code>), e.g. on the projector before the event. The juror types a
+  // name and takes the next juror seat the coordinator created that nobody has signed in to yet — the coordinator still
+  // decides how many jurors there are. Additive only: new columns, same pattern as v14.
+  `
+  ALTER TABLE event ADD COLUMN juror_pick_hash TEXT;    -- sha256 of the shared code (lookup)
+  ALTER TABLE event ADD COLUMN juror_pick_enc TEXT;     -- the shared code, encrypted with SESSION_SECRET (shown again to the admin)
+  CREATE UNIQUE INDEX event_juror_pick ON event(juror_pick_hash) WHERE juror_pick_hash IS NOT NULL;
+  `,
 ];
 
 /** Tables whose rows belong to one event of an organisation (v10). */

@@ -52,6 +52,14 @@ export function orgByPickCode(db: DB, code: string): number | null {
   return r?.org_id ?? null;
 }
 
+/** v16: the shared juror link (/jp/<code>) has its own hash namespace too. */
+export const jurorPickHash = (code: string) => createHash("sha256").update(`juror-pick:${code}`).digest("hex");
+/** v16: organisation whose shared juror link this code is, or null. */
+export function orgByJurorPickCode(db: DB, code: string): number | null {
+  const r = db.prepare("SELECT org_id FROM event WHERE juror_pick_hash = ?").get(jurorPickHash(code)) as { org_id: number } | undefined;
+  return r?.org_id ?? null;
+}
+
 function keyFrom(secret: string) { return createHash("sha256").update(`munsif-team-link:${secret}`).digest(); }
 export function sealCode(code: string, secret: string): string {
   const iv = randomBytes(12);
@@ -210,6 +218,18 @@ export class TeamRepo {
     return code;
   }
   revokePick() { this.db.prepare("UPDATE event SET team_pick_hash = NULL, team_pick_enc = NULL WHERE org_id = ?").run(this.orgId); }
+
+  // ---------- v16: shared juror link (/jp/<code>, the juror takes the next free seat) ----------
+  jurorPickCode(): string | null {
+    const r = this.db.prepare("SELECT juror_pick_enc FROM event WHERE org_id = ?").get(this.orgId) as { juror_pick_enc: string | null } | undefined;
+    return r?.juror_pick_enc ? openCode(r.juror_pick_enc, this.secret) : null;
+  }
+  issueJurorPick(): string {
+    const code = newTeamCode();
+    this.db.prepare("UPDATE event SET juror_pick_hash = ?, juror_pick_enc = ? WHERE org_id = ?").run(jurorPickHash(code), sealCode(code, this.secret), this.orgId);
+    return code;
+  }
+  revokeJurorPick() { this.db.prepare("UPDATE event SET juror_pick_hash = NULL, juror_pick_enc = NULL WHERE org_id = ?").run(this.orgId); }
   /** Picks the team from the shared link: true only for the first one (a claimed team cannot be picked again). */
   claim(teamId: number): boolean {
     return this.db.prepare("UPDATE teams SET claimed_at = ? WHERE id = ? AND org_id = ? AND event_id = ? AND claimed_at IS NULL").run(Date.now(), teamId, this.orgId, this.eventId).changes === 1;

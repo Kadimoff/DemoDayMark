@@ -72,6 +72,8 @@ export async function checkEmbeddable(url: string): Promise<boolean> {
 export class TeamService {
   /** stage reminders already sent: "<kind>:<teamId>:<stage team id>" */
   private sentStage = new Set<string>();
+  /** Running order + team on stage at the last broadcast: slide turns and timer ticks don't change a team's queue place. */
+  private queueKey = "";
 
   constructor(readonly trepo: TeamRepo, private repo: Repo, private cfg: Config, private rt: OrgRealtime, readonly converter: Converter) {
     rt.afterStage = () => this.stageReminders();
@@ -178,6 +180,10 @@ export class TeamService {
     send(0, "stage.invite", "Sıra sizdədir", `${list[ci].name}, səhnəyə buyurun.`);
     send(1, "stage.next", "Növbəti sizsiniz", "Sizdən əvvəl 1 komanda qalıb. Hazır olun.");
     send(2, "stage.soon", "Sıranız yaxınlaşır", "Sizdən əvvəl 2 komanda var. Səhnəyə yaxınlaşın.");
+    // Every team panel refetches (and used to re-download its PDF) on this — only when the queue really moved.
+    const key = `${cur}|${list.map(t => t.id).join(",")}`;
+    if (key === this.queueKey) return;
+    this.queueKey = key;
     for (const t of list) this.rt.io.to(`team:${t.id}`).emit("team:changed");
   }
 

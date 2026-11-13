@@ -17,7 +17,8 @@ WORKDIR /app
 # munsif.im: libreoffice-impress converts uploaded PPTX presentations to PDF (headless `soffice`, found on PATH;
 # one conversion at a time, 90 s limit). It adds ~400 MB to the image; without it teams are asked for a PDF.
 # fonts-dejavu (+ Carlito/Liberation, metric-compatible with Calibri/Arial) keep the converted slides' layout.
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# tini reaps the LibreOffice processes a timed-out conversion kills (Node as PID 1 does not).
+RUN apt-get update && apt-get install -y --no-install-recommends curl tini \
       libreoffice-impress fonts-dejavu fonts-crosextra-carlito fonts-liberation2 \
   && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/app/data ASSETS_DIR=/app/assets WEB_DIR=/app/dist/web
@@ -34,5 +35,5 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/data
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT:-3000}/api/health" > /dev/null || exit 1
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "docker-entrypoint.sh"]
 CMD ["node", "dist-server/server/index.js"]

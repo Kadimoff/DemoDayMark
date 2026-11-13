@@ -20,12 +20,17 @@ if (pageOrg()) {
 
 // This browser may already hold an admin and/or juror session: offer a way back instead of a re-login.
 // (asks /api/auth/session first: it never answers 401, so a fresh visitor gets no console error)
-api<{ admin: boolean; juror: boolean }>("/api/auth/session").then(s => (s.admin || s.juror
-  ? api<{ sessions: Array<{ role: "admin" | "juror"; displayName: string }> }>("/api/auth/me") : { sessions: [] })).then(me => {
+let adminPanel = "/admin";
+api<{ admin: boolean; juror: boolean; panel: string | null; root: boolean }>("/api/auth/session").then(s => {
+  // the platform owner's home is /root (the server says which panel an admin session belongs to)
+  if (s.admin && s.root && s.panel === "/root") adminPanel = "/root";
+  return s.admin || s.juror ? api<{ sessions: Array<{ role: "admin" | "juror"; displayName: string }> }>("/api/auth/me") : { sessions: [] };
+}).then(me => {
   if (!me.sessions.length) return;
   const box = $("#already");
+  const label = (role: "admin" | "juror") => role === "juror" ? "Münsif paneli" : adminPanel === "/root" ? "Platforma" : "Canlı panel";
   box.innerHTML = `<b>Bu brauzerdə artıq daxil olmusunuz:</b><div class="row" style="margin-top:8px">${me.sessions.map(s =>
-    `<a class="btn sm" href="${s.role === "admin" ? "/admin" : "/juror"}">${esc(s.displayName)} · ${s.role === "admin" ? "Canlı panel" : "Münsif paneli"} →</a>`).join("")}</div>
+    `<a class="btn sm" href="${s.role === "admin" ? adminPanel : "/juror"}">${esc(s.displayName)} · ${label(s.role)} →</a>`).join("")}</div>
     <p class="sub" style="margin:8px 0 0">Koordinator kimi daxil olmaq üçün aşağıdakı formdan istifadə edin.</p>`;
   box.hidden = false;
 }).catch(() => { /* not logged in */ });

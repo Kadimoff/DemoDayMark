@@ -5,7 +5,7 @@ import { z } from "zod";
 import { applyTimerAction } from "../../shared/timer.js";
 import { newToken, requireRole, tokenId } from "../auth.js";
 import { hashPassword } from "../baseline.js";
-import { idParam, parseBody, scopeOf, type Ctx } from "../context.js";
+import { idParam, parseBody, publicOrigin as publicOriginOf, scopeOf, type Ctx } from "../context.js";
 import type { Repo } from "../repo.js";
 import type { OrgRealtime } from "../realtime.js";
 import { buildPdf } from "../export/pdf.js";
@@ -210,7 +210,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     // ---------- teams ----------
     r.get("/api/admin/teams", async req => { const { repo } = scopeOf(ctx, req); return repo.teams().map(t => ({ ...t, scoreCount: repo.scoreCountForTeam(t.id) })); });
     r.post("/api/admin/teams", async (req, reply) => {
-      const { repo, rt } = scopeOf(ctx, req);
+      const { repo, rt, trepo } = scopeOf(ctx, req);
       const b = parseBody(teamBody, req.body, reply);
       if (!b) return;
       if (b.entryScore != null && b.entryScore > repo.getEvent().entryMax) {
@@ -218,6 +218,8 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       }
       let t = repo.addTeam(b.name, b.project);
       if (b.entryScore != null) t = repo.updateTeam(t.id, { entryScore: b.entryScore })!;
+      // the sign-in link exists from the start: handing out a QR is one click, never "link not created yet"
+      trepo.issueLink(t.id);
       repo.audit(req.user!.id, "team.create", t);
       changed(rt);
       return t;
@@ -277,7 +279,7 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
     };
 
     // ---------- v4: "QR kodlar" page (all team and juror QR cards of the active program, print / PDF / share) ----------
-    const publicOrigin = (req: FastifyRequest) => cfg.origins[0] ?? `${req.protocol}://${(req.headers["x-forwarded-host"] as string) || req.headers.host}`;
+    const publicOrigin = (req: FastifyRequest) => publicOriginOf(cfg, req);
     const teamCards = (sc: ReturnType<typeof scopeOf>) => sc.repo.teams().filter(t => t.active).map(t => {
       const l = sc.trepo.link(t.id);
       return { id: t.id, name: t.name, project: t.project, code: l?.code ? prettyCode(l.code) : null, path: l?.code ? `/t/${l.code}` : null, createdAt: l?.createdAt ?? null };
@@ -295,7 +297,11 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const pc = sc.trepo.pickCode();
       const active = sc.repo.teams().filter(t => t.active);
       const pick = pc ? { code: prettyCode(pc), path: `/t/${pc}`, claimed: active.filter(t => sc.trepo.row(t.id)?.claimed_at).length, total: active.length } : null;
-      return { eventName: sc.repo.getEvent().displayName, origin: publicOrigin(req), teams: teamCards(sc), jurors: jurorCards(sc.repo), inviteTtlHours: [24, 72], pick };
+      const jc = sc.trepo.jurorPickCode();
+      const jurors = jurorCards(sc.repo);
+      const seats = jurors.filter(j => j.active);
+      const jurorPick = jc ? { code: prettyCode(jc), path: `/jp/${jc}`, claimed: seats.filter(j => j.claimed).length, total: seats.length } : null;
+      return { eventName: sc.repo.getEvent().displayName, origin: publicOrigin(req), teams: teamCards(sc), jurors, inviteTtlHours: [24, 72], pick, jurorPick };
     });
     // "Bütün QR-ları ləğv et": every team link, the shared team link and every unused juror QR of the program stop working.
     // People who already signed in stay signed in (their sessions are separate); new links / QRs can be made again.
@@ -305,8 +311,9 @@ export function adminRoutes(app: FastifyInstance, ctx: Ctx) {
       const db = sc.repo.db;
       const teams = db.prepare("UPDATE team_links SET revoked_at = ? WHERE org_id = ? AND event_id = ? AND revoked_at IS NULL").run(now, sc.orgId, sc.eventId).changes;
       const jurors = db.prepare("UPDATE juror_invites SET revoked_at = ? WHERE org_id = ? AND event_id = ? AND used_at IS NULL AND revoked_at IS NULL").run(now, sc.orgId, sc.eventId).changes;
-      const shared = !!sc.trepo.pickCode();
+      const shared = !!sc.trepo.pickCode() || !!sc.trepo.jurorPickCode();
       sc.trepo.revokePick();
+      sc.trepo.revokeJurorPick();
       sc.repo.audit(req.user!.id, "qr.revoke-all", { teams, jurors, shared });
       sc.rt.to("admin").emit("materials:changed", {});
       sc.rt.emitConfig();
